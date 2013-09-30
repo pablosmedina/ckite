@@ -1,4 +1,4 @@
-ckite
+CKite
 =====
 
-CKite - A Scala implementation of the Raft distributed consensus algorithm
+A Scala implementation of the Raft distributed consensus algorithm
