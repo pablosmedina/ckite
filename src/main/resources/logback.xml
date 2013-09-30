@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+ 
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <layout>
+      <Pattern>%d{HH:mm:ss.SSS} %-5level [T-%X{term}][L-%X{leader}][%thread] %logger{36} - %msg%n</Pattern>
+    </layout>
+  </appender>
+   
+  <logger name="the.walrus" level="debug"/>
+   
+ 
+  <root level="info">
+    <appender-ref ref="STDOUT" />
+  </root>
+</configuration>
