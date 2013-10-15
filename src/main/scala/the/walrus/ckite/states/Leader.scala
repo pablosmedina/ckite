@@ -137,7 +137,6 @@ case object Heartbeater extends Logging {
   val Name = "Heartbeater"
   val executor = Executors.newFixedThreadPool(1)
   val heartbeatFuture = new AtomicReference[Future[_]]()
-  val heartbeatsInterval = 1000
 
   def start(term: Int)(implicit cluster: Cluster) = {
     heartbeatFuture.set(executor.submit(new Runnable() {
@@ -148,7 +147,7 @@ case object Heartbeater extends Logging {
           while (true) {
             //detectar si tengo contacto con todos, la mayoria o no importa?
             cluster.broadcastHeartbeats(term)
-            Thread.sleep(heartbeatsInterval)
+            Thread.sleep(cluster.configuration.heartbeatsInterval)
           }
         } catch { case e: Exception => LOG.debug("Heartbeats interrupted") }
       }

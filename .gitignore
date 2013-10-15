@@ -1,1 +1,5 @@
+.cache
+bin
+.classpath
+.project
 target

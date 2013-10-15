@@ -8,14 +8,15 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 
-class Cluster(val local: Member, val members: List[Member]) extends Logging {
+class Cluster(val configuration: Configuration) extends Logging {
 
-  implicit val cluster = this
-
+  implicit val aCluster = this
+  
   val INITIAL_TERM = 0
-
   val leader = new AtomicReference[Option[Member]](None)
-
+  val local = new Member(configuration.localBinding)
+  val members = configuration.membersBindings.map( binding => new Member(binding))
+  
   def start() = {
     local becomeFollower (INITIAL_TERM)
     updateContextInfo()
@@ -76,7 +77,7 @@ class Cluster(val local: Member, val members: List[Member]) extends Logging {
 
   def setNoLeader() = {
     leader.set(None)
-    cluster.updateContextInfo()
+    updateContextInfo()
   }
 
   def anyLeader() = {
@@ -94,4 +95,5 @@ class Cluster(val local: Member, val members: List[Member]) extends Logging {
     MDC.put("leader", leader.get().toString)
   }
 
+  
 }

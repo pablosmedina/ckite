@@ -9,29 +9,30 @@ import the.walrus.ckite.states.Leader
 import the.walrus.ckite.states.Candidate
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.util.Logging
-import the.walrus.ckite.rpc.rest.RestConnector
 import the.walrus.ckite.states.State
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.rpc.Connector
+import the.walrus.ckite.rpc.thrift.ThriftConnector
 
-class Member(val host: String, val port: String) extends Logging {
+class Member(val binding: String) extends Logging {
 
   val currentTerm = new AtomicInteger(0)
   val nextLogIndex = new AtomicInteger(0)
   val state = new AtomicReference[State](Follower)
-  val connector: Connector = new RestConnector()
+  val connector: Connector = new ThriftConnector(binding)
   val votedFor = new AtomicReference[Option[String]]
 
   def sendHeartbeat(term: Int)(implicit cluster: Cluster) = {
     LOG.trace(s"Sending heartbeat to $id in term ${term}")
-    connector.send(this, createAppendEntries(term)).map {
+    val appendEntriesResponseTry = connector.send(this, createAppendEntries(term)).map {
       appendEntriesResponse =>
         if (appendEntriesResponse.term > term) {
           LOG.info(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
           cluster.local.currentState.stepDown(None, term)
         }
     }
+//    .recover {  case e: Exception => LOG.error("",e)  }
   }
 
   private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries = {
@@ -57,9 +58,9 @@ class Member(val host: String, val port: String) extends Logging {
   }
 
   def id() = {
-    s"$host:$port"
+    s"$binding"
   }
-
+  
   def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
     if (receivedTerm > term) {
       LOG.info(s"New term detected. Moving from ${term} to ${receivedTerm}.")

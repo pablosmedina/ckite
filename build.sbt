@@ -1,26 +1,24 @@
-import AssemblyKeys._
-
 name := "ckite"
 
 scalaVersion := "2.10.2"
 
-jarName in assembly := "ckite.jar"
+resolvers += "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
+
+resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
+
+resolvers += "twitter-repo" at "http://maven.twttr.com"
+
+libraryDependencies ++= Seq(
+	"ch.qos.logback" % "logback-classic" % "1.0.0",
+	"com.twitter" %% "scrooge-core" % "3.9.0",
+	"org.apache.thrift" % "libthrift" % "0.9.1",
+	"com.twitter" %% "finagle-thrift" % "6.6.2",
+	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
+	"junit" % "junit" % "4.8.1" % "test"
+)
 
 EclipseKeys.withSource := true
 
-resolvers += "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
+com.twitter.scrooge.ScroogeSBT.newSettings
 
-libraryDependencies ++= Seq(
-   "org.apache.tomcat" % "tomcat-catalina" % "7.0.34",
-   "org.apache.tomcat.embed" % "tomcat-embed-core" % "7.0.34",
-   "org.apache.tomcat.embed" % "tomcat-embed-jasper" % "7.0.34",
-   "org.springframework" % "spring-webmvc" % "3.1.0.RELEASE",
-   "ch.qos.logback" % "logback-classic" % "1.0.0",
-   "cglib" % "cglib-nodep" % "2.2",
-   "com.esotericsoftware.kryo"     %  "kryo"           % "2.22",
-   "org.apache.httpcomponents" % "httpclient" % "4.2.5",
-   "org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
-   "junit" % "junit" % "4.8.1" % "test"
-)
-
-assemblySettings
+scroogeThriftOutputFolder in Compile  := file("src/main/scala")

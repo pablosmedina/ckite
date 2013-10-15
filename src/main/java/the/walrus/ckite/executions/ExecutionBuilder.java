@@ -28,11 +28,6 @@ public class ExecutionBuilder {
 		return this;
 	}
 	
-	public ExecutionBuilder withTimeout(long timeout, TimeUnit timeUnit, TimeoutHandler handler) {
-		timeouts.add(new Timeout(timeout, timeUnit, handler));
-		return this;
-	}
-	
 	/**
 	 * Executes the given tasks and joins to the results.
 	 * 
@@ -62,6 +57,7 @@ public class ExecutionBuilder {
 		ExecutorService executor = obtainExecutor();
 		for(final Callable<?> task : tasks) {
 			results.add(executor.submit(new Callable<T>() {
+				@SuppressWarnings("unchecked")
 				@Override
 				public T call() throws Exception {
 					try { 

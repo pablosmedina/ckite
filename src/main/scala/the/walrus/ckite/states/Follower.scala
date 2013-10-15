@@ -94,8 +94,6 @@ case object ElectionTimeout extends Logging {
   val electionTimeoutPool = Executors.newFixedThreadPool(1)
   val timeoutFuture = new AtomicReference[Future[_]]()
   val random = new Random()
-  val electionTimeoutMin = 2000
-  val electionTimeoutMax = 5000
 
   def stop() = {
     if (currentTimeoutFuture() != null) {
@@ -114,7 +112,7 @@ case object ElectionTimeout extends Logging {
         Try {
           Thread.currentThread().setName("ElectionTimeout")
           cluster.updateContextInfo()
-          val electionTimeout =  electionTimeoutMin + random.nextInt(electionTimeoutMax - electionTimeoutMin)
+          val electionTimeout =  cluster.configuration.minElectionTimeout + random.nextInt(cluster.configuration.maxElectionTimeout - cluster.configuration.minElectionTimeout)
           LOG.trace(s"New timeout is $electionTimeout ms")
           Thread.sleep(electionTimeout)
           LOG.info("Timeout reached! Time to elect a new Leader")
