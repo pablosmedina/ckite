@@ -7,8 +7,14 @@ import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.LogEntry
 import the.walrus.ckite.rpc.Command
+import java.nio.HeapByteBuffer
+import java.io.ObjectOutputStream
+import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
+import java.io.ObjectInputStream
+import the.walrus.ckite.util.Logging
 
-object ThriftConverters {
+object ThriftConverters extends Logging {
 
   implicit def requestVoteToThrift(request: RequestVote) : RequestVoteST = {
      RequestVoteST(request.memberId, request.term, request.lastLogIndex, request.lastLogTerm)
@@ -45,11 +51,43 @@ object ThriftConverters {
   }
   
   implicit def logEntryToThrift(entry: LogEntry): LogEntryST = {
-    LogEntryST(entry.term, entry.index, null.asInstanceOf[ByteBuffer])
+    LogEntryST(entry.term, entry.index, entry.command)
   } 
   
   implicit def logEntryFromThrift(entry: LogEntryST): LogEntry = {
-    LogEntry(entry.term, entry.index, null.asInstanceOf[Command])
+    LogEntry(entry.term, entry.index, entry.command)
   } 
+  
+  implicit def commandToThrift(command: Command): ByteBuffer = {
+    val bb = ByteBuffer.wrap(serialize(command))
+    bb
+  } 
+  
+  implicit def commandFromThrift(byteBuffer: ByteBuffer): Command = {
+    val remaining = byteBuffer.remaining()
+    val bytes = new Array[Byte](remaining)
+    byteBuffer.get(bytes)
+    val c = deserialize(bytes)
+    c
+  } 
+  
+  private def serialize(command: Command): Array[Byte] = {
+    val baos = new ByteArrayOutputStream()
+    val oos = new ObjectOutputStream(baos)
+    oos.writeObject(command)
+    oos.flush()
+    baos.flush()
+    val bytes = baos.toByteArray()
+    oos.close()
+    bytes
+  }
+  
+  private def deserialize(bytes: Array[Byte]): Command = {
+    val bais = new ByteArrayInputStream(bytes)
+    val ois = new ObjectInputStream(bais)
+    val command = ois.readObject().asInstanceOf[Command]
+    ois.close()
+    command
+  }
   
 }

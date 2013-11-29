@@ -10,14 +10,16 @@ import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.SortedSet
 import the.walrus.ckite.rpc.AppendEntries
 
+//TODO: make me persistent
 object RLog extends Logging {
 
-  val entries = new TrieMap[Int, LogEntry]()
+  val entries = TrieMap[Int, LogEntry]()
   val commitIndex = new AtomicInteger(0)
   val lastLog = new AtomicInteger(0)
   val stateMachine: StateMachine = new KVStore()
 
   def tryAppend(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
+    LOG.trace(s"try appending $appendEntries")
     val canAppend = hasPreviousLogEntry(appendEntries)
     if (canAppend) append(appendEntries.entries)
     commitUntil(appendEntries.commitIndex)
@@ -65,7 +67,7 @@ object RLog extends Logging {
   }
 
   def commitEntriesUntil(entryIndex: Int) = {
-    (commitIndex.intValue() + 1) to entryIndex foreach { index =>
+    (commitIndex.intValue() + 1) until entryIndex foreach { index =>
       if (entries.contains(index)) {
         safeCommit(index)
       }

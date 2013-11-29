@@ -14,39 +14,70 @@ import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.rpc.Connector
 import the.walrus.ckite.rpc.thrift.ThriftConnector
+import java.net.ConnectException
+import com.twitter.finagle.ChannelWriteException
+import the.walrus.ckite.rpc.AppendEntriesResponse
 
 class Member(val binding: String) extends Logging {
 
   val currentTerm = new AtomicInteger(0)
   val nextLogIndex = new AtomicInteger(0)
+  
   val state = new AtomicReference[State](Follower)
   val connector: Connector = new ThriftConnector(binding)
   val votedFor = new AtomicReference[Option[String]]
 
   def sendHeartbeat(term: Int)(implicit cluster: Cluster) = {
     LOG.trace(s"Sending heartbeat to $id in term ${term}")
-    val appendEntriesResponseTry = connector.send(this, createAppendEntries(term)).map {
+    val appendEntries = createAppendEntries(term)
+    connector.sendHeartbeat(this, appendEntries).map {
       appendEntriesResponse =>
         if (appendEntriesResponse.term > term) {
-          LOG.info(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
+          LOG.debug(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
           cluster.local.currentState.stepDown(None, term)
+        } else {
+          if (!appendEntries.entries.isEmpty) {
+            onAppendEntriesResponseUpdateNextLogIndex(appendEntries, appendEntriesResponse)
+          }
         }
     }
-//    .recover {  case e: Exception => LOG.error("",e)  }
   }
 
-  private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries = {
-    val logEntryToPiggyBack = RLog.getLogEntry(nextLogIndex.intValue())
-    logEntryToPiggyBack match {
+  private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries = synchronized {
+    val entryToPiggyBack = RLog.getLogEntry(nextLogIndex.intValue())
+    entryToPiggyBack match {
       case None => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex)
       case Some(entry) => {
         val entriesToPiggyBack = List(entry)
-        RLog.getPreviousLogEntry(entriesToPiggyBack(0)) match {
+        val appendEntriesMessage = RLog.getPreviousLogEntry(entriesToPiggyBack(0)) match {
           case None => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex, entries = entriesToPiggyBack)
-          case Some(previousEntry) => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex, previousEntry.term, previousEntry.index, entriesToPiggyBack)
+          case Some(previousEntry) => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex, previousEntry.index, previousEntry.term, entriesToPiggyBack)
         }
+        LOG.trace(s"Piggybacking entry $entry to $id. Message is $appendEntriesMessage")
+        appendEntriesMessage
       }
     }
+  }
+  
+  private def onAppendEntriesResponseUpdateNextLogIndex(appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
+      if (appendEntriesResponse.success) {
+        nextLogIndex.incrementAndGet()
+      } else {
+        val currentIndex = nextLogIndex.decrementAndGet()
+        if (currentIndex == 0) nextLogIndex.set(1)
+      }
+      LOG.debug(s"Member $binding $appendEntriesResponse - NextLogIndex is $nextLogIndex")
+  }
+  
+  def replicate(appendEntries: AppendEntries) =  synchronized {
+    connector.send(this, appendEntries).map { replicationResponse =>
+      onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
+      replicationResponse.success
+    }.recover {
+      case e: Exception =>
+        LOG.error(s"Error replicating: ${e.getMessage()}",e)
+        false
+    } get
   }
 
   def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
@@ -63,7 +94,7 @@ class Member(val binding: String) extends Logging {
   
   def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
     if (receivedTerm > term) {
-      LOG.info(s"New term detected. Moving from ${term} to ${receivedTerm}.")
+      LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
       votedFor.set(None)
       currentTerm.set(receivedTerm)
       cluster.updateContextInfo()
@@ -89,38 +120,26 @@ class Member(val binding: String) extends Logging {
 
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
   def requestVote(implicit cluster: Cluster): Boolean = {
-    LOG.info(s"Requesting vote to $id")
+    LOG.debug(s"Requesting vote to $id")
     val lastLogEntry = RLog.getLastLogEntry()
     connector.send(this, lastLogEntry match {
       case None => RequestVote(cluster.local.id, cluster.local.term)
       case Some(entry) => RequestVote(cluster.local.id, cluster.local.term, entry.index, entry.term)
     }).map { voteResponse =>
-      LOG.info(s"Got Request vote response: $voteResponse")
+      LOG.debug(s"Got Request vote response: $voteResponse")
       voteResponse.granted
     } recover {
-      case e: Exception =>
-        LOG.error(s"Error requesting vote: ${e.getMessage()}")
+      case ChannelWriteException(e:ConnectException)  =>
+        LOG.debug(s"Cant connect to member $id")
+        false
+      case e: Exception => 
+        LOG.error(s"Requesting vote: ${e.getMessage()}")
         false
     } get
   }
 
   def forwardCommand(command: Command) = {
     connector.send(this, command)
-  }
-
-  def replicate(appendEntries: AppendEntries) = {
-    connector.send(this, appendEntries).map { replicationResponse =>
-      if (replicationResponse.success) {
-        nextLogIndex.incrementAndGet()
-      } else {
-        nextLogIndex.decrementAndGet()
-      }
-      replicationResponse.success
-    }.recover {
-      case e: Exception =>
-        LOG.error(s"Error replicating: ${e.getMessage()}")
-        false
-    } get
   }
 
   def onCommandReceived(command: Command)(implicit cluster: Cluster) = {

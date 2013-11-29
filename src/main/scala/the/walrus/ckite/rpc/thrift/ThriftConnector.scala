@@ -23,23 +23,33 @@ import com.twitter.util.Throw
 class ThriftConnector(binding: String) extends Connector with Logging {
 
   val client = new CKiteService.FinagledClient(ClientBuilder().hosts(binding)
-  				.tcpConnectTimeout(20.milliseconds).connectTimeout(20.milliseconds)
   				.retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)
   				.hostConnectionLimit(1).build())
   
   override def send(member: Member, request: RequestVote): Try[RequestVoteResponse] = {
     Try {
+      LOG.debug(s"Sending $request to ${member.id}")
       client.sendRequestVote(request).get
-    }
+    } 
   }
   
   override def send(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
    Try {
+      LOG.debug(s"Sending $appendEntries to ${member.id}")
       client.sendAppendEntries(appendEntries).get
     }
   }
   
+   override def sendHeartbeat(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
+   Try {
+      LOG.trace(s"Sending $appendEntries to ${member.id}")
+      client.sendAppendEntries(appendEntries).get
+    }
+  }
+  
+  
   override def send(leader: Member, command: Command) = {
+    client.forwardCommand(command)
   }
   
 

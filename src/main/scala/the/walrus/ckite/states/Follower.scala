@@ -63,10 +63,10 @@ case object Follower extends State with Logging {
       cluster.local.updateTermIfNeeded(requestVote.term)
       val grantVote = checkGrantVotePolicy(requestVote)
       if (grantVote) {
-        LOG.info(s"Granting vote to ${requestVote.memberId} in term ${requestVote.term}")
+        LOG.debug(s"Granting vote to ${requestVote.memberId} in term ${requestVote.term}")
         cluster.local.votedFor.set(Some(requestVote.memberId))
       } else {
-        LOG.info(s"Rejecting vote to ${requestVote.memberId} in term ${requestVote.term}")
+        LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term ${requestVote.term}")
       }
       RequestVoteResponse(cluster.local.term, grantVote)
     }
@@ -115,7 +115,7 @@ case object ElectionTimeout extends Logging {
           val electionTimeout =  cluster.configuration.minElectionTimeout + random.nextInt(cluster.configuration.maxElectionTimeout - cluster.configuration.minElectionTimeout)
           LOG.trace(s"New timeout is $electionTimeout ms")
           Thread.sleep(electionTimeout)
-          LOG.info("Timeout reached! Time to elect a new Leader")
+          LOG.debug("Timeout reached! Time to elect a new Leader")
           cluster.local becomeCandidate (cluster.local.term)
         } recover { case e: Exception => LOG.debug("Election timeout interrupted") }
       }

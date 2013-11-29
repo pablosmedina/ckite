@@ -7,6 +7,7 @@ import the.walrus.ckite.util.Logging
 import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
+import java.util.concurrent.Executors
 
 class Cluster(val configuration: Configuration) extends Logging {
 
@@ -17,13 +18,15 @@ class Cluster(val configuration: Configuration) extends Logging {
   val local = new Member(configuration.localBinding)
   val members = configuration.membersBindings.map( binding => new Member(binding))
   
+  val executor = Executors.newFixedThreadPool(3)
+  
   def start() = {
     local becomeFollower (INITIAL_TERM)
     updateContextInfo()
   }
 
   def onMemberRequestingVote(requestVote: RequestVote) = {
-    LOG.info(s"RequestVote received: $requestVote")
+    LOG.debug(s"RequestVote received: $requestVote")
     local.onMemberRequestingVoteReceived(requestVote)
   }
 
@@ -31,13 +34,15 @@ class Cluster(val configuration: Configuration) extends Logging {
     local.onAppendEntriesReceived(appendEntries)
   }
 
-  def onCommandReceived(command: Command) = {
-    LOG.info(s"Command received: $command")
+  def onCommandReceived(command: Command) = synchronized {
+    Thread.currentThread().setName("Command")
+    updateContextInfo
+    LOG.debug(s"Command received: $command")
     local.onCommandReceived(command)
   }
 
   def onQueryReceived(query: Command) = {
-    LOG.info(s"Query received: $query")
+    LOG.debug(s"Query received: $query")
     RLog.execute(query)
   }
 
@@ -51,17 +56,23 @@ class Cluster(val configuration: Configuration) extends Logging {
   }
 
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = {
-    members.par foreach { member => 
-      Thread.currentThread().setName("Heartbeater")
-      updateContextInfo()
-      member.sendHeartbeat(term)(cluster) }
+    members.foreach { member => 
+      executor.submit(new Runnable() {
+        override def run() = {
+                  Thread.currentThread().setName("Heartbeater")
+			      updateContextInfo()
+			      member.sendHeartbeat(term)(cluster)
+        }
+      })
+    }
   }
 
   def forwardToLeader(command: Command) = {
     if (leader.get().isDefined) {
       leader.get().get.forwardCommand(command)
     } else {
-      LOG.error("No Leader to forward updates")
+      //should wait for leader?
+      LOG.error("No Leader to forward command")
     }
   }
 

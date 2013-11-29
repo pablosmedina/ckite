@@ -3,8 +3,8 @@ package the.walrus.ckite
 class CKiteBuilder {
 
   var minElectionTimeout: Int = 1000
-  var maxElectionTimeout: Int = 2000
-  var heartbeatsInterval: Int = 100
+  var maxElectionTimeout: Int = 1250
+  var heartbeatsInterval: Int = 250
   var localBinding: String = _
   var membersBindings: Seq[String]  = _
 
@@ -37,4 +37,12 @@ class CKiteBuilder {
     new CKite(new Cluster(Configuration(localBinding, membersBindings, minElectionTimeout, maxElectionTimeout, heartbeatsInterval)))
   }
 
+}
+
+object CKiteBuilder {
+  
+  def apply() = {
+    new CKiteBuilder()
+  }
+  
 }

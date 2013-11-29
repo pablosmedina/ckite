@@ -24,9 +24,9 @@ case object Candidate extends State {
     val inTerm = cluster.local.incrementTerm
     cluster.setNoLeader()
     cluster.local.voteForMyself()
-    LOG.info(s"Start election in term $inTerm")
+    LOG.info(s"Start election")
     val votes = cluster.collectVotes()
-    LOG.info(s"Got $votes votes in a majority of ${cluster.majority}")
+    LOG.debug(s"Got $votes votes in a majority of ${cluster.majority}")
     if (votes >= cluster.majority) {
       cluster.local becomeLeader inTerm
     } else {

@@ -20,12 +20,14 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-15T00:11:30.751-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-19T13:11:08.765-0300")
 trait CKiteService[+MM[_]] extends ThriftService {
   
   def sendRequestVote(requestVote: RequestVoteST): MM[RequestVoteResponseST]
   
   def sendAppendEntries(appendEntries: AppendEntriesST): MM[AppendEntriesResponseST]
+  
+  def forwardCommand(command: ByteBuffer): MM[Unit]
 }
 
 
@@ -562,6 +564,241 @@ object CKiteService {
   
     override def productPrefix: String = "sendAppendEntries$result"
   }
+  
+  object forwardCommand$args extends ThriftStructCodec3[forwardCommand$args] {
+    val Struct = new TStruct("forwardCommand_args")
+    val CommandField = new TField("command", TType.STRING, 1)
+    val CommandFieldManifest = implicitly[Manifest[ByteBuffer]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: forwardCommand$args) {
+    }
+  
+    override def encode(_item: forwardCommand$args, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): forwardCommand$args = Immutable.decode(_iprot)
+  
+    def apply(
+      command: ByteBuffer
+    ): forwardCommand$args = new Immutable(
+      command
+    )
+  
+    def unapply(_item: forwardCommand$args): Option[ByteBuffer] = Some(_item.command)
+  
+    object Immutable extends ThriftStructCodec3[forwardCommand$args] {
+      override def encode(_item: forwardCommand$args, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): forwardCommand$args = {
+        var command: ByteBuffer = null
+        var _got_command = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 1 => { /* command */
+                _field.`type` match {
+                  case TType.STRING => {
+                    command = {
+                      _iprot.readBinary()
+                    }
+                    _got_command = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          command
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of forwardCommand$args.  You typically should not need to
+     * directly reference this class; instead, use the forwardCommand$args.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val command: ByteBuffer
+    ) extends forwardCommand$args
+  
+  }
+  
+  trait forwardCommand$args extends ThriftStruct
+    with Product1[ByteBuffer]
+    with java.io.Serializable
+  {
+    import forwardCommand$args._
+  
+  
+    def command: ByteBuffer
+  
+    def _1 = command
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): forwardCommand$args =
+      _fieldId match {
+        case 1 => copy(command = null)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      forwardCommand$args.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (command ne null) {
+        val command_item = command
+        _oprot.writeFieldBegin(CommandField)
+        _oprot.writeBinary(command_item)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      command: ByteBuffer = this.command
+    ): forwardCommand$args =
+      new Immutable(
+        command
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[forwardCommand$args]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => command
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "forwardCommand$args"
+  }
+  
+  object forwardCommand$result extends ThriftStructCodec3[forwardCommand$result] {
+    val Struct = new TStruct("forwardCommand_result")
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: forwardCommand$result) {
+    }
+  
+    override def encode(_item: forwardCommand$result, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): forwardCommand$result = Immutable.decode(_iprot)
+  
+    def apply(
+    ): forwardCommand$result = new Immutable(
+    )
+  
+    def unapply(_item: forwardCommand$result): Boolean = true
+  
+    object Immutable extends ThriftStructCodec3[forwardCommand$result] {
+      override def encode(_item: forwardCommand$result, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): forwardCommand$result = {
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of forwardCommand$result.  You typically should not need to
+     * directly reference this class; instead, use the forwardCommand$result.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+    ) extends forwardCommand$result
+  
+  }
+  
+  trait forwardCommand$result extends ThriftStruct
+    with Product
+    with java.io.Serializable
+  {
+    import forwardCommand$result._
+  
+  
+  
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): forwardCommand$result =
+      _fieldId match {
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      forwardCommand$result.validate(this)
+      _oprot.writeStructBegin(Struct)
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+    ): forwardCommand$result =
+      new Immutable(
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[forwardCommand$result]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 0
+  
+    override def productElement(n: Int): Any = n match {
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "forwardCommand$result"
+  }
 
   import com.twitter.util.Future
 
@@ -571,6 +808,8 @@ object CKiteService {
     def sendRequestVote(requestVote: RequestVoteST): Future[RequestVoteResponseST]
     
     def sendAppendEntries(appendEntries: AppendEntriesST): Future[AppendEntriesResponseST]
+    
+    def forwardCommand(command: ByteBuffer): Future[Unit]
   }
 
   @deprecated("use CKiteService$FinagleClient", "3.4.0")

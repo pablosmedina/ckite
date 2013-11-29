@@ -13,11 +13,19 @@ libraryDependencies ++= Seq(
 	"com.twitter" %% "scrooge-core" % "3.9.0",
 	"org.apache.thrift" % "libthrift" % "0.9.1",
 	"com.twitter" %% "finagle-thrift" % "6.6.2",
+	"com.twitter" %% "finagle-http" % "6.6.2",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
 )
 
 EclipseKeys.withSource := true
+
+unmanagedSourceDirectories in Compile <++= baseDirectory { base =>
+  Seq(
+    base / "src/main/resources",
+   	base / "src/main/thrift"
+  )
+}
 
 com.twitter.scrooge.ScroogeSBT.newSettings
 

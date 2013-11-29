@@ -19,7 +19,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-15T00:11:30.751-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-19T13:11:08.765-0300")
 class CKiteService$FinagleService(
   iface: CKiteService[Future],
   protocolFactory: TProtocolFactory
@@ -119,6 +119,27 @@ class CKiteService$FinagleService(
       case e: TProtocolException => {
         iprot.readMessageEnd()
         exception("sendAppendEntries", seqid, TApplicationException.PROTOCOL_ERROR, e.getMessage)
+      }
+      case e: Exception => Future.exception(e)
+    }
+  })
+  addFunction("forwardCommand", { (iprot: TProtocol, seqid: Int) =>
+    try {
+      val args = forwardCommand$args.decode(iprot)
+      iprot.readMessageEnd()
+      (try {
+        iface.forwardCommand(args.command)
+      } catch {
+        case e: Exception => Future.exception(e)
+      }) flatMap { value: Unit =>
+        reply("forwardCommand", seqid, forwardCommand$result())
+      } rescue {
+        case e => Future.exception(e)
+      }
+    } catch {
+      case e: TProtocolException => {
+        iprot.readMessageEnd()
+        exception("forwardCommand", seqid, TApplicationException.PROTOCOL_ERROR, e.getMessage)
       }
       case e: Exception => Future.exception(e)
     }

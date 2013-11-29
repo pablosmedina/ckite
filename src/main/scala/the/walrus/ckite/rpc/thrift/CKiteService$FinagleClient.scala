@@ -20,7 +20,7 @@ import org.apache.thrift.transport.{TMemoryBuffer, TMemoryInputTransport}
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-15T00:11:30.751-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-10-19T13:11:08.765-0300")
 class CKiteService$FinagleClient(
   val service: FinagleService[ThriftClientRequest, Array[Byte]],
   val protocolFactory: TProtocolFactory = new TBinaryProtocol.Factory,
@@ -123,6 +123,33 @@ class CKiteService$FinagleClient(
     } onFailure { ex =>
       __stats_sendAppendEntries.FailuresCounter.incr()
       __stats_sendAppendEntries.FailuresScope.counter(ex.getClass.getName).incr()
+    }
+  }
+  private[this] object __stats_forwardCommand {
+    val RequestsCounter = scopedStats.scope("forwardCommand").counter("requests")
+    val SuccessCounter = scopedStats.scope("forwardCommand").counter("success")
+    val FailuresCounter = scopedStats.scope("forwardCommand").counter("failures")
+    val FailuresScope = scopedStats.scope("forwardCommand").scope("failures")
+  }
+  
+  
+  def forwardCommand(command: ByteBuffer): Future[Unit] = {
+    __stats_forwardCommand.RequestsCounter.incr()
+    this.service(encodeRequest("forwardCommand", forwardCommand$args(command))) flatMap { response =>
+      val result = decodeResponse(response, forwardCommand$result)
+      val exception =
+        None
+      exception.getOrElse(Future.Done)
+    } rescue {
+      case ex: SourcedException => {
+        if (this.serviceName != "") { ex.serviceName = this.serviceName }
+        Future.exception(ex)
+      }
+    } onSuccess { _ =>
+      __stats_forwardCommand.SuccessCounter.incr()
+    } onFailure { ex =>
+      __stats_forwardCommand.FailuresCounter.incr()
+      __stats_forwardCommand.FailuresScope.counter(ex.getClass.getName).incr()
     }
   }
 }

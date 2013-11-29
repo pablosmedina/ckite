@@ -18,6 +18,8 @@ import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.rpc.LogEntry
 import the.walrus.ckite.RLog
 import the.walrus.ckite.executions.Executions
+import the.walrus.ckite.executions.ExpectedResultFilter
+import java.lang.Boolean
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -40,10 +42,10 @@ case object Leader extends State {
 
   override def begin(term: Int)(implicit cluster: Cluster) = {
     if (term < cluster.local.term) {
-      LOG.info(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
+      LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
       cluster.local.becomeFollower(cluster.local.term)
     } else {
-      LOG.info(s"Start being Leader in term $term")
+      LOG.info(s"Start being Leader")
       cluster.updateLeader(cluster.local.id)
       resetLastLog
       resetNextIndexes
@@ -61,12 +63,12 @@ case object Leader extends State {
   }
 
   override def stop(implicit cluster: Cluster) = {
-    LOG.info("Stop being Leader. Stop heartbeats")
+    LOG.info("Stop being Leader")
     cluster.setNoLeader()
     Heartbeater stop
   }
 
-  override def onCommandReceived(command: Command)(implicit cluster: Cluster) = {
+  override def onCommandReceived(command: Command)(implicit cluster: Cluster) =  {
     val logEntry = LogEntry(cluster.local.term, RLog.nextLogIndex, command)
     RLog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
@@ -107,11 +109,11 @@ case object Leader extends State {
 
 }
 
-case object Replicator {
+object Replicator extends Logging {
 
   val Name = "Replicator"
-  val ReplicateTimeout = 1000
-  val executor = Executors.newCachedThreadPool()
+  val ReplicateTimeout = 5000 //TODO: to be configurable
+  val executor = Executors.newFixedThreadPool(50) //TODO: to be configurable
   
   //replicate and wait for a majority of acks. 
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Int = {
@@ -124,15 +126,17 @@ case object Replicator {
         }
       })
     }
-    val results: Iterable[Boolean] = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS)
-      .withExpectedResults(cluster.majority - 1)
-      .execute[Boolean]()
+    val expectedResults = cluster.majority - 1
+    LOG.debug(s"Waiting for $expectedResults acks")
+    val filter:ExpectedResultFilter = new ExpectedResultFilter(true)
+    val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS).withExpectedResults(expectedResults, filter).execute[Boolean]()
+    val results: Iterable[Boolean] = rawResults
     results.filter { result => result }.size
   }
 
 }
 
-case object Heartbeater extends Logging {
+object Heartbeater extends Logging {
 
   val Name = "Heartbeater"
   val executor = Executors.newFixedThreadPool(1)
@@ -144,11 +148,12 @@ case object Heartbeater extends Logging {
         try {
           cluster.updateContextInfo()
           Thread.currentThread().setName(Name)
-          while (true) {
-            //detectar si tengo contacto con todos, la mayoria o no importa?
-            cluster.broadcastHeartbeats(term)
+          do {
+            cluster.synchronized {
+            	cluster.broadcastHeartbeats(term)
+             }
             Thread.sleep(cluster.configuration.heartbeatsInterval)
-          }
+          } while (true)
         } catch { case e: Exception => LOG.debug("Heartbeats interrupted") }
       }
     }))

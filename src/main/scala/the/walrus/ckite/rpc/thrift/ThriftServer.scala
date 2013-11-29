@@ -5,11 +5,15 @@ import com.twitter.util.Future
 import org.apache.thrift.protocol.TBinaryProtocol
 import the.walrus.ckite.rpc.thrift.ThriftConverters._
 import the.walrus.ckite.Cluster
+import com.twitter.finagle.ListeningServer
+import java.nio.ByteBuffer
 
 class ThriftServer(cluster: Cluster) {
 
+  var finagleServer: ListeningServer = _
+  
   def start() = {
-    Thrift.serve(cluster.local.id, ckiteService)
+    finagleServer = Thrift.serve(cluster.local.id, ckiteService)
   }
 
   def ckiteService = {
@@ -22,12 +26,17 @@ class ThriftServer(cluster: Cluster) {
         Thread.currentThread().setName("appendEntries")
         cluster.onAppendEntriesReceived(request)
       }
+      
+      override def forwardCommand(commandByteBuffer: ByteBuffer) =  Future[Unit] {
+        Thread.currentThread().setName("forwardCommand")
+        cluster.onCommandReceived(commandByteBuffer)
+      }
     }
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())
   }
 
   def stop() = {
-
+	finagleServer.close()
   }
 
 }
