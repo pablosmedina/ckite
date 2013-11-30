@@ -80,40 +80,34 @@ class Member(val binding: String) extends Logging {
     } get
   }
 
-  def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
-    currentState().onAppendEntriesReceived(appendEntries)
-  }
+  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
 
-  def term(): Int = {
-    this.currentTerm.intValue()
-  }
+  def term(): Int = this.currentTerm.intValue()
 
-  def id() = {
-    s"$binding"
-  }
+  def id() = s"$binding"
   
   def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
     if (receivedTerm > term) {
       LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
       votedFor.set(None)
       currentTerm.set(receivedTerm)
-      cluster.updateContextInfo()
+      cluster.updateContextInfo
     }
   }
 
   def incrementTerm(implicit cluster: Cluster) = {
     val term = currentTerm.incrementAndGet()
-    cluster.updateContextInfo()
+    cluster.updateContextInfo
     term
   }
 
-  def onMemberRequestingVoteReceived(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
     cluster.synchronized {
       if (requestVote.term < term) {
         LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
         RequestVoteResponse(term, false)
       } else {
-        currentState.onRequestVoteReceived(requestVote)
+        currentState on requestVote
       }
     }
   }
@@ -138,51 +132,34 @@ class Member(val binding: String) extends Logging {
     } get
   }
 
-  def forwardCommand(command: Command) = {
-    connector.send(this, command)
-  }
+  def forwardCommand(command: Command) = connector.send(this, command)
 
-  def onCommandReceived(command: Command)(implicit cluster: Cluster) = {
-    currentState().onCommandReceived(command)
-  }
+  def on(command: Command)(implicit cluster: Cluster) = currentState on command
 
-  def becomeLeader(term: Int)(implicit cluster: Cluster) = {
-    become(Leader, term)
-  }
+  def becomeLeader(term: Int)(implicit cluster: Cluster) = become(Leader, term)
 
-  def becomeCandidate(term: Int)(implicit cluster: Cluster) = {
-    become(Candidate, term)
-  }
+  def becomeCandidate(term: Int)(implicit cluster: Cluster) = become(Candidate, term)
 
-  def becomeFollower(term: Int)(implicit cluster: Cluster) = {
-    become(Follower, term)
-  }
+  def becomeFollower(term: Int)(implicit cluster: Cluster) = become(Follower, term)
 
-  def setNextLogIndex(index: Int) = {
-    nextLogIndex.set(index)
-  }
+  def setNextLogIndex(index: Int) = nextLogIndex.set(index)
   
-  def voteForMyself() = {
-    votedFor.set(Some(id))
-  }
-
+  def voteForMyself() = votedFor.set(Some(id))
+  
   private def become(newState: State, term: Int)(implicit cluster: Cluster) = {
     LOG.info(s"Transition from $state to $newState")
-    currentState().stop
+    currentState stop
+    
     changeState(newState)
-    currentState().begin(term)
+    
+    currentState begin term
   }
 
-  private def currentState() = {
-    state.get()
-  }
+  private def currentState = state.get()
 
-  private def changeState(newState: State) = {
-    state.set(newState)
-  }
+  private def changeState(newState: State) = state.set(newState)
 
-  override def toString() = {
-    id
-  }
+  override def toString() = id
+  
 }
 

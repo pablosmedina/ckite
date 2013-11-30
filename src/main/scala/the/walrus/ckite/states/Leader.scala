@@ -64,11 +64,11 @@ case object Leader extends State {
 
   override def stop(implicit cluster: Cluster) = {
     LOG.info("Stop being Leader")
-    cluster.setNoLeader()
+    cluster.setNoLeader
     Heartbeater stop
   }
 
-  override def onCommandReceived(command: Command)(implicit cluster: Cluster) =  {
+  override def on(command: Command)(implicit cluster: Cluster) =  {
     val logEntry = LogEntry(cluster.local.term, RLog.nextLogIndex, command)
     RLog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
@@ -89,21 +89,21 @@ case object Leader extends State {
     }
   }
 
-  override def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
       stepDown(Some(appendEntries.leaderId), appendEntries.term)
-      cluster.local.onAppendEntriesReceived(appendEntries)
+      cluster.local on appendEntries
     }
   }
 
-  override def onRequestVoteReceived(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
     if (requestVote.term <= cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
       stepDown(None, requestVote.term)
-      cluster.local.onMemberRequestingVoteReceived(requestVote)
+      cluster.local on requestVote 
     }
   }
 
@@ -146,7 +146,8 @@ object Heartbeater extends Logging {
     heartbeatFuture.set(executor.submit(new Runnable() {
       override def run() = {
         try {
-          cluster.updateContextInfo()
+          cluster updateContextInfo
+          
           Thread.currentThread().setName(Name)
           do {
             cluster.synchronized {

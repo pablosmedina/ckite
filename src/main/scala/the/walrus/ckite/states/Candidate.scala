@@ -22,10 +22,11 @@ case object Candidate extends State {
 
   override def begin(term: Int)(implicit cluster: Cluster) = {
     val inTerm = cluster.local.incrementTerm
-    cluster.setNoLeader()
+    cluster.setNoLeader
     cluster.local.voteForMyself()
     LOG.info(s"Start election")
-    val votes = cluster.collectVotes()
+    val votes = cluster collectVotes
+    
     LOG.debug(s"Got $votes votes in a majority of ${cluster.majority}")
     if (votes >= cluster.majority) {
       cluster.local becomeLeader inTerm
@@ -35,26 +36,26 @@ case object Candidate extends State {
     }
   }
 
-  override def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     }
     else {
       stepDown(Some(appendEntries.leaderId), appendEntries.term)
-      cluster.local.onAppendEntriesReceived(appendEntries) 
+      cluster.local on appendEntries 
     }
   }
 
-  override def onRequestVoteReceived(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
     if (requestVote.term <= cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
       stepDown(None, requestVote.term)
-      cluster.local.onMemberRequestingVoteReceived(requestVote)
+      cluster.local on requestVote
     }
   }
   
-  override def onCommandReceived(command: Command)(implicit cluster: Cluster) = {
+  override def on(command: Command)(implicit cluster: Cluster) = {
     cluster.forwardToLeader(command)
   }
 

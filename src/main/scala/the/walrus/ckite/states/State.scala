@@ -14,11 +14,11 @@ trait State extends Logging {
 
   def stop(implicit cluster: Cluster) = {}
 
-  def onRequestVoteReceived(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse
+  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse
 
-  def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse
+  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse
 
-  def onCommandReceived(command: Command)(implicit cluster: Cluster) = {}
+  def on(command: Command)(implicit cluster: Cluster) = {}
   
   /**
    * Step down from being either Candidate or Leader and start following the given Leader
@@ -30,7 +30,7 @@ trait State extends Logging {
     	cluster.updateLeader(leaderId.get)
     }
     else {
-      cluster.setNoLeader()
+      cluster.setNoLeader
     }
     cluster.local becomeFollower term
   }

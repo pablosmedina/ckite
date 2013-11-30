@@ -20,16 +20,16 @@ class ThriftServer(cluster: Cluster) {
     val ckiteService = new CKiteService[Future]() {
       override def sendRequestVote(requestVote: RequestVoteST) = Future[RequestVoteResponseST] {
         Thread.currentThread().setName("requestVote")
-        cluster.onMemberRequestingVote(requestVote)
+        cluster on requestVote
       }
-      override def sendAppendEntries(request: AppendEntriesST) = Future[AppendEntriesResponseST] {
+      override def sendAppendEntries(appendEntries: AppendEntriesST) = Future[AppendEntriesResponseST] {
         Thread.currentThread().setName("appendEntries")
-        cluster.onAppendEntriesReceived(request)
+        cluster on appendEntries
       }
       
-      override def forwardCommand(commandByteBuffer: ByteBuffer) =  Future[Unit] {
+      override def forwardCommand(command: ByteBuffer) =  Future[Unit] {
         Thread.currentThread().setName("forwardCommand")
-        cluster.onCommandReceived(commandByteBuffer)
+        cluster on command
       }
     }
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())
@@ -39,4 +39,8 @@ class ThriftServer(cluster: Cluster) {
 	finagleServer.close()
   }
 
+}
+
+object ThriftServer {
+  def apply(cluster: Cluster) = new ThriftServer(cluster)
 }

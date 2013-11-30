@@ -13,32 +13,28 @@ class Cluster(val configuration: Configuration) extends Logging {
 
   implicit val aCluster = this
   
-  val INITIAL_TERM = 0
+  val InitialTerm = 0
   val leader = new AtomicReference[Option[Member]](None)
   val local = new Member(configuration.localBinding)
   val members = configuration.membersBindings.map( binding => new Member(binding))
   
-  val executor = Executors.newFixedThreadPool(3)
-  
-  def start() = {
-    local becomeFollower (INITIAL_TERM)
-    updateContextInfo()
+  def start = {
+    local becomeFollower InitialTerm
+    updateContextInfo
   }
 
-  def onMemberRequestingVote(requestVote: RequestVote) = {
+  def on(requestVote: RequestVote) = {
     LOG.debug(s"RequestVote received: $requestVote")
-    local.onMemberRequestingVoteReceived(requestVote)
+    local on requestVote
   }
 
-  def onAppendEntriesReceived(appendEntries: AppendEntries): AppendEntriesResponse = {
-    local.onAppendEntriesReceived(appendEntries)
-  }
+  def on(appendEntries: AppendEntries) = local on appendEntries
 
-  def onCommandReceived(command: Command) = synchronized {
+  def on(command: Command) = synchronized {
+	LOG.debug(s"Command received: $command")
     Thread.currentThread().setName("Command")
     updateContextInfo
-    LOG.debug(s"Command received: $command")
-    local.onCommandReceived(command)
+    local on command
   }
 
   def onQueryReceived(query: Command) = {
@@ -46,24 +42,21 @@ class Cluster(val configuration: Configuration) extends Logging {
     RLog.execute(query)
   }
 
-  def collectVotes(): Int = {
+  def collectVotes = {
     val eventualFollowers = members.par filter { member => 
-      Thread.currentThread().setName("CollectVotes")
-      updateContextInfo()
-      member.requestVote }
+	      Thread.currentThread().setName("CollectVotes")
+	      updateContextInfo
+	      member requestVote 
+      }
     val votes = eventualFollowers.size + 1 //vote for myself
     votes
   }
 
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = {
-    members.foreach { member => 
-      executor.submit(new Runnable() {
-        override def run() = {
+    members.par foreach { member =>
                   Thread.currentThread().setName("Heartbeater")
-			      updateContextInfo()
+			      updateContextInfo
 			      member.sendHeartbeat(term)(cluster)
-        }
-      })
     }
   }
 
@@ -80,28 +73,24 @@ class Cluster(val configuration: Configuration) extends Logging {
     val newLeader = obtainMember(memberId)
     if (newLeader != leader.get()) {
       leader.set(newLeader)
-      updateContextInfo()
+      updateContextInfo
       true
     }
     else false
   }
 
-  def setNoLeader() = {
+  def setNoLeader = {
     leader.set(None)
-    updateContextInfo()
+    updateContextInfo
   }
 
-  def anyLeader() = {
-    leader.get() != None
-  }
+  def anyLeader =  leader.get() != None
 
   def majority = ((members.size + 1) / 2) + 1
 
-  private def obtainMember(memberId: String): Option[Member] = {
-    (members :+ local).find { _.id == memberId }
-  }
+  private def obtainMember(memberId: String): Option[Member] = (members :+ local).find { _.id == memberId }
 
-  def updateContextInfo() = {
+  def updateContextInfo = {
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.get().toString)
   }

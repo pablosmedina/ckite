@@ -35,7 +35,7 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] {
         }
         case Method.Get -> Root / "put" / key / value => Future.value {
           val response = Response()
-          cluster.onCommandReceived(Put(key, value))
+          cluster on Put(key, value)
           response.contentString = s"put[$key,$value]"
           response
         }

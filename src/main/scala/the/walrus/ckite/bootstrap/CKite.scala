@@ -11,5 +11,5 @@ object CKite extends App {
   val ckite = CKiteBuilder().withLocalBinding(s"localhost:$localPort")
   								.withMembersBindings(System.getProperty("members").split(",").toSeq)
   								.build()
-  ckite.start()
+  ckite start
 }

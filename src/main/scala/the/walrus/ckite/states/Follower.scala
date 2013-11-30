@@ -27,19 +27,13 @@ import the.walrus.ckite.RLog
  */
 case object Follower extends State with Logging {
 
-  override def begin(term: Int)(implicit cluster: Cluster) = {
-    ElectionTimeout restart
-  }
+  override def begin(term: Int)(implicit cluster: Cluster) = ElectionTimeout restart
 
-  override def stop(implicit cluster: Cluster) = {
-    ElectionTimeout stop
-  }
+  override def stop(implicit cluster: Cluster) = ElectionTimeout stop
 
-  override def onCommandReceived(command: Command)(implicit cluster: Cluster) = {
-    cluster.forwardToLeader(command)
-  }
+  override def on(command: Command)(implicit cluster: Cluster) = cluster.forwardToLeader(command)
 
-  override def onAppendEntriesReceived(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
@@ -55,11 +49,12 @@ case object Follower extends State with Logging {
     }
   }
 
-  override def onRequestVoteReceived(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
     if (requestVote.term < cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
-      cluster.setNoLeader() //Some member started an election. Assuming no Leader.
+      cluster setNoLeader //Some member started an election. Assuming no Leader.
+      
       cluster.local.updateTermIfNeeded(requestVote.term)
       val grantVote = checkGrantVotePolicy(requestVote)
       if (grantVote) {
@@ -82,10 +77,7 @@ case object Follower extends State with Logging {
     lastLogEntry.isEmpty || (requestVote.lastLogTerm >= lastLogEntry.get.term && requestVote.lastLogIndex >= lastLogEntry.get.index)
   }
 
-  private def isCurrentTerm(term: Int)(implicit cluster: Cluster) = {
-    term == cluster.local.term
-  }
-
+  private def isCurrentTerm(term: Int)(implicit cluster: Cluster) = term == cluster.local.term
 
 }
 
@@ -111,7 +103,7 @@ case object ElectionTimeout extends Logging {
       override def run() = {
         Try {
           Thread.currentThread().setName("ElectionTimeout")
-          cluster.updateContextInfo()
+          cluster updateContextInfo
           val electionTimeout =  cluster.configuration.minElectionTimeout + random.nextInt(cluster.configuration.maxElectionTimeout - cluster.configuration.minElectionTimeout)
           LOG.trace(s"New timeout is $electionTimeout ms")
           Thread.sleep(electionTimeout)
@@ -122,7 +114,6 @@ case object ElectionTimeout extends Logging {
     }))
   }
 
-  private def currentTimeoutFuture() = {
-    timeoutFuture.get()
-  }
+  private def currentTimeoutFuture() = timeoutFuture.get()
+  
 }

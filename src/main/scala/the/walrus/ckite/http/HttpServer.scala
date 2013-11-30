@@ -10,12 +10,15 @@ import java.net.InetSocketAddress
 class HttpServer(cluster: Cluster) {
   
   def start() = {
-    
-     val server = ServerBuilder()
+     ServerBuilder()
       .codec(RichHttp[Request](Http()))
       .bindTo(new InetSocketAddress(cluster.local.binding.split(":")(1).toInt + 1000))
       .name("restserver")
       .build(new HttpService(cluster))
-    
   }
+  
+}
+
+object HttpServer {
+  def apply(cluster: Cluster) = new HttpServer(cluster)
 }

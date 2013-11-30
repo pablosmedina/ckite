@@ -5,21 +5,19 @@ import the.walrus.ckite.http.HttpServer
 
 class CKite(cluster: Cluster) {
 
-  val server = new ThriftServer(cluster)
-  val httpServer = new HttpServer(cluster)
+  val thrift = ThriftServer(cluster)
+  val http = HttpServer(cluster)
   
-  def start() = {
-    server.start
-    httpServer.start
-    cluster.start
+  def start = {
+    thrift start
+    
+    http start
+    
+    cluster start
   }   
   
-  def isLeader(): Boolean = {
-     false
-  }
+  def isLeader: Boolean = false
   
-  def stop() = {
-    server.stop
-  }
+  def stop = thrift stop
   
 }
