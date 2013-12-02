@@ -17,20 +17,37 @@ import the.walrus.ckite.rpc.thrift.ThriftConnector
 import java.net.ConnectException
 import com.twitter.finagle.ChannelWriteException
 import the.walrus.ckite.rpc.AppendEntriesResponse
+import the.walrus.ckite.states.Starter
 
 class Member(val binding: String) extends Logging {
 
   val currentTerm = new AtomicInteger(0)
   val nextLogIndex = new AtomicInteger(0)
-  
-  val state = new AtomicReference[State](Follower)
+  val state = new AtomicReference[State](Starter)
   val connector: Connector = new ThriftConnector(binding)
   val votedFor = new AtomicReference[Option[String]]
 
+  def id() = s"$binding"
+  
+  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
+
+  def on(command: Command)(implicit cluster: Cluster) = currentState on command
+  
+  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+//    cluster.synchronized {
+      if (requestVote.term < term) {
+        LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
+        RequestVoteResponse(term, false)
+      } else {
+        currentState on requestVote
+      }
+//    }
+  }
+  
   def sendHeartbeat(term: Int)(implicit cluster: Cluster) = {
     LOG.trace(s"Sending heartbeat to $id in term ${term}")
     val appendEntries = createAppendEntries(term)
-    connector.sendHeartbeat(this, appendEntries).map {
+    connector.send(this, appendEntries).map {
       appendEntriesResponse =>
         if (appendEntriesResponse.term > term) {
           LOG.debug(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
@@ -59,16 +76,6 @@ class Member(val binding: String) extends Logging {
     }
   }
   
-  private def onAppendEntriesResponseUpdateNextLogIndex(appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
-      if (appendEntriesResponse.success) {
-        nextLogIndex.incrementAndGet()
-      } else {
-        val currentIndex = nextLogIndex.decrementAndGet()
-        if (currentIndex == 0) nextLogIndex.set(1)
-      }
-      LOG.debug(s"Member $binding $appendEntriesResponse - NextLogIndex is $nextLogIndex")
-  }
-  
   def replicate(appendEntries: AppendEntries) =  synchronized {
     connector.send(this, appendEntries).map { replicationResponse =>
       onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
@@ -79,13 +86,21 @@ class Member(val binding: String) extends Logging {
         false
     } get
   }
-
-  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
+  
+  private def onAppendEntriesResponseUpdateNextLogIndex(appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
+      if (appendEntriesResponse.success) {
+        nextLogIndex.incrementAndGet()
+      } else {
+        val currentIndex = nextLogIndex.decrementAndGet()
+        if (currentIndex == 0) nextLogIndex.set(1)
+      }
+      LOG.debug(s"Member $binding $appendEntriesResponse - NextLogIndex is $nextLogIndex")
+  }
+  
+  def setNextLogIndex(index: Int) = nextLogIndex.set(index)
 
   def term(): Int = this.currentTerm.intValue()
 
-  def id() = s"$binding"
-  
   def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
     if (receivedTerm > term) {
       LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
@@ -100,18 +115,7 @@ class Member(val binding: String) extends Logging {
     cluster.updateContextInfo
     term
   }
-
-  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
-    cluster.synchronized {
-      if (requestVote.term < term) {
-        LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
-        RequestVoteResponse(term, false)
-      } else {
-        currentState on requestVote
-      }
-    }
-  }
-
+  
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
   def requestVote(implicit cluster: Cluster): Boolean = {
     LOG.debug(s"Requesting vote to $id")
@@ -124,17 +128,17 @@ class Member(val binding: String) extends Logging {
       voteResponse.granted
     } recover {
       case ChannelWriteException(e:ConnectException)  =>
-        LOG.debug(s"Cant connect to member $id")
+        LOG.debug(s"Can't connect to member $id")
         false
       case e: Exception => 
         LOG.error(s"Requesting vote: ${e.getMessage()}")
         false
     } get
   }
+  
+  def voteForMyself = votedFor.set(Some(id))
 
   def forwardCommand(command: Command) = connector.send(this, command)
-
-  def on(command: Command)(implicit cluster: Cluster) = currentState on command
 
   def becomeLeader(term: Int)(implicit cluster: Cluster) = become(Leader, term)
 
@@ -142,10 +146,6 @@ class Member(val binding: String) extends Logging {
 
   def becomeFollower(term: Int)(implicit cluster: Cluster) = become(Follower, term)
 
-  def setNextLogIndex(index: Int) = nextLogIndex.set(index)
-  
-  def voteForMyself() = votedFor.set(Some(id))
-  
   private def become(newState: State, term: Int)(implicit cluster: Cluster) = {
     LOG.info(s"Transition from $state to $newState")
     currentState stop

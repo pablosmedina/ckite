@@ -38,10 +38,11 @@ case object Follower extends State with Logging {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
       ElectionTimeout.restart
+      cluster.local.updateTermIfNeeded(appendEntries.term)
+      
       if (cluster.updateLeader(appendEntries.leaderId)) {
     	LOG.info(s"Following ${cluster.leader}")
       }
-      cluster.local.updateTermIfNeeded(appendEntries.term)
 
       val success = RLog.tryAppend(appendEntries)
       
@@ -104,7 +105,7 @@ case object ElectionTimeout extends Logging {
         Try {
           Thread.currentThread().setName("ElectionTimeout")
           cluster updateContextInfo
-          val electionTimeout =  cluster.configuration.minElectionTimeout + random.nextInt(cluster.configuration.maxElectionTimeout - cluster.configuration.minElectionTimeout)
+          val electionTimeout =  randomTimeout
           LOG.trace(s"New timeout is $electionTimeout ms")
           Thread.sleep(electionTimeout)
           LOG.debug("Timeout reached! Time to elect a new Leader")
@@ -112,6 +113,11 @@ case object ElectionTimeout extends Logging {
         } recover { case e: Exception => LOG.debug("Election timeout interrupted") }
       }
     }))
+  }
+  
+  private def randomTimeout(implicit cluster: Cluster) = {
+    val conf = cluster.configuration
+    conf.minElectionTimeout + random.nextInt(conf.maxElectionTimeout - conf.minElectionTimeout)
   }
 
   private def currentTimeoutFuture() = timeoutFuture.get()

@@ -53,20 +53,19 @@ object RLog extends Logging {
   }
 
   def commit(logEntry: LogEntry)(implicit cluster: Cluster) = {
-    val entryIndex = logEntry.index
-    val entryOption = entries.get(entryIndex)
+    val entryOption = entries.get(logEntry.index)
     if (entryOption.isDefined) {
       val entry = entryOption.get
     	if (entry.term == cluster.local.term) {
-    		commitEntriesUntil(entryIndex)
-    		safeCommit(entryIndex)
+    		commitEntriesUntil(logEntry.index)
+    		safeCommit(logEntry.index)
     	} else {
     		LOG.info(s"Unsafe to commit an old term entry: $entry")
     	}
     }
   }
 
-  def commitEntriesUntil(entryIndex: Int) = {
+  private def commitEntriesUntil(entryIndex: Int) = {
     (commitIndex.intValue() + 1) until entryIndex foreach { index =>
       if (entries.contains(index)) {
         safeCommit(index)
@@ -74,7 +73,7 @@ object RLog extends Logging {
     }
   }
 
-  def commitUntil(leaderCommitIndex: Int) = {
+ private def commitUntil(leaderCommitIndex: Int) = {
     if (leaderCommitIndex > commitIndex.intValue()) {
       (commitIndex.intValue() + 1) to leaderCommitIndex foreach { index => safeCommit(index) }
     }
@@ -99,9 +98,7 @@ object RLog extends Logging {
     stateMachine.apply(command)
   }
 
-  def resetLastLog() = {
-    lastLog.set(findLastLogIndex)
-  }
+  def resetLastLog() = lastLog.set(findLastLogIndex)
 
   def findLastLogIndex(): Int = {
     if (entries.isEmpty) return 0

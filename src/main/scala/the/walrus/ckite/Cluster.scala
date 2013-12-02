@@ -16,19 +16,24 @@ class Cluster(val configuration: Configuration) extends Logging {
   val InitialTerm = 0
   val leader = new AtomicReference[Option[Member]](None)
   val local = new Member(configuration.localBinding)
-  val members = configuration.membersBindings.map( binding => new Member(binding))
+  val members = configuration.membersBindings.map( binding => new Member(binding) )
   
   def start = {
+	updateContextInfo
+	LOG.info("Start CKite Cluster")
     local becomeFollower InitialTerm
-    updateContextInfo
   }
 
   def on(requestVote: RequestVote) = {
+    updateContextInfo
     LOG.debug(s"RequestVote received: $requestVote")
     local on requestVote
   }
 
-  def on(appendEntries: AppendEntries) = local on appendEntries
+  def on(appendEntries: AppendEntries) = {
+    updateContextInfo
+    local on appendEntries
+  }
 
   def on(command: Command) = synchronized {
 	LOG.debug(s"Command received: $command")
@@ -36,10 +41,19 @@ class Cluster(val configuration: Configuration) extends Logging {
     updateContextInfo
     local on command
   }
+  
+  //Don't broadcast heartbeats during outstanding Command processing
+  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
+    members.par foreach { member =>
+                  Thread.currentThread().setName("Heartbeater")
+			      updateContextInfo
+			      member.sendHeartbeat(term)(cluster)
+    }
+  }
 
-  def onQueryReceived(query: Command) = {
-    LOG.debug(s"Query received: $query")
-    RLog.execute(query)
+  def onReadonly(readonlyCommand: Command) = {
+    LOG.debug(s"Readonly command received: $readonlyCommand")
+    RLog execute readonlyCommand
   }
 
   def collectVotes = {
@@ -50,14 +64,6 @@ class Cluster(val configuration: Configuration) extends Logging {
       }
     val votes = eventualFollowers.size + 1 //vote for myself
     votes
-  }
-
-  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = {
-    members.par foreach { member =>
-                  Thread.currentThread().setName("Heartbeater")
-			      updateContextInfo
-			      member.sendHeartbeat(term)(cluster)
-    }
   }
 
   def forwardToLeader(command: Command) = {

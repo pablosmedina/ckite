@@ -45,17 +45,15 @@ case object Leader extends State {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
       cluster.local.becomeFollower(cluster.local.term)
     } else {
-      LOG.info(s"Start being Leader")
       cluster.updateLeader(cluster.local.id)
       resetLastLog
       resetNextIndexes
       Heartbeater start term
+      LOG.info(s"Start being Leader")
     }
   }
 
-  private def resetLastLog(implicit cluster: Cluster) = {
-    RLog.resetLastLog()
-  }
+  private def resetLastLog(implicit cluster: Cluster) = RLog.resetLastLog()
 
   private def resetNextIndexes(implicit cluster: Cluster) = {
     val nextIndex = RLog.lastLog.intValue() + 1
@@ -75,7 +73,7 @@ case object Leader extends State {
     val replicationAcks = Replicator.replicate(appendEntriesFor(logEntry))
     LOG.info(s"Got $replicationAcks replication acks")
     if (replicationAcks + 1 >= cluster.majority) {
-      RLog.commit(logEntry)
+      RLog commit logEntry
     } else {
       LOG.info("Uncommited entry due to no majority")
     }
@@ -150,9 +148,7 @@ object Heartbeater extends Logging {
           
           Thread.currentThread().setName(Name)
           do {
-            cluster.synchronized {
-            	cluster.broadcastHeartbeats(term)
-             }
+            cluster.broadcastHeartbeats(term)
             Thread.sleep(cluster.configuration.heartbeatsInterval)
           } while (true)
         } catch { case e: Exception => LOG.debug("Heartbeats interrupted") }

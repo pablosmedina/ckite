@@ -23,7 +23,8 @@ case object Candidate extends State {
   override def begin(term: Int)(implicit cluster: Cluster) = {
     val inTerm = cluster.local.incrementTerm
     cluster.setNoLeader
-    cluster.local.voteForMyself()
+    cluster.local voteForMyself
+    
     LOG.info(s"Start election")
     val votes = cluster collectVotes
     

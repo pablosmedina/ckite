@@ -29,7 +29,7 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] {
         }
         case Method.Get -> Root / "get" / key => Future.value {
           val response = Response()
-          val result = cluster.onQueryReceived(Get(key))
+          val result = cluster.onReadonly(Get(key))
           response.contentString = s"$result"
           response
         }

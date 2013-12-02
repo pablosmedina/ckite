@@ -35,18 +35,10 @@ class ThriftConnector(binding: String) extends Connector with Logging {
   
   override def send(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
    Try {
-      LOG.debug(s"Sending $appendEntries to ${member.id}")
-      client.sendAppendEntries(appendEntries).get
-    }
-  }
-  
-   override def sendHeartbeat(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
-   Try {
       LOG.trace(s"Sending $appendEntries to ${member.id}")
       client.sendAppendEntries(appendEntries).get
     }
   }
-  
   
   override def send(leader: Member, command: Command) = {
     client.forwardCommand(command)

@@ -2,9 +2,9 @@ package the.walrus.ckite
 
 class CKiteBuilder {
 
-  var minElectionTimeout: Int = 1000
-  var maxElectionTimeout: Int = 1250
-  var heartbeatsInterval: Int = 250
+  var minElectionTimeout: Int = 600
+  var maxElectionTimeout: Int = 1000
+  var heartbeatsInterval: Int = 200
   var localBinding: String = _
   var membersBindings: Seq[String]  = _
 
