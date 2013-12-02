@@ -1,15 +1,7 @@
 package the.walrus.ckite.executions;
 
-public class ExpectedResultFilter {
+public interface ExpectedResultFilter {
 
-	private final Object expected;
-
-	public ExpectedResultFilter(Object expected) {
-		this.expected = expected;
-	}
-	
-	public boolean matches(Object o) {
-		return o != null && expected.equals(o);
-	}
+	int matches(Object o);
 	
 }

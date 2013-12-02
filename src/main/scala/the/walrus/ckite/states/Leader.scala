@@ -20,6 +20,7 @@ import the.walrus.ckite.RLog
 import the.walrus.ckite.executions.Executions
 import the.walrus.ckite.executions.ExpectedResultFilter
 import java.lang.Boolean
+import the.walrus.ckite.Member
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -57,7 +58,7 @@ case object Leader extends State {
 
   private def resetNextIndexes(implicit cluster: Cluster) = {
     val nextIndex = RLog.lastLog.intValue() + 1
-    cluster.members.foreach { member => member.setNextLogIndex(nextIndex) }
+    cluster.membership.get.allMembers.foreach { member => member.setNextLogIndex(nextIndex) }
   }
 
   override def stop(implicit cluster: Cluster) = {
@@ -72,7 +73,8 @@ case object Leader extends State {
     LOG.info(s"Replicating log entry $logEntry")
     val replicationAcks = Replicator.replicate(appendEntriesFor(logEntry))
     LOG.info(s"Got $replicationAcks replication acks")
-    if (replicationAcks + 1 >= cluster.majority) {
+//    if (replicationAcks + 1 >= cluster.majority) {
+    if (replicationAcks + 1 >= 2) {
       RLog commit logEntry
     } else {
       LOG.info("Uncommited entry due to no majority")
@@ -116,22 +118,47 @@ object Replicator extends Logging {
   //replicate and wait for a majority of acks. 
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Int = {
     val execution = Executions.newExecution().withExecutor(executor)
-    cluster.members.foreach { member =>
-      execution.withTask(new Callable[Boolean] {
-        override def call(): Boolean = {
+    cluster.membership.get.allMembers.foreach { member =>
+      execution.withTask(new Callable[(Member, Boolean)] {
+        override def call(): (Member, Boolean) = {
           Thread.currentThread().setName(Name)
-          member.replicate(appendEntries)
+          (member, member replicate appendEntries)
         }
       })
     }
-    val expectedResults = cluster.majority - 1
+    val expectedResults = cluster.membership.get.majoritiesCount
     LOG.debug(s"Waiting for $expectedResults acks")
-    val filter:ExpectedResultFilter = new ExpectedResultFilter(true)
-    val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS).withExpectedResults(expectedResults, filter).execute[Boolean]()
-    val results: Iterable[Boolean] = rawResults
-    results.filter { result => result }.size
+//    val filter:ExpectedResultFilter = new ExpectedResultFilter(true)
+    val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS)
+    						  .withExpectedResults(expectedResults, new MajoritiesExpected(cluster)).execute[(Member,Boolean)]()
+    val results: Iterable[(Member,Boolean)] = rawResults
+    results.filter { result => result._2 }.size
   }
 
+}
+
+class MajoritiesExpected(cluster: Cluster) extends ExpectedResultFilter {
+  
+  val majorities: java.util.Map[Seq[Member], Int] = cluster.membership.get().majoritiesMap
+  
+  override def matches(x: Any) = {
+    val memberAck = x.asInstanceOf[(Member, Boolean)]
+    
+    val it = majorities.entrySet().iterator()
+    
+    while(it.hasNext()) {
+        val entry = it.next()
+         val members = entry.getKey()
+        if (memberAck._2 && members.contains(memberAck._1)) {
+             entry.setValue(entry.getValue() - 1)
+        }
+    }
+    
+    majorities.entrySet().filter { entry =>
+
+        entry.getValue() <= 0
+    }.size
+  }
 }
 
 object Heartbeater extends Logging {

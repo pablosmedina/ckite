@@ -44,7 +44,7 @@ class Member(val binding: String) extends Logging {
 //    }
   }
   
-  def sendHeartbeat(term: Int)(implicit cluster: Cluster) = {
+  def sendHeartbeat(term: Int)(implicit cluster: Cluster) = synchronized {
     LOG.trace(s"Sending heartbeat to $id in term ${term}")
     val appendEntries = createAppendEntries(term)
     connector.send(this, appendEntries).map {
@@ -60,7 +60,7 @@ class Member(val binding: String) extends Logging {
     }
   }
 
-  private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries = synchronized {
+  private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries =  {
     val entryToPiggyBack = RLog.getLogEntry(nextLogIndex.intValue())
     entryToPiggyBack match {
       case None => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex)
@@ -81,6 +81,9 @@ class Member(val binding: String) extends Logging {
       onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
       replicationResponse.success
     }.recover {
+      case ChannelWriteException(e:ConnectException)  =>
+        LOG.debug(s"Can't connect to member $id")
+        false
       case e: Exception =>
         LOG.error(s"Error replicating: ${e.getMessage()}",e)
         false

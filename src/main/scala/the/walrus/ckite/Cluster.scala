@@ -16,11 +16,13 @@ class Cluster(val configuration: Configuration) extends Logging {
   val InitialTerm = 0
   val leader = new AtomicReference[Option[Member]](None)
   val local = new Member(configuration.localBinding)
-  val members = configuration.membersBindings.map( binding => new Member(binding) )
+  
+  val membership = new AtomicReference[Membership]()
   
   def start = {
 	updateContextInfo
 	LOG.info("Start CKite Cluster")
+	membership.set(new StableMembership(configuration.membersBindings))
     local becomeFollower InitialTerm
   }
 
@@ -36,15 +38,15 @@ class Cluster(val configuration: Configuration) extends Logging {
   }
 
   def on(command: Command) = synchronized {
+	Thread.currentThread().setName("Command")
+	updateContextInfo
 	LOG.debug(s"Command received: $command")
-    Thread.currentThread().setName("Command")
-    updateContextInfo
     local on command
   }
   
   //Don't broadcast heartbeats during outstanding Command processing
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
-    members.par foreach { member =>
+    membership.get.allMembers.par foreach { member =>
                   Thread.currentThread().setName("Heartbeater")
 			      updateContextInfo
 			      member.sendHeartbeat(term)(cluster)
@@ -56,14 +58,14 @@ class Cluster(val configuration: Configuration) extends Logging {
     RLog execute readonlyCommand
   }
 
-  def collectVotes = {
-    val eventualFollowers = members.par filter { member => 
+  def collectVotes: Seq[Member] = {
+    val eventualFollowers = membership.get.allMembers.par filter { member => 
 	      Thread.currentThread().setName("CollectVotes")
 	      updateContextInfo
 	      member requestVote 
       }
-    val votes = eventualFollowers.size + 1 //vote for myself
-    votes
+//    val votes = eventualFollowers.size + 1 //vote for myself
+    eventualFollowers.seq :+ local //vote for myself
   }
 
   def forwardToLeader(command: Command) = {
@@ -92,9 +94,11 @@ class Cluster(val configuration: Configuration) extends Logging {
 
   def anyLeader =  leader.get() != None
 
-  def majority = ((members.size + 1) / 2) + 1
+  def majority = membership.get.majority
+  
+  def reachMajority(votes: Seq[Member]): Boolean = membership.get.reachMajority(votes)
 
-  private def obtainMember(memberId: String): Option[Member] = (members :+ local).find { _.id == memberId }
+  private def obtainMember(memberId: String): Option[Member] = (membership.get.allMembers :+ local).find { _.id == memberId }
 
   def updateContextInfo = {
     MDC.put("term", local.term.toString)

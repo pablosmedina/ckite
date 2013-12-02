@@ -62,8 +62,13 @@ public class ExecutionBuilder {
 				} catch (Exception ex) {
 					ex.printStackTrace();
 				} finally {
-					if (expectedResultFilter == null || expectedResultFilter.matches(result)) {
+					if (expectedResultFilter == null) {
 						countDownLatch.countDown();
+					} else {
+						int matches = expectedResultFilter.matches(result);
+						for(int i = 1; i <= matches; i ++) {
+							countDownLatch.countDown();
+						}
 					}
 				}
 				return addResult;

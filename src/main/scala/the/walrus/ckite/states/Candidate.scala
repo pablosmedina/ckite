@@ -28,8 +28,8 @@ case object Candidate extends State {
     LOG.info(s"Start election")
     val votes = cluster collectVotes
     
-    LOG.debug(s"Got $votes votes in a majority of ${cluster.majority}")
-    if (votes >= cluster.majority) {
+    LOG.debug(s"Got ${votes.size} votes in a majority of ${cluster.majority}")
+    if (cluster.reachMajority(votes)) {
       cluster.local becomeLeader inTerm
     } else {
       LOG.info(s"Not enough votes to be a Leader")
