@@ -18,11 +18,12 @@ import java.net.ConnectException
 import com.twitter.finagle.ChannelWriteException
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.states.Starter
+import the.walrus.ckite.rpc.ChangeCluster
 
 class Member(val binding: String) extends Logging {
 
   val currentTerm = new AtomicInteger(0)
-  val nextLogIndex = new AtomicInteger(0)
+  val nextLogIndex = new AtomicInteger(1)
   val state = new AtomicReference[State](Starter)
   val connector: Connector = new ThriftConnector(binding)
   val votedFor = new AtomicReference[Option[String]]
@@ -33,15 +34,13 @@ class Member(val binding: String) extends Logging {
 
   def on(command: Command)(implicit cluster: Cluster) = currentState on command
   
-  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
-//    cluster.synchronized {
+  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = cluster.synchronized {
       if (requestVote.term < term) {
         LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
         RequestVoteResponse(term, false)
       } else {
         currentState on requestVote
       }
-//    }
   }
   
   def sendHeartbeat(term: Int)(implicit cluster: Cluster) = synchronized {
@@ -76,7 +75,10 @@ class Member(val binding: String) extends Logging {
     }
   }
   
-  def replicate(appendEntries: AppendEntries) =  synchronized {
+  def replicate(appendEntries: AppendEntries) =  { 
+    LOG.info(s"Replicating to $id")
+    synchronized {
+      LOG.info(s"Do Replicating to $id")
     connector.send(this, appendEntries).map { replicationResponse =>
       onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
       replicationResponse.success
@@ -89,7 +91,7 @@ class Member(val binding: String) extends Logging {
         false
     } get
   }
-  
+  }
   private def onAppendEntriesResponseUpdateNextLogIndex(appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
       if (appendEntriesResponse.success) {
         nextLogIndex.incrementAndGet()

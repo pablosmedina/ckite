@@ -7,6 +7,7 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
+import the.walrus.ckite.rpc.ChangeCluster
 
 /** 	•! Increment currentTerm, vote for self
  * •! Reset election timeout

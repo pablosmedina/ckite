@@ -18,6 +18,7 @@ import the.walrus.ckite.Cluster
 import the.walrus.ckite.RLog
 import the.walrus.ckite.rpc.Get
 import the.walrus.ckite.rpc.Put
+import the.walrus.ckite.rpc.ChangeCluster
 
 class HttpService(cluster: Cluster) extends Service[Request, Response] {
   def apply(request: Request) = {
@@ -37,6 +38,12 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] {
           val response = Response()
           cluster on Put(key, value)
           response.contentString = s"put[$key,$value]"
+          response
+        }
+        case Method.Get -> Root / "changecluster" / bindings => Future.value {
+          val response = Response()
+          cluster on ChangeCluster(bindings.split(",").toList)
+          response.contentString = s"change cluster"
           response
         }
         case _ =>

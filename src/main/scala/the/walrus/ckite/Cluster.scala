@@ -8,6 +8,7 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import java.util.concurrent.Executors
+import the.walrus.ckite.rpc.ChangeCluster
 
 class Cluster(val configuration: Configuration) extends Logging {
 
@@ -22,7 +23,7 @@ class Cluster(val configuration: Configuration) extends Logging {
   def start = {
 	updateContextInfo
 	LOG.info("Start CKite Cluster")
-	membership.set(new StableMembership(configuration.membersBindings))
+	membership.set(new StableMembership(configuration.membersBindings.map(binding => new Member(binding))))
     local becomeFollower InitialTerm
   }
 
@@ -104,6 +105,20 @@ class Cluster(val configuration: Configuration) extends Logging {
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.get().toString)
   }
-
+  
+  def setStableMembership(changeCluster: ChangeCluster) = {
+   membership.set(createStableMembership(changeCluster.newBindings))
+   LOG.info(s"Membership ${membership.get()}")
+  }
+  
+  def setUnstableMembership(changeCluster: ChangeCluster) = {
+    val currentStableMembership = membership.get()
+    membership.set(new CompoundMembership(currentStableMembership, createStableMembership(changeCluster.newBindings)))
+     LOG.info(s"Membership ${membership.get()}")
+  }
+  
+  private def createStableMembership(bindings: Seq[String]): StableMembership = {
+    new StableMembership(bindings.filterNot { b => b == local.id }.map { binding => obtainMember(binding).getOrElse(new Member(binding))})
+  }
   
 }

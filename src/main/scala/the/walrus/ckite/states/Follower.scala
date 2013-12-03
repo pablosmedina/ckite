@@ -17,6 +17,7 @@ import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.RequestVote
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.RLog
+import the.walrus.ckite.rpc.ChangeCluster
 
 /**
  *  •! RePCs from candidates and leaders.

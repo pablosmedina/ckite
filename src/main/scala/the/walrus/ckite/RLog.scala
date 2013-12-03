@@ -9,6 +9,7 @@ import the.walrus.ckite.statemachine.kvstore.KVStore
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.SortedSet
 import the.walrus.ckite.rpc.AppendEntries
+import the.walrus.ckite.rpc.ChangeCluster
 
 //TODO: make me persistent
 object RLog extends Logging {
@@ -34,6 +35,10 @@ object RLog extends Logging {
     logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
       entries.put(logEntry.index, logEntry)
+      logEntry.command match {
+        case c: ChangeCluster => cluster.setUnstableMembership(c)
+        case _ => Unit
+      } 
     }
   }
 
@@ -65,7 +70,7 @@ object RLog extends Logging {
     }
   }
 
-  private def commitEntriesUntil(entryIndex: Int) = {
+  private def commitEntriesUntil(entryIndex: Int)(implicit cluster: Cluster) = {
     (commitIndex.intValue() + 1) until entryIndex foreach { index =>
       if (entries.contains(index)) {
         safeCommit(index)
@@ -73,13 +78,13 @@ object RLog extends Logging {
     }
   }
 
- private def commitUntil(leaderCommitIndex: Int) = {
+ private def commitUntil(leaderCommitIndex: Int)(implicit cluster: Cluster) = {
     if (leaderCommitIndex > commitIndex.intValue()) {
       (commitIndex.intValue() + 1) to leaderCommitIndex foreach { index => safeCommit(index) }
     }
   }
 
-  private def safeCommit(entryIndex: Int) = {
+  private def safeCommit(entryIndex: Int)(implicit cluster: Cluster) = {
     val entryOption = entries.get(entryIndex)
     if (entryOption.isDefined) {
       val entry = entryOption.get
@@ -93,9 +98,12 @@ object RLog extends Logging {
     }
   }
 
-  def execute(command: Command) = {
+  def execute(command: Command)(implicit cluster: Cluster) = {
     LOG.info(s"Executing $command")
-    stateMachine.apply(command)
+    command match {
+        case c: ChangeCluster => cluster.setStableMembership(c)
+        case _ => stateMachine.apply(command)
+      } 
   }
 
   def resetLastLog() = lastLog.set(findLastLogIndex)

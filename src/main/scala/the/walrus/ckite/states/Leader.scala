@@ -21,6 +21,7 @@ import the.walrus.ckite.executions.Executions
 import the.walrus.ckite.executions.ExpectedResultFilter
 import java.lang.Boolean
 import the.walrus.ckite.Member
+import the.walrus.ckite.rpc.ChangeCluster
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -73,8 +74,7 @@ case object Leader extends State {
     LOG.info(s"Replicating log entry $logEntry")
     val replicationAcks = Replicator.replicate(appendEntriesFor(logEntry))
     LOG.info(s"Got $replicationAcks replication acks")
-//    if (replicationAcks + 1 >= cluster.majority) {
-    if (replicationAcks + 1 >= 2) {
+    if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
       RLog commit logEntry
     } else {
       LOG.info("Uncommited entry due to no majority")
@@ -106,7 +106,7 @@ case object Leader extends State {
       cluster.local on requestVote 
     }
   }
-
+  
 }
 
 object Replicator extends Logging {
@@ -116,7 +116,7 @@ object Replicator extends Logging {
   val executor = Executors.newFixedThreadPool(50) //TODO: to be configurable
   
   //replicate and wait for a majority of acks. 
-  def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Int = {
+  def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(executor)
     cluster.membership.get.allMembers.foreach { member =>
       execution.withTask(new Callable[(Member, Boolean)] {
@@ -132,7 +132,8 @@ object Replicator extends Logging {
     val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS)
     						  .withExpectedResults(expectedResults, new MajoritiesExpected(cluster)).execute[(Member,Boolean)]()
     val results: Iterable[(Member,Boolean)] = rawResults
-    results.filter { result => result._2 }.size
+    val mapres = results.filter { result => result._2 }.map { result => result._1 }
+    mapres.toSeq
   }
 
 }
