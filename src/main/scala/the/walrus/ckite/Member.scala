@@ -18,7 +18,8 @@ import java.net.ConnectException
 import com.twitter.finagle.ChannelWriteException
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.states.Starter
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.MajorityJointConsensus
 
 class Member(val binding: String) extends Logging {
 
@@ -33,6 +34,8 @@ class Member(val binding: String) extends Logging {
   def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
 
   def on(command: Command)(implicit cluster: Cluster) = currentState on command
+  
+  def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = currentState on jointConsensusCommited
   
   def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = cluster.synchronized {
       if (requestVote.term < term) {
@@ -78,7 +81,6 @@ class Member(val binding: String) extends Logging {
   def replicate(appendEntries: AppendEntries) =  { 
     LOG.info(s"Replicating to $id")
     synchronized {
-      LOG.info(s"Do Replicating to $id")
     connector.send(this, appendEntries).map { replicationResponse =>
       onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
       replicationResponse.success
@@ -87,7 +89,7 @@ class Member(val binding: String) extends Logging {
         LOG.debug(s"Can't connect to member $id")
         false
       case e: Exception =>
-        LOG.error(s"Error replicating: ${e.getMessage()}",e)
+        LOG.error(s"Error replicating to $id: ${e.getMessage()}",e)
         false
     } get
   }

@@ -5,6 +5,8 @@ import java.util.HashMap
 trait Membership {
 
   def allMembers: Seq[Member]
+  
+  def allMembersBut(local: Member): Seq[Member]
 
   def reachMajority(votes: Seq[Member]): Boolean
 
@@ -16,15 +18,17 @@ trait Membership {
 
 }
 
-class StableMembership(members: Seq[Member]) extends Membership {
+class SimpleConsensusMembership(members: Seq[Member]) extends Membership {
 
   override def allMembers = members
+  
+  override def allMembersBut(local: Member): Seq[Member] = allMembers diff Seq(local)
 
   override def reachMajority(votes: Seq[Member]): Boolean = {
     votes.size >= internalMajority
   }
 
-  def internalMajority = ((members.size + 1) / 2) + 1
+  def internalMajority = ((members.size ) / 2) + 1
 
   override def majority: String = s"simple majority of ${internalMajority}"
 
@@ -32,7 +36,7 @@ class StableMembership(members: Seq[Member]) extends Membership {
 
   override def majoritiesMap: java.util.Map[Seq[Member], Int] = {
     val map = new HashMap[Seq[Member], Int]()
-    map.put(members, (internalMajority - 1))
+    map.put(members, internalMajority)
     map
   }
   
@@ -42,10 +46,12 @@ class StableMembership(members: Seq[Member]) extends Membership {
 
 }
 
-class CompoundMembership(oldMembership: Membership, newMembership: Membership) extends Membership {
+class JointConsensusMembership(oldMembership: Membership, newMembership: Membership) extends Membership {
 
   override def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
+  override def allMembersBut(local: Member): Seq[Member] = allMembers diff Seq(local)
+  
   override def reachMajority(votes: Seq[Member]): Boolean = {
     oldMembership.reachMajority(votes) && newMembership.reachMajority(votes)
   }
@@ -61,6 +67,6 @@ class CompoundMembership(oldMembership: Membership, newMembership: Membership) e
   }
 
   override def toString(): String = {
-    allMembers.map {m => m.id }.mkString(",")
+    s"[Cold=(${oldMembership}), Cnew=(${newMembership})]"
   }
 }

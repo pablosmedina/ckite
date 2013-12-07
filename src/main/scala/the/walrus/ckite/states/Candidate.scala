@@ -7,7 +7,7 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
 
 /** 	•! Increment currentTerm, vote for self
  * •! Reset election timeout
@@ -60,5 +60,5 @@ case object Candidate extends State {
   override def on(command: Command)(implicit cluster: Cluster) = {
     cluster.forwardToLeader(command)
   }
-
+  
 }

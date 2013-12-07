@@ -9,7 +9,10 @@ import the.walrus.ckite.statemachine.kvstore.KVStore
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.SortedSet
 import the.walrus.ckite.rpc.AppendEntries
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.LeaveJointConsensus
+import the.walrus.ckite.rpc.MajorityJointConsensus
+import the.walrus.ckite.rpc.EnterJointConsensus
 
 //TODO: make me persistent
 object RLog extends Logging {
@@ -36,7 +39,8 @@ object RLog extends Logging {
       LOG.info(s"Appending log entry $logEntry")
       entries.put(logEntry.index, logEntry)
       logEntry.command match {
-        case c: ChangeCluster => cluster.setUnstableMembership(c)
+        case c: EnterJointConsensus => cluster.apply(c)
+        case c: LeaveJointConsensus => cluster.apply(c)
         case _ => Unit
       } 
     }
@@ -90,8 +94,8 @@ object RLog extends Logging {
       val entry = entryOption.get
     	if (entryIndex > commitIndex.intValue()) {
     		LOG.info(s"Commiting entry $entry")
-    		execute(entry.command)
     		commitIndex.set(entry.index)
+    		execute(entry.command)
     	} else {
     		LOG.info(s"Already commited entry $entry")
     	}
@@ -101,7 +105,8 @@ object RLog extends Logging {
   def execute(command: Command)(implicit cluster: Cluster) = {
     LOG.info(s"Executing $command")
     command match {
-        case c: ChangeCluster => cluster.setStableMembership(c)
+        case c: EnterJointConsensus => cluster.on(MajorityJointConsensus(c.newBindings))
+        case c: LeaveJointConsensus => Unit
         case _ => stateMachine.apply(command)
       } 
   }

@@ -18,32 +18,39 @@ import the.walrus.ckite.Cluster
 import the.walrus.ckite.RLog
 import the.walrus.ckite.rpc.Get
 import the.walrus.ckite.rpc.Put
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import com.twitter.util.FuturePool
+import java.util.concurrent.Executors
 
 class HttpService(cluster: Cluster) extends Service[Request, Response] {
+  
+  val futurePool = FuturePool(Executors.newFixedThreadPool(8))
+  
   def apply(request: Request) = {
       request.method -> Path(request.path) match {
-        case Method.Get -> Root / "rlog" => Future.value {
+        case Method.Get -> Root / "rlog" => futurePool {
           val response = Response()
           response.contentString = RLog.toString
           response
         }
-        case Method.Get -> Root / "get" / key => Future.value {
+        case Method.Get -> Root / "get" / key => futurePool {
           val response = Response()
           val result = cluster.onReadonly(Get(key))
           response.contentString = s"$result"
           response
         }
-        case Method.Get -> Root / "put" / key / value => Future.value {
+        case Method.Get -> Root / "put" / key / value => futurePool {
+          Thread.currentThread().setName("Command")
           val response = Response()
           cluster on Put(key, value)
           response.contentString = s"put[$key,$value]"
           response
         }
-        case Method.Get -> Root / "changecluster" / bindings => Future.value {
+        case Method.Get -> Root / "changecluster" / bindings => futurePool {
+          Thread.currentThread().setName("ClusterMembershipChange")
           val response = Response()
-          cluster on ChangeCluster(bindings.split(",").toList)
-          response.contentString = s"change cluster"
+          cluster on EnterJointConsensus(bindings.split(",").toList)
+          response.contentString = s"ClusterMembershipChange ok"
           response
         }
         case _ =>

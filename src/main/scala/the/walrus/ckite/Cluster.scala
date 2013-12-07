@@ -8,7 +8,9 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import java.util.concurrent.Executors
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.LeaveJointConsensus
+import the.walrus.ckite.rpc.MajorityJointConsensus
 
 class Cluster(val configuration: Configuration) extends Logging {
 
@@ -23,7 +25,7 @@ class Cluster(val configuration: Configuration) extends Logging {
   def start = {
 	updateContextInfo
 	LOG.info("Start CKite Cluster")
-	membership.set(new StableMembership(configuration.membersBindings.map(binding => new Member(binding))))
+	membership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local ))
     local becomeFollower InitialTerm
   }
 
@@ -39,15 +41,18 @@ class Cluster(val configuration: Configuration) extends Logging {
   }
 
   def on(command: Command) = synchronized {
-	Thread.currentThread().setName("Command")
 	updateContextInfo
 	LOG.debug(s"Command received: $command")
     local on command
   }
   
+  def on(majorityJointConsensus: MajorityJointConsensus) = {
+    local on majorityJointConsensus
+  }
+  
   //Don't broadcast heartbeats during outstanding Command processing
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
-    membership.get.allMembers.par foreach { member =>
+    membership.get.allMembersBut(local).par foreach { member =>
                   Thread.currentThread().setName("Heartbeater")
 			      updateContextInfo
 			      member.sendHeartbeat(term)(cluster)
@@ -60,7 +65,7 @@ class Cluster(val configuration: Configuration) extends Logging {
   }
 
   def collectVotes: Seq[Member] = {
-    val eventualFollowers = membership.get.allMembers.par filter { member => 
+    val eventualFollowers = membership.get.allMembersBut(local).par filter { member => 
 	      Thread.currentThread().setName("CollectVotes")
 	      updateContextInfo
 	      member requestVote 
@@ -99,26 +104,28 @@ class Cluster(val configuration: Configuration) extends Logging {
   
   def reachMajority(votes: Seq[Member]): Boolean = membership.get.reachMajority(votes)
 
-  private def obtainMember(memberId: String): Option[Member] = (membership.get.allMembers :+ local).find { _.id == memberId }
+  private def obtainMember(memberId: String): Option[Member] = (membership.get.allMembers).find { _.id == memberId }
 
   def updateContextInfo = {
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.get().toString)
   }
   
-  def setStableMembership(changeCluster: ChangeCluster) = {
-   membership.set(createStableMembership(changeCluster.newBindings))
-   LOG.info(s"Membership ${membership.get()}")
+  def apply(enterJointConsensus: EnterJointConsensus) = {
+    LOG.info(s"Entering in JointConsensus")
+    val currentMembership = membership.get()
+    membership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
+    LOG.info(s"Membership ${membership.get()}")
   }
   
-  def setUnstableMembership(changeCluster: ChangeCluster) = {
-    val currentStableMembership = membership.get()
-    membership.set(new CompoundMembership(currentStableMembership, createStableMembership(changeCluster.newBindings)))
-     LOG.info(s"Membership ${membership.get()}")
+  def apply(leaveJointConsensus: LeaveJointConsensus) = {
+    LOG.info(s"Leaving JointConsensus")
+    membership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
+    LOG.info(s"Membership ${membership.get()}")
   }
   
-  private def createStableMembership(bindings: Seq[String]): StableMembership = {
-    new StableMembership(bindings.filterNot { b => b == local.id }.map { binding => obtainMember(binding).getOrElse(new Member(binding))})
+  private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleConsensusMembership = {
+    new SimpleConsensusMembership(bindings.map { binding => obtainMember(binding).getOrElse(new Member(binding))})
   }
   
 }

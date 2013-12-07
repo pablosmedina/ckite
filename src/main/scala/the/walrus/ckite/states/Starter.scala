@@ -7,7 +7,7 @@ import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.RequestVote
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.RequestVoteResponse
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
 
 case object Starter extends State {
 

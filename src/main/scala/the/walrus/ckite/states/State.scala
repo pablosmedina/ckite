@@ -7,7 +7,8 @@ import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.RequestVote
 import the.walrus.ckite.rpc.AppendEntries
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.MajorityJointConsensus
 
 trait State extends Logging {
 
@@ -20,6 +21,8 @@ trait State extends Logging {
   def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse
 
   def on(command: Command)(implicit cluster: Cluster) = {}
+  
+  def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = {}
   
   /**
    * Step down from being either Candidate or Leader and start following the given Leader

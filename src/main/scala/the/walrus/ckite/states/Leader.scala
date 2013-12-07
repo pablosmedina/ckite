@@ -21,7 +21,9 @@ import the.walrus.ckite.executions.Executions
 import the.walrus.ckite.executions.ExpectedResultFilter
 import java.lang.Boolean
 import the.walrus.ckite.Member
-import the.walrus.ckite.rpc.ChangeCluster
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.MajorityJointConsensus
+import the.walrus.ckite.rpc.LeaveJointConsensus
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -59,7 +61,7 @@ case object Leader extends State {
 
   private def resetNextIndexes(implicit cluster: Cluster) = {
     val nextIndex = RLog.lastLog.intValue() + 1
-    cluster.membership.get.allMembers.foreach { member => member.setNextLogIndex(nextIndex) }
+    cluster.membership.get.allMembersBut(cluster.local).foreach { member => member.setNextLogIndex(nextIndex) }
   }
 
   override def stop(implicit cluster: Cluster) = {
@@ -107,28 +109,35 @@ case object Leader extends State {
     }
   }
   
+  override def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = {
+	 LOG.info(s"Sending LeaveJointConsensus")
+     cluster.on(LeaveJointConsensus(jointConsensusCommited.newBindings))
+  }
+  
 }
 
 object Replicator extends Logging {
 
   val Name = "Replicator"
-  val ReplicateTimeout = 5000 //TODO: to be configurable
+  val ReplicateTimeout = 8000 //TODO: to be configurable
   val executor = Executors.newFixedThreadPool(50) //TODO: to be configurable
   
   //replicate and wait for a majority of acks. 
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(executor)
-    cluster.membership.get.allMembers.foreach { member =>
+    cluster.membership.get.allMembersBut(cluster.local).foreach { member =>
       execution.withTask(new Callable[(Member, Boolean)] {
         override def call(): (Member, Boolean) = {
-          Thread.currentThread().setName(Name)
-          (member, member replicate appendEntries)
+          val originalName = Thread.currentThread().getName()
+          Thread.currentThread().setName(s"$Name-$member")
+          val result:(Member, Boolean) = (member, member replicate appendEntries)
+          Thread.currentThread().setName(originalName)
+          result
         }
       })
     }
     val expectedResults = cluster.membership.get.majoritiesCount
-    LOG.debug(s"Waiting for $expectedResults acks")
-//    val filter:ExpectedResultFilter = new ExpectedResultFilter(true)
+    LOG.debug(s"Waiting for $expectedResults majority consisting of ${cluster.membership.get.majoritiesMap} until $ReplicateTimeout ms")
     val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS)
     						  .withExpectedResults(expectedResults, new MajoritiesExpected(cluster)).execute[(Member,Boolean)]()
     val results: Iterable[(Member,Boolean)] = rawResults
@@ -156,8 +165,7 @@ class MajoritiesExpected(cluster: Cluster) extends ExpectedResultFilter {
     }
     
     majorities.entrySet().filter { entry =>
-
-        entry.getValue() <= 0
+        entry.getValue() <= 1 //the remaining one is the local member who counts for majority
     }.size
   }
 }
