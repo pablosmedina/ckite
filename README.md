@@ -1,7 +1,7 @@
 CKite
 =====
 
-A Scala implementation of the Raft distributed consensus algorithm. It includes leader election, log replication and cluster membership changes.
+A Scala implementation of the Raft distributed consensus algorithm. It includes Leader Election, Log Replication and Cluster Membership Changes.
 
 ## Example (3 members)
 
