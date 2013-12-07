@@ -25,6 +25,14 @@ curl http://localhost:9091/put/key1/value1
 ```bash
 curl http://localhost:9092/rlog
 ```
+#### Add a new member (localhost:9094) to the Cluster
+```bash
+curl http://localhost:9091/changecluster/localhost:9091,localhost:9092,localhost:9093,localhost:9094
+```
+#### Run Member 4
+```bash
+sbt run -Dport=9094 -Dmembers=localhost:9092,localhost:9091,localhost:9093
+```
 
 ## Implementation details
 
@@ -37,7 +45,7 @@ curl http://localhost:9092/rlog
 
   * Persistent state
   * Log persistence & compaction
-  * Cluster Membership changes
+  * ~~Cluster Membership changes~~
   * Embedded & standalone modes
   * Pluggable state machine (first implementation is a Map supporting puts and gets)
   * Metrics / monitoring
