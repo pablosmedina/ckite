@@ -11,6 +11,7 @@ import java.util.concurrent.Executors
 import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.LeaveJointConsensus
 import the.walrus.ckite.rpc.MajorityJointConsensus
+import the.walrus.ckite.rpc.RequestVoteResponse
 
 class Cluster(val configuration: Configuration) extends Logging {
 
@@ -32,6 +33,10 @@ class Cluster(val configuration: Configuration) extends Logging {
   def on(requestVote: RequestVote) = {
     updateContextInfo
     LOG.debug(s"RequestVote received: $requestVote")
+    if (obtainMember(requestVote.memberId).isEmpty) {
+      LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
+      RequestVoteResponse(local term, false)
+    }
     local on requestVote
   }
 
