@@ -1,7 +1,7 @@
 CKite
 =====
 
-A Scala implementation of the Raft distributed consensus algorithm. 
+A Scala implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/). CKite is a library to be used by distributed applications needing consensus agreement. It is a work in constant progress. For development & testing purposes it contains an embedded key-value store app demonstrating the algorithm functioning trough simple puts and gets. It will be extracted soon from the CKite library as an example of use.
 
 ## Features
 
@@ -48,6 +48,10 @@ sbt run -Dport=9094 -Dmembers=localhost:9092,localhost:9091,localhost:9093
   * Twitter Finagle.
   * Thrift.
   * Twitter Scrooge.
+
+## Contributions
+
+Feel free to contribute to CKite!. Any kind of help will be very welcome. We are happy to receive pull requests, discuss implementation details, analyze the raft algorithm and whatever it makes CKite a better library.
 
 ## Pendings/WorkToDo 
 
