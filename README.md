@@ -60,6 +60,8 @@ Feel free to contribute to CKite!. Any kind of help will be very welcome. We are
 
 ## Pendings/WorkToDo 
 
+  * ~~Leader election~~
+  * ~~Log replication~~
   * ~~Cluster Membership changes~~
   * Log persistence & compaction
   * Extract the key value store app from CKite
