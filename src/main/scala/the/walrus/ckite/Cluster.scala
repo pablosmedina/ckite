@@ -21,12 +21,12 @@ class Cluster(val configuration: Configuration) extends Logging {
   val leader = new AtomicReference[Option[Member]](None)
   val local = new Member(configuration.localBinding)
   
-  val membership = new AtomicReference[Membership]()
+  val consensusMembership = new AtomicReference[Membership]()
   
   def start = {
 	updateContextInfo
 	LOG.info("Start CKite Cluster")
-	membership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local ))
+	consensusMembership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local ))
     local becomeFollower InitialTerm
   }
 
@@ -57,7 +57,7 @@ class Cluster(val configuration: Configuration) extends Logging {
   
   //Don't broadcast heartbeats during outstanding Command processing
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
-    membership.get.allMembersBut(local).par foreach { member =>
+    membership.allMembersBut(local).par foreach { member =>
                   Thread.currentThread().setName("Heartbeater")
 			      updateContextInfo
 			      member.sendHeartbeat(term)(cluster)
@@ -70,7 +70,7 @@ class Cluster(val configuration: Configuration) extends Logging {
   }
 
   def collectVotes: Seq[Member] = {
-    val eventualFollowers = membership.get.allMembersBut(local).par filter { member => 
+    val eventualFollowers = consensusMembership.get.allMembersBut(local).par filter { member => 
 	      Thread.currentThread().setName("CollectVotes")
 	      updateContextInfo
 	      member requestVote 
@@ -105,11 +105,11 @@ class Cluster(val configuration: Configuration) extends Logging {
 
   def anyLeader =  leader.get() != None
 
-  def majority = membership.get.majority
+  def majority = membership.majority
   
-  def reachMajority(votes: Seq[Member]): Boolean = membership.get.reachMajority(votes)
+  def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
 
-  private def obtainMember(memberId: String): Option[Member] = (membership.get.allMembers).find { _.id == memberId }
+  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
 
   def updateContextInfo = {
     MDC.put("term", local.term.toString)
@@ -118,19 +118,23 @@ class Cluster(val configuration: Configuration) extends Logging {
   
   def apply(enterJointConsensus: EnterJointConsensus) = {
     LOG.info(s"Entering in JointConsensus")
-    val currentMembership = membership.get()
-    membership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
-    LOG.info(s"Membership ${membership.get()}")
+    val currentMembership = consensusMembership.get()
+    consensusMembership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
+    LOG.info(s"Membership ${consensusMembership.get()}")
   }
   
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
-    membership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
-    LOG.info(s"Membership ${membership.get()}")
+    consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
+    LOG.info(s"Membership ${consensusMembership.get()}")
   }
   
   private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleConsensusMembership = {
     new SimpleConsensusMembership(bindings.map { binding => obtainMember(binding).getOrElse(new Member(binding))})
   }
+  
+  def membership = consensusMembership.get()
+  
+  def hasRemoteMembers = !membership.allMembersBut(local).isEmpty
   
 }

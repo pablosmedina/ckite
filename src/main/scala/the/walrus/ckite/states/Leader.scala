@@ -61,7 +61,7 @@ case object Leader extends State {
 
   private def resetNextIndexes(implicit cluster: Cluster) = {
     val nextIndex = RLog.lastLog.intValue() + 1
-    cluster.membership.get.allMembersBut(cluster.local).foreach { member => member.setNextLogIndex(nextIndex) }
+    cluster.membership.allMembersBut(cluster.local).foreach { member => member.setNextLogIndex(nextIndex) }
   }
 
   override def stop(implicit cluster: Cluster) = {
@@ -74,8 +74,14 @@ case object Leader extends State {
     val logEntry = LogEntry(cluster.local.term, RLog.nextLogIndex, command)
     RLog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
-    val replicationAcks = Replicator.replicate(appendEntriesFor(logEntry))
-    LOG.info(s"Got $replicationAcks replication acks")
+    val replicationAcks = if (cluster.hasRemoteMembers) {
+      val acks = Replicator.replicate(appendEntriesFor(logEntry))
+      LOG.info(s"Got replication acks from $acks")
+      acks
+    } else  {
+    	LOG.info(s"No member to replicate")
+        Seq()
+    }
     if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
       RLog commit logEntry
     } else {
@@ -125,7 +131,7 @@ object Replicator extends Logging {
   //replicate and wait for a majority of acks. 
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(executor)
-    cluster.membership.get.allMembersBut(cluster.local).foreach { member =>
+    cluster.membership.allMembersBut(cluster.local).foreach { member =>
       execution.withTask(new Callable[(Member, Boolean)] {
         override def call(): (Member, Boolean) = {
           val originalName = Thread.currentThread().getName()
@@ -136,8 +142,8 @@ object Replicator extends Logging {
         }
       })
     }
-    val expectedResults = cluster.membership.get.majoritiesCount
-    LOG.debug(s"Waiting for $expectedResults majority consisting of ${cluster.membership.get.majoritiesMap} until $ReplicateTimeout ms")
+    val expectedResults = cluster.membership.majoritiesCount
+    LOG.debug(s"Waiting for $expectedResults majority consisting of ${cluster.membership.majoritiesMap} until $ReplicateTimeout ms")
     val rawResults = execution.withTimeout(ReplicateTimeout, TimeUnit.MILLISECONDS)
     						  .withExpectedResults(expectedResults, new MajoritiesExpected(cluster)).execute[(Member,Boolean)]()
     val results: Iterable[(Member,Boolean)] = rawResults
@@ -149,7 +155,7 @@ object Replicator extends Logging {
 
 class MajoritiesExpected(cluster: Cluster) extends ExpectedResultFilter {
   
-  val majorities: java.util.Map[Seq[Member], Int] = cluster.membership.get().majoritiesMap
+  val majorities: java.util.Map[Seq[Member], Int] = cluster.membership.majoritiesMap
   
   override def matches(x: Any) = {
     val memberAck = x.asInstanceOf[(Member, Boolean)]
