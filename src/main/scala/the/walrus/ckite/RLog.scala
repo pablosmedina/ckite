@@ -1,11 +1,10 @@
 package the.walrus.ckite
 
 import the.walrus.ckite.rpc.LogEntry
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import java.util.concurrent.atomic.AtomicInteger
 import the.walrus.ckite.util.Logging
 import the.walrus.ckite.statemachine.StateMachine
-import the.walrus.ckite.statemachine.kvstore.KVStore
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable.SortedSet
 import the.walrus.ckite.rpc.AppendEntries
@@ -13,14 +12,15 @@ import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.LeaveJointConsensus
 import the.walrus.ckite.rpc.MajorityJointConsensus
 import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.ReadCommand
+import the.walrus.ckite.rpc.Command
 
 //TODO: make me persistent
-object RLog extends Logging {
+class RLog(stateMachine: StateMachine) extends Logging {
 
   val entries = TrieMap[Int, LogEntry]()
   val commitIndex = new AtomicInteger(0)
   val lastLog = new AtomicInteger(0)
-  val stateMachine: StateMachine = new KVStore()
 
   def tryAppend(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
     LOG.trace(s"try appending $appendEntries")
@@ -109,6 +109,10 @@ object RLog extends Logging {
         case c: LeaveJointConsensus => Unit
         case _ => stateMachine.apply(command)
       } 
+  }
+  
+  def execute(command: ReadCommand)(implicit cluster: Cluster) = {
+    stateMachine.apply(command)
   }
 
   def resetLastLog() = lastLog.set(findLastLogIndex)

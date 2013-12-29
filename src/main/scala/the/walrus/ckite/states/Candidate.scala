@@ -3,11 +3,12 @@ package the.walrus.ckite.states
 import org.slf4j.LoggerFactory
 import the.walrus.ckite.rpc.RequestVote
 import the.walrus.ckite.Cluster
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rpc.Command
 
 /** 	•! Increment currentTerm, vote for self
  * •! Reset election timeout
@@ -19,7 +20,7 @@ import the.walrus.ckite.rpc.EnterJointConsensus
  * increment term, start new election
  * •! Discover higher term: step down (§5.1)
  */
-case object Candidate extends State {
+class Candidate extends State {
 
   override def begin(term: Int)(implicit cluster: Cluster) = {
     val inTerm = cluster.local.incrementTerm
@@ -27,7 +28,7 @@ case object Candidate extends State {
     cluster.local voteForMyself
     
     LOG.info(s"Start election")
-    val votes = cluster collectVotes
+    val votes = (cluster collectVotes) :+ cluster.local
     
     LOG.debug(s"Got ${votes.size} votes in a majority of ${cluster.majority}")
     if (cluster.reachMajority(votes)) {
@@ -57,8 +58,10 @@ case object Candidate extends State {
     }
   }
   
-  override def on(command: Command)(implicit cluster: Cluster) = {
+  override def on(command: Command)(implicit cluster: Cluster): Any = {
     cluster.forwardToLeader(command)
   }
+  
+  override def toString = "Candidate"
   
 }

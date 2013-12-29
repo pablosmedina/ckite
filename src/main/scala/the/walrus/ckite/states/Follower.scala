@@ -9,7 +9,7 @@ import scala.util.Try
 import org.slf4j.LoggerFactory
 import java.util.Random
 import the.walrus.ckite.Cluster
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import java.util.concurrent.atomic.AtomicReference
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.util.Logging
@@ -18,6 +18,9 @@ import the.walrus.ckite.rpc.RequestVote
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.RLog
 import the.walrus.ckite.rpc.EnterJointConsensus
+import java.util.concurrent.atomic.AtomicBoolean
+import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.util.CKiteConversions._
 
 /**
  *  •! RePCs from candidates and leaders.
@@ -26,26 +29,28 @@ import the.walrus.ckite.rpc.EnterJointConsensus
  * •! Receiving valid AppendEntries RPC, or
  * •! Granting vote to candidate
  */
-case object Follower extends State with Logging {
+class Follower extends State with Logging {
 
-  override def begin(term: Int)(implicit cluster: Cluster) = ElectionTimeout restart
+  val electionTimeout = new ElectionTimeout()
+  
+  override def begin(term: Int)(implicit cluster: Cluster) = electionTimeout restart
 
-  override def stop(implicit cluster: Cluster) = ElectionTimeout stop
+  override def stop(implicit cluster: Cluster) = electionTimeout stop
 
-  override def on(command: Command)(implicit cluster: Cluster) = cluster.forwardToLeader(command)
+  override def on(command: Command)(implicit cluster: Cluster): Any = cluster.forwardToLeader(command)
 
   override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
-      ElectionTimeout.restart
+      electionTimeout.restart
       cluster.local.updateTermIfNeeded(appendEntries.term)
       
       if (cluster.updateLeader(appendEntries.leaderId)) {
     	LOG.info(s"Following ${cluster.leader}")
       }
 
-      val success = RLog.tryAppend(appendEntries)
+      val success = cluster.rlog.tryAppend(appendEntries)
       
       AppendEntriesResponse(cluster.local.term, success)
     }
@@ -75,52 +80,51 @@ case object Follower extends State with Logging {
   }
 
   private def isMuchUpToDate(requestVote: RequestVote)(implicit cluster: Cluster) = {
-    val lastLogEntry = RLog.getLastLogEntry
+    val lastLogEntry = cluster.rlog.getLastLogEntry
     lastLogEntry.isEmpty || (requestVote.lastLogTerm >= lastLogEntry.get.term && requestVote.lastLogIndex >= lastLogEntry.get.index)
   }
 
   private def isCurrentTerm(term: Int)(implicit cluster: Cluster) = term == cluster.local.term
+  
+  override def toString = "Follower"
 
 }
 
-case object ElectionTimeout extends Logging {
+class ElectionTimeout extends Logging {
 
-  val electionTimeoutPool = Executors.newFixedThreadPool(1)
-  val timeoutFuture = new AtomicReference[Future[_]]()
+  val scheduledElectionTimeoutPool = Executors.newScheduledThreadPool(1)
+  val scheduledFuture = new AtomicReference[ScheduledFuture[_]]()
   val random = new Random()
-
-  def stop() = {
-    if (currentTimeoutFuture() != null) {
-      currentTimeoutFuture().cancel(true)
-    }
-  }
 
   def restart(implicit cluster: Cluster) = {
     stop
     start
   }
-
+  
   private def start(implicit cluster: Cluster) = {
-    timeoutFuture.set(electionTimeoutPool.submit(new Runnable() {
-      override def run() = {
-        Try {
+    val electionTimeout =  randomTimeout
+    LOG.trace(s"New timeout is $electionTimeout ms")
+    val future = scheduledElectionTimeoutPool.schedule((() => {
           Thread.currentThread().setName("ElectionTimeout")
           cluster updateContextInfo
-          val electionTimeout =  randomTimeout
-          LOG.trace(s"New timeout is $electionTimeout ms")
-          Thread.sleep(electionTimeout)
-          LOG.debug("Timeout reached! Time to elect a new Leader")
-          cluster.local becomeCandidate (cluster.local.term)
-        } recover { case e: Exception => LOG.debug("Election timeout interrupted") }
-      }
-    }))
-  }
-  
-  private def randomTimeout(implicit cluster: Cluster) = {
-    val conf = cluster.configuration
-    conf.minElectionTimeout + random.nextInt(conf.maxElectionTimeout - conf.minElectionTimeout)
+          
+    	  LOG.debug("Timeout reached! Time to elect a new Leader")
+    	  cluster.local becomeCandidate (cluster.local.term)
+          
+      }): Runnable, electionTimeout, TimeUnit.MILLISECONDS)
+    scheduledFuture.set(future)
   }
 
-  private def currentTimeoutFuture() = timeoutFuture.get()
+  private def randomTimeout(implicit cluster: Cluster) = {
+    val conf = cluster.configuration
+    val diff = conf.maxElectionTimeout - conf.minElectionTimeout
+    conf.minElectionTimeout + random.nextInt(diff.toInt)
+  }
+  
+  def stop() = {
+    val future = scheduledFuture.get()
+    if (future != null) future.cancel(false)
+  }
+
   
 }

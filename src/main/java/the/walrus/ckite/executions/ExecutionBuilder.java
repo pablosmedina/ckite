@@ -82,9 +82,9 @@ public class ExecutionBuilder {
 		return new CountDownLatch(countDown);
 	}
 
-	private void await(final CountDownLatch countDownLatch) throws InterruptedException {
+	private boolean await(final CountDownLatch countDownLatch) throws InterruptedException {
 		Timeout timeout = timeouts.iterator().next();
-		countDownLatch.await(timeout.getTimeout(), timeout.getTimeUnit());
+		return countDownLatch.await(timeout.getTimeout(), timeout.getTimeUnit());
 	}
 
 	private <T> Collection<Future<T>> submitCallables(ExecutorCompletionService<T> completionExecutor) {
@@ -110,6 +110,7 @@ public class ExecutionBuilder {
 	public <T>Collection<T> collect(Collection<Future<T>> results, ExecutorCompletionService<T> completionExecutor) throws InterruptedException, ExecutionException {
 		Collection<T> collectedResults = new ArrayList<T>();
 		Future<T> future = null;
+		
 		while((future = completionExecutor.poll()) != null) {
 			collectedResults.add(future.get());
 		}

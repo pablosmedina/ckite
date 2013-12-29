@@ -6,13 +6,14 @@ import java.nio.ByteBuffer
 import the.walrus.ckite.rpc.RequestVoteResponse
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.LogEntry
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import java.nio.HeapByteBuffer
 import java.io.ObjectOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
 import java.io.ObjectInputStream
 import the.walrus.ckite.util.Logging
+import the.walrus.ckite.rpc.Command
 
 object ThriftConverters extends Logging {
 

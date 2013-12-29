@@ -16,8 +16,6 @@ import com.twitter.finagle.{ Service, SimpleFilter }
 import com.twitter.finagle.builder.{ Server, ServerBuilder }
 import the.walrus.ckite.Cluster
 import the.walrus.ckite.RLog
-import the.walrus.ckite.rpc.Get
-import the.walrus.ckite.rpc.Put
 import the.walrus.ckite.rpc.EnterJointConsensus
 import com.twitter.util.FuturePool
 import java.util.concurrent.Executors
@@ -30,29 +28,29 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] {
       request.method -> Path(request.path) match {
         case Method.Get -> Root / "rlog" => futurePool {
           val response = Response()
-          response.contentString = RLog.toString
+          response.contentString = cluster.rlog.toString
           response
         }
-        case Method.Get -> Root / "get" / key => futurePool {
-          val response = Response()
-          val result = cluster.onReadonly(Get(key))
-          response.contentString = s"$result"
-          response
-        }
-        case Method.Get -> Root / "put" / key / value => futurePool {
-          Thread.currentThread().setName("Command")
-          val response = Response()
-          cluster on Put(key, value)
-          response.contentString = s"put[$key,$value]"
-          response
-        }
-        case Method.Get -> Root / "changecluster" / bindings => futurePool {
-          Thread.currentThread().setName("ClusterMembershipChange")
-          val response = Response()
-          cluster on EnterJointConsensus(bindings.split(",").toList)
-          response.contentString = s"ClusterMembershipChange ok"
-          response
-        }
+//        case Method.Get -> Root / "get" / key => futurePool {
+//          val response = Response()
+//          val result = cluster.onLocal(Get(key))
+//          response.contentString = s"$result"
+//          response
+//        }
+//        case Method.Get -> Root / "put" / key / value => futurePool {
+//          Thread.currentThread().setName("Command")
+//          val response = Response()
+//          cluster on Put(key, value)
+//          response.contentString = s"put[$key,$value]"
+//          response
+//        }
+//        case Method.Get -> Root / "changecluster" / bindings => futurePool {
+//          Thread.currentThread().setName("ClusterMembershipChange")
+//          val response = Response()
+//          cluster on EnterJointConsensus(bindings.split(",").toList)
+//          response.contentString = s"ClusterMembershipChange ok"
+//          response
+//        }
         case _ =>
           Future value Response(Http11, NotFound)
       }

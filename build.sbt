@@ -14,6 +14,7 @@ libraryDependencies ++= Seq(
 	"org.apache.thrift" % "libthrift" % "0.9.1",
 	"com.twitter" %% "finagle-thrift" % "6.6.2",
 	"com.twitter" %% "finagle-http" % "6.6.2",
+	"com.typesafe" % "config" % "1.0.2",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
 )
@@ -30,3 +31,5 @@ unmanagedSourceDirectories in Compile <++= baseDirectory { base =>
 com.twitter.scrooge.ScroogeSBT.newSettings
 
 scroogeThriftOutputFolder in Compile  := file("src/main/scala")
+
+

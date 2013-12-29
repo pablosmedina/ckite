@@ -1,40 +1,48 @@
 package the.walrus.ckite
 
+import the.walrus.ckite.statemachine.StateMachine
+import com.typesafe.config.ConfigFactory
+import com.typesafe.config.Config
+import com.typesafe.config.impl.ConfigInt
+import com.typesafe.config.ConfigValueFactory
+
 class CKiteBuilder {
 
-  var minElectionTimeout: Int = 10000
-  var maxElectionTimeout: Int = 12000
-  var heartbeatsInterval: Int = 1000
-  var localBinding: String = _
-  var membersBindings: Seq[String]  = _
+  val configuration = new Configuration(ConfigFactory.load("ckite-defaults.conf"))
+  var stateMachine: StateMachine = _
 
   def withMinElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
-    this.minElectionTimeout = minElectionTimeout
+    configuration.withMinElectionTimeout(minElectionTimeout)
     this
   }
 
   def withMaxElectionTimeout(maxElectionTimeout: Int): CKiteBuilder = {
-    this.maxElectionTimeout = maxElectionTimeout
+    configuration.withMaxElectionTimeout(maxElectionTimeout)
     this
   }
 
   def withHeartbeatsInterval(heartbeatsInterval: Int): CKiteBuilder = {
-    this.heartbeatsInterval = heartbeatsInterval
+    configuration.withHeartbeatsInterval(heartbeatsInterval)
     this
   }
 
   def withLocalBinding(localBinding: String): CKiteBuilder = {
-    this.localBinding = localBinding
+    configuration.withLocalBinding(localBinding)
     this
   }
 
   def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
-    this.membersBindings = membersBindings
+    configuration.withMembersBindings(membersBindings)
+    this
+  }
+  
+  def withStateMachine(stateMachine: StateMachine): CKiteBuilder = {
+    this.stateMachine = stateMachine
     this
   }
 
   def build(): CKite = {
-    new CKite(new Cluster(Configuration(localBinding, membersBindings, minElectionTimeout, maxElectionTimeout, heartbeatsInterval)))
+    new CKite(new Cluster(stateMachine, configuration))
   }
 
 }

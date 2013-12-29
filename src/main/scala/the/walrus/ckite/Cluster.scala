@@ -4,7 +4,7 @@ import the.walrus.ckite.rpc.RequestVote
 import java.util.concurrent.atomic.AtomicReference
 import org.slf4j.MDC
 import the.walrus.ckite.util.Logging
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.rpc.AppendEntries
 import java.util.concurrent.Executors
@@ -12,22 +12,47 @@ import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.LeaveJointConsensus
 import the.walrus.ckite.rpc.MajorityJointConsensus
 import the.walrus.ckite.rpc.RequestVoteResponse
+import the.walrus.ckite.statemachine.StateMachine
+import com.typesafe.config.Config
+import scala.concurrent.Promise
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.FiniteDuration
+import the.walrus.ckite.exception.WaitForLeaderTimedOutException
+import scala.util.Success
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.Callable
+import the.walrus.ckite.executions.Executions
+import the.walrus.ckite.states.MajoritiesExpected
+import scala.collection.JavaConversions._
+import the.walrus.ckite.util.CKiteConversions._
+import the.walrus.ckite.rpc.ReadCommand
+import the.walrus.ckite.rpc.Command
 
-class Cluster(val configuration: Configuration) extends Logging {
+class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
   implicit val aCluster = this
-  
+
   val InitialTerm = 0
-  val leader = new AtomicReference[Option[Member]](None)
   val local = new Member(configuration.localBinding)
-  
   val consensusMembership = new AtomicReference[Membership]()
+  val rlog = new RLog(stateMachine)
+  val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
+  val executor = Executors.newFixedThreadPool(50)
+
+  val waitForLeaderTimeout = Duration(configuration.waitForLeaderTimeout, TimeUnit.MILLISECONDS)
   
   def start = {
-	updateContextInfo
-	LOG.info("Start CKite Cluster")
-	consensusMembership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local ))
+    updateContextInfo
+    LOG.info("Start CKite Cluster")
+    consensusMembership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local))
     local becomeFollower InitialTerm
+  }
+
+  def stop = {
+    LOG.info("Stop CKite Cluster")
+    local stop
   }
 
   def on(requestVote: RequestVote) = {
@@ -45,96 +70,131 @@ class Cluster(val configuration: Configuration) extends Logging {
     local on appendEntries
   }
 
-  def on(command: Command) = synchronized {
-	updateContextInfo
-	LOG.debug(s"Command received: $command")
-    local on command
+  def on(command: Command): Any = {
+    awaitLeader
+    updateContextInfo
+    LOG.debug(s"Command received: $command")
+    command match {
+      case w: WriteCommand => synchronized {
+						      local on command
+						    }
+      case r: ReadCommand => local on command
+    }
   }
-  
+
   def on(majorityJointConsensus: MajorityJointConsensus) = {
     local on majorityJointConsensus
   }
-  
+
   //Don't broadcast heartbeats during outstanding Command processing
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
-    membership.allMembersBut(local).par foreach { member =>
-                  Thread.currentThread().setName("Heartbeater")
-			      updateContextInfo
-			      member.sendHeartbeat(term)(cluster)
+    val remoteMembers = membership.allMembersBut(local)
+    LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
+    remoteMembers.foreach { member =>
+      executor.execute (() => {
+        Thread.currentThread().setName("Heartbeater")
+        updateContextInfo
+        member.sendHeartbeat(term)(cluster)
+      })
     }
   }
 
-  def onReadonly(readonlyCommand: Command) = {
-    LOG.debug(s"Readonly command received: $readonlyCommand")
-    RLog execute readonlyCommand
+  def onLocal(readCommand: ReadCommand) = {
+    rlog execute readCommand
   }
 
   def collectVotes: Seq[Member] = {
-    val eventualFollowers = consensusMembership.get.allMembersBut(local).par filter { member => 
-	      Thread.currentThread().setName("CollectVotes")
-	      updateContextInfo
-	      member requestVote 
+    if (hasRemoteMembers) {
+      val execution = Executions.newExecution().withExecutor(executor)
+      consensusMembership.get.allMembersBut(local).foreach { member =>
+        execution.withTask(new Callable[(Member, Boolean)] {
+		          override def call() = {
+		          Thread.currentThread().setName("CollectVotes")
+		          updateContextInfo
+		          (member, member requestVote)
+		        }
+        }
+        )
       }
-//    val votes = eventualFollowers.size + 1 //vote for myself
-    eventualFollowers.seq :+ local //vote for myself
+      val expectedResults = membership.majoritiesCount
+      val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
+        .withExpectedResults(expectedResults, new MajoritiesExpected(this)).execute[(Member, Boolean)]()
+
+      val results: Iterable[(Member, Boolean)] = rawResults
+      val mapres = results.filter { result => result._2 }.map { result => result._1 }
+      mapres.toSeq
+    } else {
+      Seq()
+    }
   }
 
   def forwardToLeader(command: Command) = {
-    if (leader.get().isDefined) {
-      leader.get().get.forwardCommand(command)
-    } else {
-      //should wait for leader?
-      LOG.error("No Leader to forward command")
-    }
+    awaitLeader.forwardCommand(command)
   }
 
-  def updateLeader(memberId: String): Boolean = {
+  def updateLeader(memberId: String): Boolean = leaderPromise.synchronized {
     val newLeader = obtainMember(memberId)
-    if (newLeader != leader.get()) {
-      leader.set(newLeader)
+    val promise = leaderPromise.get()
+    if (!promise.isCompleted || promise.future.value.get.get != newLeader.get) {
+      leaderPromise.get().success(newLeader.get) //complete current promise for operations waiting for it
+      leaderPromise.set(Promise.successful(newLeader.get)) //kept promise for subsequent leader 
       updateContextInfo
       true
-    }
-    else false
+    } else false
   }
 
-  def setNoLeader = {
-    leader.set(None)
+  def setNoLeader = leaderPromise.synchronized {
+    if (leaderPromise.get().isCompleted) {
+      leaderPromise.set(Promise[Member]())
+    }
     updateContextInfo
   }
 
-  def anyLeader =  leader.get() != None
+  def anyLeader = leader != None
 
   def majority = membership.majority
-  
+
   def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
 
   private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
 
   def updateContextInfo = {
     MDC.put("term", local.term.toString)
-    MDC.put("leader", leader.get().toString)
+    MDC.put("leader", leader.toString)
   }
-  
+
   def apply(enterJointConsensus: EnterJointConsensus) = {
     LOG.info(s"Entering in JointConsensus")
     val currentMembership = consensusMembership.get()
     consensusMembership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
     LOG.info(s"Membership ${consensusMembership.get()}")
   }
-  
+
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
     consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
     LOG.info(s"Membership ${consensusMembership.get()}")
   }
-  
+
   private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleConsensusMembership = {
-    new SimpleConsensusMembership(bindings.map { binding => obtainMember(binding).getOrElse(new Member(binding))})
+    new SimpleConsensusMembership(bindings.map { binding => obtainMember(binding).getOrElse(new Member(binding)) })
   }
-  
+
   def membership = consensusMembership.get()
-  
+
   def hasRemoteMembers = !membership.allMembersBut(local).isEmpty
-  
+
+  def awaitLeader: Member = {
+    try {
+      Await.result(leaderPromise.get().future, waitForLeaderTimeout)
+    } catch {
+      case e: TimeoutException => throw new WaitForLeaderTimedOutException(e)
+    }
+  }
+
+  def leader: Option[Member] = {
+    val promise = leaderPromise.get()
+    if (promise.isCompleted) Some(promise.future.value.get.get) else None
+  }
+
 }

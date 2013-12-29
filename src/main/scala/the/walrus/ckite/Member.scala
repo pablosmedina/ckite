@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import the.walrus.ckite.rpc.RequestVote
 import java.util.concurrent.atomic.AtomicReference
 import the.walrus.ckite.states.Follower
-import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.WriteCommand
 import the.walrus.ckite.states.Leader
 import the.walrus.ckite.states.Candidate
 import the.walrus.ckite.rpc.RequestVoteResponse
@@ -20,6 +20,9 @@ import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.states.Starter
 import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.MajorityJointConsensus
+import the.walrus.ckite.rpc.ReadCommand
+import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.states.Stopped
 
 class Member(val binding: String) extends Logging {
 
@@ -33,7 +36,7 @@ class Member(val binding: String) extends Logging {
   
   def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
 
-  def on(command: Command)(implicit cluster: Cluster) = currentState on command
+  def on(command: Command)(implicit cluster: Cluster): Any = currentState on command
   
   def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = currentState on jointConsensusCommited
   
@@ -63,14 +66,14 @@ class Member(val binding: String) extends Logging {
   }
 
   private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries =  {
-    val entryToPiggyBack = RLog.getLogEntry(nextLogIndex.intValue())
+    val entryToPiggyBack = cluster.rlog.getLogEntry(nextLogIndex.intValue())
     entryToPiggyBack match {
-      case None => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex)
+      case None => AppendEntries(termToSent, cluster.local.id, cluster.rlog.getCommitIndex)
       case Some(entry) => {
         val entriesToPiggyBack = List(entry)
-        val appendEntriesMessage = RLog.getPreviousLogEntry(entriesToPiggyBack(0)) match {
-          case None => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex, entries = entriesToPiggyBack)
-          case Some(previousEntry) => AppendEntries(termToSent, cluster.local.id, RLog.getCommitIndex, previousEntry.index, previousEntry.term, entriesToPiggyBack)
+        val appendEntriesMessage = cluster.rlog.getPreviousLogEntry(entriesToPiggyBack(0)) match {
+          case None => AppendEntries(termToSent, cluster.local.id, cluster.rlog.getCommitIndex, entries = entriesToPiggyBack)
+          case Some(previousEntry) => AppendEntries(termToSent, cluster.local.id, cluster.rlog.getCommitIndex, previousEntry.index, previousEntry.term, entriesToPiggyBack)
         }
         LOG.trace(s"Piggybacking entry $entry to $id. Message is $appendEntriesMessage")
         appendEntriesMessage
@@ -78,7 +81,7 @@ class Member(val binding: String) extends Logging {
     }
   }
   
-  def replicate(appendEntries: AppendEntries) =  { 
+  def replicate(appendEntries: AppendEntries): Boolean =  { 
     LOG.info(s"Replicating to $id")
     synchronized {
     connector.send(this, appendEntries).map { replicationResponse =>
@@ -126,7 +129,7 @@ class Member(val binding: String) extends Logging {
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
   def requestVote(implicit cluster: Cluster): Boolean = {
     LOG.debug(s"Requesting vote to $id")
-    val lastLogEntry = RLog.getLastLogEntry()
+    val lastLogEntry = cluster.rlog.getLastLogEntry()
     connector.send(this, lastLogEntry match {
       case None => RequestVote(cluster.local.id, cluster.local.term)
       case Some(entry) => RequestVote(cluster.local.id, cluster.local.term, entry.index, entry.term)
@@ -147,19 +150,21 @@ class Member(val binding: String) extends Logging {
 
   def forwardCommand(command: Command) = connector.send(this, command)
 
-  def becomeLeader(term: Int)(implicit cluster: Cluster) = become(Leader, term)
+  def becomeLeader(term: Int)(implicit cluster: Cluster) = become(new Leader, term)
 
-  def becomeCandidate(term: Int)(implicit cluster: Cluster) = become(Candidate, term)
+  def becomeCandidate(term: Int)(implicit cluster: Cluster) = become(new Candidate, term)
 
-  def becomeFollower(term: Int)(implicit cluster: Cluster) = become(Follower, term)
+  def becomeFollower(term: Int)(implicit cluster: Cluster) = become(new Follower, term)
 
   private def become(newState: State, term: Int)(implicit cluster: Cluster) = {
-    LOG.info(s"Transition from $state to $newState")
-    currentState stop
-    
-    changeState(newState)
-    
-    currentState begin term
+    if (currentState.canTransition) {
+    	LOG.info(s"Transition from $state to $newState")
+    	currentState stop
+    	
+    	changeState(newState)
+    	
+    	currentState begin term
+    }
   }
 
   private def currentState = state.get()
@@ -167,6 +172,10 @@ class Member(val binding: String) extends Logging {
   private def changeState(newState: State) = state.set(newState)
 
   override def toString() = id
+  
+  def stop(implicit cluster: Cluster) = {
+    become(Stopped, cluster.local.term)
+  }
   
 }
 
