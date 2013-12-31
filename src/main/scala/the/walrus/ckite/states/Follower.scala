@@ -37,7 +37,7 @@ class Follower extends State with Logging {
 
   override def stop(implicit cluster: Cluster) = electionTimeout stop
 
-  override def on(command: Command)(implicit cluster: Cluster): Any = cluster.forwardToLeader(command)
+  override def on[T](command: Command)(implicit cluster: Cluster): T = cluster.forwardToLeader[T](command)
 
   override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
@@ -118,7 +118,7 @@ class ElectionTimeout extends Logging {
   private def randomTimeout(implicit cluster: Cluster) = {
     val conf = cluster.configuration
     val diff = conf.maxElectionTimeout - conf.minElectionTimeout
-    conf.minElectionTimeout + random.nextInt(diff.toInt)
+    conf.minElectionTimeout + random.nextInt(if (diff > 0) diff.toInt else 1)
   }
   
   def stop() = {

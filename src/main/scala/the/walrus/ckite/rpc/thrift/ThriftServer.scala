@@ -9,6 +9,7 @@ import com.twitter.finagle.ListeningServer
 import java.nio.ByteBuffer
 import com.twitter.util.FuturePool
 import java.util.concurrent.Executors
+import the.walrus.ckite.rpc.Command
 
 class ThriftServer(cluster: Cluster) {
 
@@ -31,9 +32,10 @@ class ThriftServer(cluster: Cluster) {
         cluster on appendEntries
       }
       
-      override def forwardCommand(command: ByteBuffer) =  futurePool {
+      override def forwardCommand(bb: ByteBuffer) =  futurePool {
         Thread.currentThread().setName("forwardCommand")
-        cluster on command
+        val command: Command  = bb
+        cluster.on[Any](command)
       }
     }
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())

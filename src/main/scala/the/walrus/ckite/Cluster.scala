@@ -70,15 +70,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     local on appendEntries
   }
 
-  def on(command: Command): Any = {
+  def on[T](command: Command): T = {
     awaitLeader
     updateContextInfo
     LOG.debug(s"Command received: $command")
     command match {
-      case w: WriteCommand => synchronized {
-						      local on command
-						    }
-      case r: ReadCommand => local on command
+      case write: WriteCommand => synchronized { local.on[T](write) }
+      case read: ReadCommand => local.on[T](read)
     }
   }
 
@@ -128,8 +126,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  def forwardToLeader(command: Command) = {
-    awaitLeader.forwardCommand(command)
+  def forwardToLeader[T](command: Command): T = {
+    awaitLeader.forwardCommand[T](command)
   }
 
   def updateLeader(memberId: String): Boolean = leaderPromise.synchronized {

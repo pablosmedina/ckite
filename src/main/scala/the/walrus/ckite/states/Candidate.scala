@@ -58,8 +58,8 @@ class Candidate extends State {
     }
   }
   
-  override def on(command: Command)(implicit cluster: Cluster): Any = {
-    cluster.forwardToLeader(command)
+  override def on[T](command: Command)(implicit cluster: Cluster): T = {
+    cluster.forwardToLeader[T](command)
   }
   
   override def toString = "Candidate"

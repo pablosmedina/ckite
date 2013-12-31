@@ -59,20 +59,20 @@ object ThriftConverters extends Logging {
     LogEntry(entry.term, entry.index, entry.command)
   } 
   
-  implicit def commandToThrift(command: Command): ByteBuffer = {
+  implicit def anyToThrift(command: Any): ByteBuffer = {
     val bb = ByteBuffer.wrap(serialize(command))
     bb
   } 
   
-  implicit def commandFromThrift(byteBuffer: ByteBuffer): Command = {
+  implicit def commandFromThrift[T](byteBuffer: ByteBuffer): T = {
     val remaining = byteBuffer.remaining()
     val bytes = new Array[Byte](remaining)
     byteBuffer.get(bytes)
-    val c = deserialize(bytes)
+    val c = deserialize[T](bytes)
     c
   } 
   
-  private def serialize(command: Command): Array[Byte] = {
+  private def serialize(command: Any): Array[Byte] = {
     val baos = new ByteArrayOutputStream()
     val oos = new ObjectOutputStream(baos)
     oos.writeObject(command)
@@ -83,10 +83,10 @@ object ThriftConverters extends Logging {
     bytes
   }
   
-  private def deserialize(bytes: Array[Byte]): Command = {
+  private def deserialize[T](bytes: Array[Byte]): T = {
     val bais = new ByteArrayInputStream(bytes)
     val ois = new ObjectInputStream(bais)
-    val command = ois.readObject().asInstanceOf[Command]
+    val command = ois.readObject().asInstanceOf[T]
     ois.close()
     command
   }

@@ -36,7 +36,7 @@ class Member(val binding: String) extends Logging {
   
   def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
 
-  def on(command: Command)(implicit cluster: Cluster): Any = currentState on command
+  def on[T](command: Command)(implicit cluster: Cluster): T = currentState.on[T](command)
   
   def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = currentState on jointConsensusCommited
   
@@ -148,7 +148,7 @@ class Member(val binding: String) extends Logging {
   
   def voteForMyself = votedFor.set(Some(id))
 
-  def forwardCommand(command: Command) = connector.send(this, command)
+  def forwardCommand[T](command: Command): T = connector.send[T](this, command)
 
   def becomeLeader(term: Int)(implicit cluster: Cluster) = become(new Leader, term)
 
@@ -178,4 +178,3 @@ class Member(val binding: String) extends Logging {
   }
   
 }
-

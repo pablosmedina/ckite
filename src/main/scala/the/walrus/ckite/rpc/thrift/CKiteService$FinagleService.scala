@@ -19,7 +19,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-29T20:01:10.611-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-31T02:05:30.146-0300")
 class CKiteService$FinagleService(
   iface: CKiteService[Future],
   protocolFactory: TProtocolFactory
@@ -131,8 +131,8 @@ class CKiteService$FinagleService(
         iface.forwardCommand(args.command)
       } catch {
         case e: Exception => Future.exception(e)
-      }) flatMap { value: Unit =>
-        reply("forwardCommand", seqid, forwardCommand$result())
+      }) flatMap { value: ByteBuffer =>
+        reply("forwardCommand", seqid, forwardCommand$result(success = Some(value)))
       } rescue {
         case e => Future.exception(e)
       }

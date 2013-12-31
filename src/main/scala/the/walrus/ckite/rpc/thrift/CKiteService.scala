@@ -20,14 +20,14 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-29T20:01:10.611-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-31T02:05:30.146-0300")
 trait CKiteService[+MM[_]] extends ThriftService {
   
   def sendRequestVote(requestVote: RequestVoteST): MM[RequestVoteResponseST]
   
   def sendAppendEntries(appendEntries: AppendEntriesST): MM[AppendEntriesResponseST]
   
-  def forwardCommand(command: ByteBuffer): MM[Unit]
+  def forwardCommand(command: ByteBuffer): MM[ByteBuffer]
 }
 
 
@@ -700,6 +700,8 @@ object CKiteService {
   
   object forwardCommand$result extends ThriftStructCodec3[forwardCommand$result] {
     val Struct = new TStruct("forwardCommand_result")
+    val SuccessField = new TField("success", TType.STRING, 0)
+    val SuccessFieldManifest = implicitly[Manifest[ByteBuffer]]
   
     /**
      * Checks that all required fields are non-null.
@@ -711,14 +713,18 @@ object CKiteService {
     override def decode(_iprot: TProtocol): forwardCommand$result = Immutable.decode(_iprot)
   
     def apply(
+      success: Option[ByteBuffer] = None
     ): forwardCommand$result = new Immutable(
+      success
     )
   
-    def unapply(_item: forwardCommand$result): Boolean = true
+    def unapply(_item: forwardCommand$result): Option[Option[ByteBuffer]] = Some(_item.success)
   
     object Immutable extends ThriftStructCodec3[forwardCommand$result] {
       override def encode(_item: forwardCommand$result, _oproto: TProtocol) { _item.write(_oproto) }
       override def decode(_iprot: TProtocol): forwardCommand$result = {
+        var success: ByteBuffer = null
+        var _got_success = false
         var _done = false
         _iprot.readStructBegin()
         while (!_done) {
@@ -727,6 +733,17 @@ object CKiteService {
             _done = true
           } else {
             _field.id match {
+              case 0 => { /* success */
+                _field.`type` match {
+                  case TType.STRING => {
+                    success = {
+                      _iprot.readBinary()
+                    }
+                    _got_success = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
               case _ =>
                 TProtocolUtil.skip(_iprot, _field.`type`)
             }
@@ -735,6 +752,7 @@ object CKiteService {
         }
         _iprot.readStructEnd()
         new Immutable(
+          if (_got_success) Some(success) else None
         )
       }
     }
@@ -745,18 +763,21 @@ object CKiteService {
      * new instances.
      */
     class Immutable(
+      val success: Option[ByteBuffer] = None
     ) extends forwardCommand$result
   
   }
   
   trait forwardCommand$result extends ThriftStruct
-    with Product
+    with Product1[Option[ByteBuffer]]
     with java.io.Serializable
   {
     import forwardCommand$result._
   
   
+    def success: Option[ByteBuffer]
   
+    def _1 = success
   
   
     /**
@@ -766,19 +787,28 @@ object CKiteService {
      */
     def unsetField(_fieldId: Short): forwardCommand$result =
       _fieldId match {
+        case 0 => copy(success = None)
         case _ => this
       }
   
     override def write(_oprot: TProtocol) {
       forwardCommand$result.validate(this)
       _oprot.writeStructBegin(Struct)
+      if (success.isDefined) {
+        val success_item = success.get
+        _oprot.writeFieldBegin(SuccessField)
+        _oprot.writeBinary(success_item)
+        _oprot.writeFieldEnd()
+      }
       _oprot.writeFieldStop()
       _oprot.writeStructEnd()
     }
   
     def copy(
+      success: Option[ByteBuffer] = this.success
     ): forwardCommand$result =
       new Immutable(
+        success
       )
   
     override def canEqual(other: Any): Boolean = other.isInstanceOf[forwardCommand$result]
@@ -791,9 +821,10 @@ object CKiteService {
     override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
   
   
-    override def productArity: Int = 0
+    override def productArity: Int = 1
   
     override def productElement(n: Int): Any = n match {
+      case 0 => success
       case _ => throw new IndexOutOfBoundsException(n.toString)
     }
   
@@ -809,7 +840,7 @@ object CKiteService {
     
     def sendAppendEntries(appendEntries: AppendEntriesST): Future[AppendEntriesResponseST]
     
-    def forwardCommand(command: ByteBuffer): Future[Unit]
+    def forwardCommand(command: ByteBuffer): Future[ByteBuffer]
   }
 
   @deprecated("use CKiteService$FinagleClient", "3.4.0")

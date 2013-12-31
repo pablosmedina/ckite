@@ -78,15 +78,15 @@ class Leader extends State {
     cluster.setNoLeader
   }
 
-  override def on(command: Command)(implicit cluster: Cluster): Any = {
+  override def on[T](command: Command)(implicit cluster: Cluster): T = {
     command match {
-      case w: WriteCommand => onWriteCommand(w)
-      case r: ReadCommand => onReadCommand(r)
+      case w: WriteCommand => onWriteCommand[T](w)
+      case r: ReadCommand => onReadCommand[T](r)
     }
 
   }
 
-  private def onWriteCommand(command: WriteCommand)(implicit cluster: Cluster): Any = {
+  private def onWriteCommand[T](command: WriteCommand)(implicit cluster: Cluster): T = {
     val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
     cluster.rlog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
@@ -99,15 +99,15 @@ class Leader extends State {
       Seq()
     }
     if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
-      cluster.rlog commit logEntry
+      (cluster.rlog commit logEntry).asInstanceOf[T]
     } else {
       LOG.info("Uncommited entry due to no majority")
       throw new NoMajorityReachedException()
     }
   }
 
-  private def onReadCommand(command: ReadCommand)(implicit cluster: Cluster): Any = {
-    cluster.rlog execute command
+  private def onReadCommand[T](command: ReadCommand)(implicit cluster: Cluster): T = {
+    (cluster.rlog execute command).asInstanceOf[T]
   }
 
   private def appendEntriesFor(logEntry: LogEntry)(implicit cluster: Cluster) = {

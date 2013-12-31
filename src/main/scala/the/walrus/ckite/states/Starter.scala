@@ -16,7 +16,7 @@ case object Starter extends State {
 
   override def stop(implicit cluster: Cluster) = {}
 
-  override def on(command: Command)(implicit cluster: Cluster) = {}
+//  override def on[T](command: Command)(implicit cluster: Cluster) = {}
 
   override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
 

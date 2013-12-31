@@ -9,6 +9,6 @@ trait Connector {
 
   def send(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse]
   
-  def send(member: Member, command: Command)
+  def send[T](member: Member, command: Command): T
   
 }

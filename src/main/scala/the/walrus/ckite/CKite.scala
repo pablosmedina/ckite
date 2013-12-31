@@ -26,12 +26,12 @@ class CKite(cluster: Cluster) {
     cluster stop
   }
   
-  def write(writeCommand: WriteCommand): Any = {
-    cluster.on(writeCommand)
+  def write[T](writeCommand: WriteCommand): T = {
+    cluster.on[T](writeCommand)
   }
   
   def read[T](readCommand: ReadCommand): T = {
-    cluster.on(readCommand).asInstanceOf[T]
+    cluster.on[T](readCommand)
   }
   
   def readLocal[T](readCommand: ReadCommand): T = {

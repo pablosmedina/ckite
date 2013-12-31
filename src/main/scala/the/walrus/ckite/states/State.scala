@@ -22,7 +22,7 @@ trait State extends Logging {
 
   def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse
 
-  def on(command: Command)(implicit cluster: Cluster): Any = {}
+  def on[T](command: Command)(implicit cluster: Cluster): T = { throw new UnsupportedOperationException()}
   
   def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = {}
   

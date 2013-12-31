@@ -38,6 +38,6 @@ service CKiteService {
 
 	AppendEntriesResponseST sendAppendEntries(1:AppendEntriesST appendEntries);
 	
-	void forwardCommand(1:binary command);
+	binary forwardCommand(1:binary command);
 
 }

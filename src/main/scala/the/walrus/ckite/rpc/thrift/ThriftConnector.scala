@@ -40,8 +40,10 @@ class ThriftConnector(binding: String) extends Connector with Logging {
     }
   }
   
-  override def send(leader: Member, command: Command) = {
-    client.forwardCommand(command)
+  override def send[T](leader: Member, command: Command): T = {
+    val future = client.forwardCommand(command)
+    val value: T = future.get
+    value
   }
   
 

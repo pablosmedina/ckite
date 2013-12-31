@@ -20,7 +20,7 @@ import org.apache.thrift.transport.{TMemoryBuffer, TMemoryInputTransport}
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-29T20:01:10.611-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-31T02:05:30.146-0300")
 class CKiteService$FinagleClient(
   val service: FinagleService[ThriftClientRequest, Array[Byte]],
   val protocolFactory: TProtocolFactory = new TBinaryProtocol.Factory,
@@ -133,13 +133,13 @@ class CKiteService$FinagleClient(
   }
   
   
-  def forwardCommand(command: ByteBuffer): Future[Unit] = {
+  def forwardCommand(command: ByteBuffer): Future[ByteBuffer] = {
     __stats_forwardCommand.RequestsCounter.incr()
     this.service(encodeRequest("forwardCommand", forwardCommand$args(command))) flatMap { response =>
       val result = decodeResponse(response, forwardCommand$result)
       val exception =
         None
-      exception.getOrElse(Future.Done)
+      exception.orElse(result.success.map(Future.value)).getOrElse(Future.exception(missingResult("forwardCommand")))
     } rescue {
       case ex: SourcedException => {
         if (this.serviceName != "") { ex.serviceName = this.serviceName }
