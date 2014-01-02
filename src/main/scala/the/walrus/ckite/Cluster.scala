@@ -84,8 +84,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     local on majorityJointConsensus
   }
 
-  //Don't broadcast heartbeats during outstanding Command processing
-  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
+  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = {
     val remoteMembers = membership.allMembersBut(local)
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
