@@ -12,7 +12,48 @@ For development & testing purposes it contains an embedded key-value store app d
 * Finagle based RPC between members
 * Rest interface
 
-## KeyValue store example (3 members)
+## Example
+
+#### Create a CKite instance using the builder
+```scala
+val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
+                          .withMembersBindings(Seq("localhost:9092","localhost:9093"))
+                          .withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //optional
+                          .withHeartbeatsInterval(250) //optional
+                          .withStateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
+                          .build
+ckite.start()
+```
+#### Send a write command
+```scala
+//this Put command is forwarded to the Leader and applied under Raft rules
+ckite.write(Put("key1","value1")) 
+```
+
+#### Send a consistent read command
+```scala
+//consistent read commands are forwarded to the Leader
+val value = ckite.read[String](Get("key1")) 
+```
+
+#### Issue a local read command
+```scala
+//alternatively you can read from its local state machine allowing possible stale values
+val value = ckite.readLocal[String](Get("key1")) 
+```
+
+#### Check leadership
+```scala
+//if necessary waits for elections to end
+ckite.isLeader() 
+```
+#### Stop ckite
+```scala
+ckite.stop()
+```
+
+
+## Running KVStore example (3 members)
 
 #### Run Member 1
 ```bash
