@@ -90,19 +90,23 @@ class Leader extends State {
     val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
     cluster.rlog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
-    val replicationAcks = if (cluster.hasRemoteMembers) {
+    val replicationAcks = replicate(logEntry)
+    if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
+      (cluster.rlog commit logEntry).asInstanceOf[T]
+    } else {
+      LOG.info("Uncommited entry due to no majority")
+      throw new NoMajorityReachedException()
+    }
+  }
+  
+  private def replicate(logEntry: LogEntry)(implicit cluster: Cluster): Seq[Member] = {
+    if (cluster.hasRemoteMembers) {
       val acks = Replicator.replicate(appendEntriesFor(logEntry))
       LOG.info(s"Got replication acks from $acks")
       acks
     } else {
       LOG.info(s"No member to replicate")
       Seq()
-    }
-    if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
-      (cluster.rlog commit logEntry).asInstanceOf[T]
-    } else {
-      LOG.info("Uncommited entry due to no majority")
-      throw new NoMajorityReachedException()
     }
   }
 
