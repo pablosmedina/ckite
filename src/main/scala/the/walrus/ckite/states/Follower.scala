@@ -66,7 +66,7 @@ class Follower extends State with Logging {
       val grantVote = checkGrantVotePolicy(requestVote)
       if (grantVote) {
         LOG.debug(s"Granting vote to ${requestVote.memberId} in term ${requestVote.term}")
-        cluster.local.votedFor.set(Some(requestVote.memberId))
+        cluster.local.votedFor.set(requestVote.memberId)
       } else {
         LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term ${requestVote.term}")
       }
@@ -76,7 +76,7 @@ class Follower extends State with Logging {
   
   private def checkGrantVotePolicy(requestVote: RequestVote)(implicit cluster: Cluster) = {
     val votedFor = cluster.local.votedFor.get()
-    (!votedFor.isDefined || votedFor.get == requestVote.memberId) && isMuchUpToDate(requestVote)
+    (votedFor.isEmpty() || votedFor == requestVote.memberId) && isMuchUpToDate(requestVote)
   }
 
   private def isMuchUpToDate(requestVote: RequestVote)(implicit cluster: Cluster) = {
@@ -87,12 +87,11 @@ class Follower extends State with Logging {
   private def isCurrentTerm(term: Int)(implicit cluster: Cluster) = term == cluster.local.term
   
   override def toString = "Follower"
-
+    
 }
 
 class ElectionTimeout extends Logging {
 
-  val scheduledElectionTimeoutPool = Executors.newScheduledThreadPool(1)
   val scheduledFuture = new AtomicReference[ScheduledFuture[_]]()
   val random = new Random()
 
@@ -104,7 +103,7 @@ class ElectionTimeout extends Logging {
   private def start(implicit cluster: Cluster) = {
     val electionTimeout =  randomTimeout
     LOG.trace(s"New timeout is $electionTimeout ms")
-    val future = scheduledElectionTimeoutPool.schedule((() => {
+    val future = cluster.scheduledElectionTimeoutExecutor.schedule((() => {
           Thread.currentThread().setName("ElectionTimeout")
           cluster updateContextInfo
           
@@ -125,6 +124,5 @@ class ElectionTimeout extends Logging {
     val future = scheduledFuture.get()
     if (future != null) future.cancel(false)
   }
-
   
 }

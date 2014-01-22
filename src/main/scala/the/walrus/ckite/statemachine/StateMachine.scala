@@ -4,7 +4,7 @@ import the.walrus.ckite.rpc.WriteCommand
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
 
-trait StateMachine {
+trait StateMachine extends Snapshoteable {
 
   def apply(command: Command): Any
   

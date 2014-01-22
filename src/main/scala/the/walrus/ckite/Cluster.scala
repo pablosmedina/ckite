@@ -29,17 +29,41 @@ import scala.collection.JavaConversions._
 import the.walrus.ckite.util.CKiteConversions._
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
+import org.mapdb.DBMaker
+import java.io.File
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.Executors.DefaultThreadFactory
+import com.twitter.concurrent.NamedPoolThreadFactory
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
   implicit val aCluster = this
 
-  val InitialTerm = 0
-  val local = new Member(configuration.localBinding)
+  val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
+  
+  val local = new LocalMember(configuration.localBinding, db)
+  val InitialTerm = local.term
   val consensusMembership = new AtomicReference[Membership]()
-  val rlog = new RLog(stateMachine)
+  val rlog = new RLog(stateMachine, db)
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
-  val executor = Executors.newFixedThreadPool(50)
+  
+  val heartbeaterExecutor = new ThreadPoolExecutor(0, 50,
+                                      10L, TimeUnit.SECONDS,
+                                      new SynchronousQueue[Runnable](),
+                                      new NamedPoolThreadFactory("HeartbeaterWorker", true))
+  
+  val electionExecutor = new ThreadPoolExecutor(0, 50,
+                                      15L, TimeUnit.SECONDS,
+                                      new SynchronousQueue[Runnable](),
+                                      new NamedPoolThreadFactory("ElectionWorker", true))
+  
+  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout", true))
+  
+  val replicatorExecutor = new ThreadPoolExecutor(0, 50,
+                                      60L, TimeUnit.SECONDS,
+                                      new SynchronousQueue[Runnable](),
+                                      new NamedPoolThreadFactory("ReplicatorWorker", true))
 
   val waitForLeaderTimeout = Duration(configuration.waitForLeaderTimeout, TimeUnit.MILLISECONDS)
   
@@ -84,12 +108,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     local on majorityJointConsensus
   }
 
-  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = {
+  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
     val remoteMembers = membership.allMembersBut(local)
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
-      executor.execute (() => {
-        Thread.currentThread().setName("Heartbeater")
+      heartbeaterExecutor.execute (() => {
         updateContextInfo
         member.sendHeartbeat(term)(cluster)
       })
@@ -102,11 +125,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def collectVotes: Seq[Member] = {
     if (hasRemoteMembers) {
-      val execution = Executions.newExecution().withExecutor(executor)
+      val execution = Executions.newExecution().withExecutor(electionExecutor)
       consensusMembership.get.allMembersBut(local).foreach { member =>
         execution.withTask(new Callable[(Member, Boolean)] {
 		          override def call() = {
-		          Thread.currentThread().setName("CollectVotes")
 		          updateContextInfo
 		          (member, member requestVote)
 		        }
@@ -192,6 +214,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def leader: Option[Member] = {
     val promise = leaderPromise.get()
     if (promise.isCompleted) Some(promise.future.value.get.get) else None
+  }
+  
+  private def file(dataDir: String): File = {
+    val dir = new File(dataDir)
+    dir.mkdirs()
+    val file = new File(dir, "ckite")
+    file
   }
 
 }

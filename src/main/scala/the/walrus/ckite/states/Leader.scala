@@ -29,6 +29,11 @@ import the.walrus.ckite.util.CKiteConversions._
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
 import java.util.concurrent.ScheduledFuture
+import com.twitter.util.Duration
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.SynchronousQueue
+import com.twitter.concurrent.NamedPoolThreadFactory
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -50,6 +55,9 @@ import java.util.concurrent.ScheduledFuture
 class Leader extends State {
 
   val heartbeater = new Heartbeater()
+  val replicator = new Replicator()
+  val startTime = System.currentTimeMillis()
+  val followersInfo = new ConcurrentHashMap[String, Long]()
 
   override def begin(term: Int)(implicit cluster: Cluster) = {
     if (term < cluster.local.term) {
@@ -101,7 +109,7 @@ class Leader extends State {
   
   private def replicate(logEntry: LogEntry)(implicit cluster: Cluster): Seq[Member] = {
     if (cluster.hasRemoteMembers) {
-      val acks = Replicator.replicate(appendEntriesFor(logEntry))
+      val acks = replicator.replicate(appendEntriesFor(logEntry))
       LOG.info(s"Got replication acks from $acks")
       acks
     } else {
@@ -147,24 +155,48 @@ class Leader extends State {
   }
 
   override def toString = "Leader"
+    
+ override def info()(implicit cluster: Cluster): StateInfo = {
+    val now = System.currentTimeMillis()
+    val unit = TimeUnit.MILLISECONDS
+    val f = followersInfo.map {
+      tuple => (tuple._1, Duration(now - tuple._2, unit).toString )  }
+    LeaderInfo(Duration(now - startTime, unit).toString, f.toMap)
+  }
+  
+  override def onAppendEntriesResponse(member: Member, request: AppendEntries, response: AppendEntriesResponse) = {
+      val time = System.currentTimeMillis() 
+	  if (!request.entries.isEmpty) {
+            onAppendEntriesResponseUpdateNextLogIndex(member, request, response)
+       }
+      followersInfo.put(member.binding, time)
+  }
 
+  private def onAppendEntriesResponseUpdateNextLogIndex(member: Member, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
+      if (appendEntriesResponse.success) {
+        member.nextLogIndex.incrementAndGet()
+      } else {
+        val currentIndex = member.nextLogIndex.decrementAndGet()
+        if (currentIndex == 0) member.nextLogIndex.set(1)
+      }
+      LOG.debug(s"Member ${member.binding} $appendEntriesResponse - NextLogIndex is ${member.nextLogIndex}")
+  }
 }
 
-object Replicator extends Logging {
+class Replicator extends Logging {
 
-  val Name = "Replicator"
   val ReplicateTimeout = 8000 //TODO: to be configurable
-  val executor = Executors.newFixedThreadPool(50) //TODO: to be configurable
+ 
 
   //replicate and wait for a majority of acks. 
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Seq[Member] = {
-    val execution = Executions.newExecution().withExecutor(executor)
+    val execution = Executions.newExecution().withExecutor(cluster.replicatorExecutor)
     cluster.membership.allMembersBut(cluster.local).foreach { member =>
       execution.withTask(() => {
-        val originalName = Thread.currentThread().getName()
-        Thread.currentThread().setName(s"$Name-$member")
+//        val originalName = Thread.currentThread().getName()
+//        Thread.currentThread().setName(s"$Name-$member")
         val result: (Member, Boolean) = (member, member replicate appendEntries)
-        Thread.currentThread().setName(originalName)
+//        Thread.currentThread().setName(originalName)
         result
       })
     }

@@ -26,28 +26,12 @@ import the.walrus.ckite.states.Stopped
 
 class Member(val binding: String) extends Logging {
 
-  val currentTerm = new AtomicInteger(0)
   val nextLogIndex = new AtomicInteger(1)
-  val state = new AtomicReference[State](Starter)
   val connector: Connector = new ThriftConnector(binding)
-  val votedFor = new AtomicReference[Option[String]]
 
   def id() = s"$binding"
   
-  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
-
-  def on[T](command: Command)(implicit cluster: Cluster): T = currentState.on[T](command)
-  
-  def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = currentState on jointConsensusCommited
-  
-  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = cluster.synchronized {
-      if (requestVote.term < term) {
-        LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
-        RequestVoteResponse(term, false)
-      } else {
-        currentState on requestVote
-      }
-  }
+  def forwardCommand[T](command: Command): T = connector.send[T](this, command)
   
   def sendHeartbeat(term: Int)(implicit cluster: Cluster) = synchronized {
     LOG.trace(s"Sending heartbeat to $id in term ${term}")
@@ -58,9 +42,7 @@ class Member(val binding: String) extends Logging {
           LOG.debug(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
           cluster.local.currentState.stepDown(None, term)
         } else {
-          if (!appendEntries.entries.isEmpty) {
-            onAppendEntriesResponseUpdateNextLogIndex(appendEntries, appendEntriesResponse)
-          }
+          cluster.local.currentState.onAppendEntriesResponse(this, appendEntries, appendEntriesResponse)
         }
     }
   }
@@ -81,11 +63,11 @@ class Member(val binding: String) extends Logging {
     }
   }
   
-  def replicate(appendEntries: AppendEntries): Boolean =  { 
+  def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Boolean =  { 
     LOG.info(s"Replicating to $id")
     synchronized {
     connector.send(this, appendEntries).map { replicationResponse =>
-      onAppendEntriesResponseUpdateNextLogIndex(appendEntries, replicationResponse)
+      cluster.local.currentState.onAppendEntriesResponse(this, appendEntries, replicationResponse)
       replicationResponse.success
     }.recover {
       case ChannelWriteException(e:ConnectException)  =>
@@ -97,35 +79,11 @@ class Member(val binding: String) extends Logging {
     } get
   }
   }
-  private def onAppendEntriesResponseUpdateNextLogIndex(appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
-      if (appendEntriesResponse.success) {
-        nextLogIndex.incrementAndGet()
-      } else {
-        val currentIndex = nextLogIndex.decrementAndGet()
-        if (currentIndex == 0) nextLogIndex.set(1)
-      }
-      LOG.debug(s"Member $binding $appendEntriesResponse - NextLogIndex is $nextLogIndex")
-  }
+  
   
   def setNextLogIndex(index: Int) = nextLogIndex.set(index)
 
-  def term(): Int = this.currentTerm.intValue()
 
-  def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
-    if (receivedTerm > term) {
-      LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
-      votedFor.set(None)
-      currentTerm.set(receivedTerm)
-      cluster.updateContextInfo
-    }
-  }
-
-  def incrementTerm(implicit cluster: Cluster) = {
-    val term = currentTerm.incrementAndGet()
-    cluster.updateContextInfo
-    term
-  }
-  
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
   def requestVote(implicit cluster: Cluster): Boolean = {
     LOG.debug(s"Requesting vote to $id")
@@ -146,35 +104,7 @@ class Member(val binding: String) extends Logging {
     } get
   }
   
-  def voteForMyself = votedFor.set(Some(id))
-
-  def forwardCommand[T](command: Command): T = connector.send[T](this, command)
-
-  def becomeLeader(term: Int)(implicit cluster: Cluster) = become(new Leader, term)
-
-  def becomeCandidate(term: Int)(implicit cluster: Cluster) = become(new Candidate, term)
-
-  def becomeFollower(term: Int)(implicit cluster: Cluster) = become(new Follower, term)
-
-  private def become(newState: State, term: Int)(implicit cluster: Cluster) = {
-    if (currentState.canTransition) {
-    	LOG.info(s"Transition from $state to $newState")
-    	currentState stop
-    	
-    	changeState(newState)
-    	
-    	currentState begin term
-    }
-  }
-
-  private def currentState = state.get()
-
-  private def changeState(newState: State) = state.set(newState)
 
   override def toString() = id
-  
-  def stop(implicit cluster: Cluster) = {
-    become(Stopped, cluster.local.term)
-  }
   
 }

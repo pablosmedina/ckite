@@ -16,4 +16,12 @@ class KVStore extends StateMachine {
 		 }
   }
   
+    def deserialize(snapshotBytes: Array[Byte]) = {
+      
+    }
+  
+  def serialize(): Array[Byte] = {
+    null.asInstanceOf[Array[Byte]]
+  }
+  
 }

@@ -14,30 +14,61 @@ import the.walrus.ckite.rpc.MajorityJointConsensus
 import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import org.mapdb.DBMaker
+import java.io.File
+import org.mapdb.DB
 
-//TODO: make me persistent
-class RLog(stateMachine: StateMachine) extends Logging {
+class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) extends Logging {
 
-  val entries = TrieMap[Int, LogEntry]()
-  val commitIndex = new AtomicInteger(0)
+  val entries = db.getTreeMap[Int, LogEntry]("entries")
+  val commitIndex = db.getAtomicInteger("commitIndex")
+  
   val lastLog = new AtomicInteger(0)
-
+  val lock = new ReentrantReadWriteLock()
+  val exclusiveLock = lock.writeLock()
+  val sharedLock = lock.readLock()
+  
+  replay()
+  
+  private def replay() = {
+    val ci = commitIndex.get()
+    if (ci > 0) {
+    	LOG.info(s"Start log replay. $ci LogEntries will be replayed")
+    	1 to ci foreach { index => 
+    	  LOG.info(s"Replaying index $index")
+    	  execute(entries.get(index).command) 
+    	}
+    	LOG.info(s"Finished log replay")
+    }
+  }
+  
+  
+ 
+  
   def tryAppend(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
-    LOG.trace(s"try appending $appendEntries")
-    val canAppend = hasPreviousLogEntry(appendEntries)
-    if (canAppend) append(appendEntries.entries)
-    commitUntil(appendEntries.commitIndex)
-    canAppend
+    sharedLock.lock()
+    try {
+      LOG.trace(s"try appending $appendEntries")
+      val canAppend = hasPreviousLogEntry(appendEntries)
+      if (canAppend) appendWithLockAcquired(appendEntries.entries)
+      commitUntil(appendEntries.commitIndex)
+      canAppend
+    } finally {
+      sharedLock.unlock()
+    }
   }
   
   private def hasPreviousLogEntry(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
   }
   
-  def append(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
-    logEntries.foreach { logEntry =>
+  private def appendWithLockAcquired(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
+      logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
+//      compactionPolicy.execute(logEntry, this)
       entries.put(logEntry.index, logEntry)
+//      db.commit()
       logEntry.command match {
         case c: EnterJointConsensus => cluster.apply(c)
         case c: LeaveJointConsensus => cluster.apply(c)
@@ -45,11 +76,23 @@ class RLog(stateMachine: StateMachine) extends Logging {
       } 
     }
   }
+  
+  def append(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
+	  	sharedLock.lock()
+	  	try {
+	  	  appendWithLockAcquired(logEntries)
+	  	} finally {
+	  	  sharedLock.unlock()
+	  	}
+  }
 
-  def getLogEntry(index: Int): Option[LogEntry] = entries.get(index)
+  def getLogEntry(index: Int): Option[LogEntry] = {
+    val entry = entries.get(index)
+    if (entry != null) Some(entry) else None
+  }
   
   def getLastLogEntry() = {
-    getLogEntry(lastLog.intValue())
+    getLogEntry(findLastLogIndex)
   }
 
   def getPreviousLogEntry(logEntry: LogEntry) = {
@@ -57,14 +100,14 @@ class RLog(stateMachine: StateMachine) extends Logging {
   }
 
   def containsEntry(index: Int, term: Int) = {
-    val logEntryOption = entries.get(index)
+    val logEntryOption = getLogEntry(index)
     if (logEntryOption.isDefined) logEntryOption.get.term == term else (index == -1 && term == -1)
   }
 
   def commit(logEntry: LogEntry)(implicit cluster: Cluster) = {
-    val entryOption = entries.get(logEntry.index)
-    if (entryOption.isDefined) {
-      val entry = entryOption.get
+    val logEntryOption = getLogEntry(logEntry.index)
+    if (logEntryOption.isDefined) {
+      val entry = logEntryOption.get
     	if (entry.term == cluster.local.term) {
     		commitEntriesUntil(logEntry.index)
     		safeCommit(logEntry.index)
@@ -76,7 +119,7 @@ class RLog(stateMachine: StateMachine) extends Logging {
 
   private def commitEntriesUntil(entryIndex: Int)(implicit cluster: Cluster) = {
     (commitIndex.intValue() + 1) until entryIndex foreach { index =>
-      if (entries.contains(index)) {
+      if (entries.containsKey(index)) {
         safeCommit(index)
       }
     }
@@ -89,12 +132,13 @@ class RLog(stateMachine: StateMachine) extends Logging {
   }
 
   private def safeCommit(entryIndex: Int)(implicit cluster: Cluster) = {
-    val entryOption = entries.get(entryIndex)
-    if (entryOption.isDefined) {
-      val entry = entryOption.get
+     val logEntryOption = getLogEntry(entryIndex)
+    if (logEntryOption.isDefined) {
+      val entry = logEntryOption.get
     	if (entryIndex > commitIndex.intValue()) {
     		LOG.info(s"Commiting entry $entry")
     		commitIndex.set(entry.index)
+    		db.commit()
     		execute(entry.command)
     	} else {
     		LOG.info(s"Already commited entry $entry")
@@ -119,9 +163,7 @@ class RLog(stateMachine: StateMachine) extends Logging {
 
   def findLastLogIndex(): Int = {
     if (entries.isEmpty) return 0
-    val entriesSeq = entries.keySet
-    val sortedEntries = SortedSet(entriesSeq.toSeq: _*)
-    sortedEntries.lastKey
+    entries.keySet.last()
   }
 
   def getCommitIndex(): Int = {
@@ -131,9 +173,7 @@ class RLog(stateMachine: StateMachine) extends Logging {
   def nextLogIndex() = {
     lastLog.incrementAndGet()
   }
-
-  override def toString() = {
-    s"Entries=${entries}"
-  }
+  
+  def size() = entries.size
 
 }

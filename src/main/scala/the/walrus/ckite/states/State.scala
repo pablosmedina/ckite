@@ -11,6 +11,9 @@ import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rpc.MajorityJointConsensus
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rpc.AppendEntries
+import the.walrus.ckite.rpc.AppendEntriesResponse
+import the.walrus.ckite.Member
 
 trait State extends Logging {
 
@@ -43,5 +46,10 @@ trait State extends Logging {
     cluster.local becomeFollower term
   }
 
-
+  def info()(implicit cluster: Cluster): StateInfo = {
+    NonLeaderInfo(cluster.leader.toString())
+   }
+  
+  def onAppendEntriesResponse(member: Member, request: AppendEntries, response: AppendEntriesResponse) = {}
+  
 }

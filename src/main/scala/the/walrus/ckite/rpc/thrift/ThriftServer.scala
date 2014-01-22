@@ -10,12 +10,19 @@ import java.nio.ByteBuffer
 import com.twitter.util.FuturePool
 import java.util.concurrent.Executors
 import the.walrus.ckite.rpc.Command
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.SynchronousQueue
+import com.twitter.concurrent.NamedPoolThreadFactory
 
 class ThriftServer(cluster: Cluster) {
 
   var finagleServer: ListeningServer = _
   
-  val futurePool = FuturePool(Executors.newFixedThreadPool(8))
+  val futurePool = FuturePool(new ThreadPoolExecutor(0, 50,
+                                      15L, TimeUnit.SECONDS,
+                                      new SynchronousQueue[Runnable](),
+                                      new NamedPoolThreadFactory("ThriftWorker", true)))
   
   def start() = {
     finagleServer = Thrift.serve(cluster.local.id, ckiteService)
@@ -24,16 +31,16 @@ class ThriftServer(cluster: Cluster) {
   def ckiteService = {
     val ckiteService = new CKiteService[Future]() {
       override def sendRequestVote(requestVote: RequestVoteST) = futurePool {
-        Thread.currentThread().setName("requestVote")
+//        Thread.currentThread().setName("requestVote")
         cluster on requestVote
       }
       override def sendAppendEntries(appendEntries: AppendEntriesST) = futurePool {
-        Thread.currentThread().setName("appendEntries")
+//        Thread.currentThread().setName("appendEntries")
         cluster on appendEntries
       }
       
       override def forwardCommand(bb: ByteBuffer) =  futurePool {
-        Thread.currentThread().setName("forwardCommand")
+//        Thread.currentThread().setName("forwardCommand")
         val command: Command  = bb
         cluster.on[Any](command)
       }
