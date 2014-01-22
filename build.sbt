@@ -14,7 +14,9 @@ libraryDependencies ++= Seq(
 	"org.apache.thrift" % "libthrift" % "0.9.1",
 	"com.twitter" %% "finagle-thrift" % "6.6.2",
 	"com.twitter" %% "finagle-http" % "6.6.2",
+	"com.twitter" %% "twitter-server" % "1.0.2",
 	"com.typesafe" % "config" % "1.0.2",
+	"org.mapdb" % "mapdb" % "0.9.8",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
 )
