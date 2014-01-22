@@ -14,6 +14,7 @@ class Configuration(var config: Config) {
   val MembersBindings = "membersBindings"
   val WaitForLeaderTimeout = "waitForLeaderTimeout"
   val CollectVotesTimeout = "collectVotesTimeout"
+  val DataDir = "dataDir"
 
   def withMinElectionTimeout(minElectionTimeout: Int) = {
     config = config.withValue(MinElectionTimeout, ConfigValueFactory.fromAnyRef(minElectionTimeout))
@@ -41,6 +42,14 @@ class Configuration(var config: Config) {
 
   def withLocalBinding(localBinding: String) = {
     config = config.withValue(LocalBinding, ConfigValueFactory.fromAnyRef(localBinding))
+  }
+  
+  def withDataDir(dataDir: String) = {
+    config = config.withValue(DataDir, ConfigValueFactory.fromAnyRef(dataDir))
+  }
+  
+  def dataDir: String = {
+    config.getString(DataDir)
   }
 
   def localBinding: String = {

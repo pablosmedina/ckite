@@ -30,6 +30,11 @@ class CKiteBuilder {
     configuration.withLocalBinding(localBinding)
     this
   }
+  
+  def withDataDir(dataDir: String): CKiteBuilder = {
+    configuration.withDataDir(dataDir)
+    this
+  }
 
   def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
     configuration.withMembersBindings(membersBindings)
