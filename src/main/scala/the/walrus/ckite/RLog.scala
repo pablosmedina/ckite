@@ -18,6 +18,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import org.mapdb.DBMaker
 import java.io.File
 import org.mapdb.DB
+import the.walrus.ckite.statemachine.FixedLogSizeCompactionPolicy
 
 class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) extends Logging {
 
@@ -28,6 +29,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
   val lock = new ReentrantReadWriteLock()
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
+  val compactionPolicy = new FixedLogSizeCompactionPolicy(5, cluster.configuration.dataDir)
   
   replay()
   
@@ -43,20 +45,19 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
   
-  
- 
-  
   def tryAppend(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
     sharedLock.lock()
     try {
-      LOG.trace(s"try appending $appendEntries")
+      LOG.trace(s"Try appending $appendEntries")
       val canAppend = hasPreviousLogEntry(appendEntries)
       if (canAppend) appendWithLockAcquired(appendEntries.entries)
       commitUntil(appendEntries.commitIndex)
       canAppend
     } finally {
       sharedLock.unlock()
+      compactionPolicy.apply(this)
     }
+    
   }
   
   private def hasPreviousLogEntry(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
@@ -66,9 +67,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
   private def appendWithLockAcquired(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
       logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
-//      compactionPolicy.execute(logEntry, this)
       entries.put(logEntry.index, logEntry)
-//      db.commit()
       logEntry.command match {
         case c: EnterJointConsensus => cluster.apply(c)
         case c: LeaveJointConsensus => cluster.apply(c)
@@ -83,6 +82,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
 	  	  appendWithLockAcquired(logEntries)
 	  	} finally {
 	  	  sharedLock.unlock()
+	  	  compactionPolicy.apply(this)
 	  	}
   }
 
@@ -138,7 +138,6 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     	if (entryIndex > commitIndex.intValue()) {
     		LOG.info(s"Commiting entry $entry")
     		commitIndex.set(entry.index)
-    		db.commit()
     		execute(entry.command)
     	} else {
     		LOG.info(s"Already commited entry $entry")
@@ -148,11 +147,16 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
 
   def execute(command: Command)(implicit cluster: Cluster) = {
     LOG.info(s"Executing $command")
-    command match {
-        case c: EnterJointConsensus => cluster.on(MajorityJointConsensus(c.newBindings))
-        case c: LeaveJointConsensus => Unit
-        case _ => stateMachine.apply(command)
-      } 
+    sharedLock.lock()
+    try {
+    	command match {
+    	case c: EnterJointConsensus => cluster.on(MajorityJointConsensus(c.newBindings))
+    	case c: LeaveJointConsensus => Unit
+    	case _ => stateMachine.apply(command)
+    	} 
+    } finally {
+      sharedLock.unlock()
+    }
   }
   
   def execute(command: ReadCommand)(implicit cluster: Cluster) = {

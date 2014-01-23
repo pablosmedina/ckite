@@ -5,6 +5,6 @@ import the.walrus.ckite.RLog
 
 trait CompactionPolicy {
 
-  def execute(logEntry: LogEntry, rlog: RLog)
+  def apply(rlog: RLog)
   
 }
