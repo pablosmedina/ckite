@@ -1,6 +1,4 @@
-package the.walrus.ckite.statemachine
-
-import the.walrus.ckite.rpc.LogEntry
+package the.walrus.ckite.rlog
 import the.walrus.ckite.RLog
 
 trait CompactionPolicy {

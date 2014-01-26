@@ -14,6 +14,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.SynchronousQueue
 import com.twitter.concurrent.NamedPoolThreadFactory
+import the.walrus.ckite.logcompaction.Snapshot
 
 class ThriftServer(cluster: Cluster) {
 
@@ -43,6 +44,10 @@ class ThriftServer(cluster: Cluster) {
 //        Thread.currentThread().setName("forwardCommand")
         val command: Command  = bb
         cluster.on[Any](command)
+      }
+      
+      override def installSnapshot(installSnapshot: InstallSnapshotST) = futurePool {
+         cluster.installSnapshot(installSnapshot)
       }
     }
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())

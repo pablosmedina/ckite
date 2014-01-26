@@ -20,7 +20,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-31T02:05:30.146-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-25T23:24:11.889-0300")
 trait CKiteService[+MM[_]] extends ThriftService {
   
   def sendRequestVote(requestVote: RequestVoteST): MM[RequestVoteResponseST]
@@ -28,6 +28,8 @@ trait CKiteService[+MM[_]] extends ThriftService {
   def sendAppendEntries(appendEntries: AppendEntriesST): MM[AppendEntriesResponseST]
   
   def forwardCommand(command: ByteBuffer): MM[ByteBuffer]
+  
+  def installSnapshot(installSnapshot: InstallSnapshotST): MM[Boolean]
 }
 
 
@@ -830,6 +832,272 @@ object CKiteService {
   
     override def productPrefix: String = "forwardCommand$result"
   }
+  
+  object installSnapshot$args extends ThriftStructCodec3[installSnapshot$args] {
+    val Struct = new TStruct("installSnapshot_args")
+    val InstallSnapshotField = new TField("installSnapshot", TType.STRUCT, 1)
+    val InstallSnapshotFieldManifest = implicitly[Manifest[InstallSnapshotST]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: installSnapshot$args) {
+    }
+  
+    override def encode(_item: installSnapshot$args, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): installSnapshot$args = Immutable.decode(_iprot)
+  
+    def apply(
+      installSnapshot: InstallSnapshotST
+    ): installSnapshot$args = new Immutable(
+      installSnapshot
+    )
+  
+    def unapply(_item: installSnapshot$args): Option[InstallSnapshotST] = Some(_item.installSnapshot)
+  
+    object Immutable extends ThriftStructCodec3[installSnapshot$args] {
+      override def encode(_item: installSnapshot$args, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): installSnapshot$args = {
+        var installSnapshot: InstallSnapshotST = null
+        var _got_installSnapshot = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 1 => { /* installSnapshot */
+                _field.`type` match {
+                  case TType.STRUCT => {
+                    installSnapshot = {
+                      InstallSnapshotST.decode(_iprot)
+                    }
+                    _got_installSnapshot = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          installSnapshot
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of installSnapshot$args.  You typically should not need to
+     * directly reference this class; instead, use the installSnapshot$args.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val installSnapshot: InstallSnapshotST
+    ) extends installSnapshot$args
+  
+  }
+  
+  trait installSnapshot$args extends ThriftStruct
+    with Product1[InstallSnapshotST]
+    with java.io.Serializable
+  {
+    import installSnapshot$args._
+  
+  
+    def installSnapshot: InstallSnapshotST
+  
+    def _1 = installSnapshot
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): installSnapshot$args =
+      _fieldId match {
+        case 1 => copy(installSnapshot = null)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      installSnapshot$args.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (installSnapshot ne null) {
+        val installSnapshot_item = installSnapshot
+        _oprot.writeFieldBegin(InstallSnapshotField)
+        installSnapshot_item.write(_oprot)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      installSnapshot: InstallSnapshotST = this.installSnapshot
+    ): installSnapshot$args =
+      new Immutable(
+        installSnapshot
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[installSnapshot$args]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => installSnapshot
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "installSnapshot$args"
+  }
+  
+  object installSnapshot$result extends ThriftStructCodec3[installSnapshot$result] {
+    val Struct = new TStruct("installSnapshot_result")
+    val SuccessField = new TField("success", TType.BOOL, 0)
+    val SuccessFieldManifest = implicitly[Manifest[Boolean]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: installSnapshot$result) {
+    }
+  
+    override def encode(_item: installSnapshot$result, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): installSnapshot$result = Immutable.decode(_iprot)
+  
+    def apply(
+      success: Option[Boolean] = None
+    ): installSnapshot$result = new Immutable(
+      success
+    )
+  
+    def unapply(_item: installSnapshot$result): Option[Option[Boolean]] = Some(_item.success)
+  
+    object Immutable extends ThriftStructCodec3[installSnapshot$result] {
+      override def encode(_item: installSnapshot$result, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): installSnapshot$result = {
+        var success: Boolean = false
+        var _got_success = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 0 => { /* success */
+                _field.`type` match {
+                  case TType.BOOL => {
+                    success = {
+                      _iprot.readBool()
+                    }
+                    _got_success = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          if (_got_success) Some(success) else None
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of installSnapshot$result.  You typically should not need to
+     * directly reference this class; instead, use the installSnapshot$result.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val success: Option[Boolean] = None
+    ) extends installSnapshot$result
+  
+  }
+  
+  trait installSnapshot$result extends ThriftStruct
+    with Product1[Option[Boolean]]
+    with java.io.Serializable
+  {
+    import installSnapshot$result._
+  
+  
+    def success: Option[Boolean]
+  
+    def _1 = success
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): installSnapshot$result =
+      _fieldId match {
+        case 0 => copy(success = None)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      installSnapshot$result.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (success.isDefined) {
+        val success_item = success.get
+        _oprot.writeFieldBegin(SuccessField)
+        _oprot.writeBool(success_item)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      success: Option[Boolean] = this.success
+    ): installSnapshot$result =
+      new Immutable(
+        success
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[installSnapshot$result]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => success
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "installSnapshot$result"
+  }
 
   import com.twitter.util.Future
 
@@ -841,6 +1109,8 @@ object CKiteService {
     def sendAppendEntries(appendEntries: AppendEntriesST): Future[AppendEntriesResponseST]
     
     def forwardCommand(command: ByteBuffer): Future[ByteBuffer]
+    
+    def installSnapshot(installSnapshot: InstallSnapshotST): Future[Boolean]
   }
 
   @deprecated("use CKiteService$FinagleClient", "3.4.0")

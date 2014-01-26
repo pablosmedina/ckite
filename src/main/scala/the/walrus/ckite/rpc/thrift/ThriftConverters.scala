@@ -14,6 +14,7 @@ import java.io.ByteArrayInputStream
 import java.io.ObjectInputStream
 import the.walrus.ckite.util.Logging
 import the.walrus.ckite.rpc.Command
+import the.walrus.ckite.rlog.Snapshot
 
 object ThriftConverters extends Logging {
 
@@ -70,6 +71,14 @@ object ThriftConverters extends Logging {
     byteBuffer.get(bytes)
     val c = deserialize[T](bytes)
     c
+  } 
+  
+  implicit def snapshotToThrift(snapshot: Snapshot): InstallSnapshotST = {
+    InstallSnapshotST(snapshot.stateMachineState, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm)
+  }
+  
+  implicit def snapshotFromThrift(installSnapshotST: InstallSnapshotST): Snapshot = {
+    new Snapshot(installSnapshotST.stateMachineState, installSnapshotST.lastLogEntryIndex, installSnapshotST.lastLogEntryTerm)
   } 
   
   private def serialize(command: Any): Array[Byte] = {
