@@ -23,11 +23,14 @@ import the.walrus.ckite.rpc.MajorityJointConsensus
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.states.Stopped
+import java.util.concurrent.atomic.AtomicBoolean
+import the.walrus.ckite.rlog.Snapshot
 
 class Member(val binding: String) extends Logging {
 
   val nextLogIndex = new AtomicInteger(1)
   val connector: Connector = new ThriftConnector(binding)
+  val replicationsEnabled = new AtomicBoolean(true)
 
   def id() = s"$binding"
   
@@ -48,7 +51,7 @@ class Member(val binding: String) extends Logging {
   }
 
   private def createAppendEntries(termToSent: Int)(implicit cluster: Cluster): AppendEntries =  {
-    val entryToPiggyBack = cluster.rlog.getLogEntry(nextLogIndex.intValue())
+    val entryToPiggyBack = if (isReplicationEnabled) cluster.rlog.getLogEntry(nextLogIndex.intValue()) else None
     entryToPiggyBack match {
       case None => AppendEntries(termToSent, cluster.local.id, cluster.rlog.getCommitIndex)
       case Some(entry) => {
@@ -64,6 +67,7 @@ class Member(val binding: String) extends Logging {
   }
   
   def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Boolean =  { 
+    if (!isReplicationEnabled) return false
     LOG.info(s"Replicating to $id")
     synchronized {
     connector.send(this, appendEntries).map { replicationResponse =>
@@ -78,6 +82,10 @@ class Member(val binding: String) extends Logging {
         false
     } get
   }
+  }
+  
+  def sendSnapshot(snapshot: Snapshot) = {
+      connector.send(this, snapshot)
   }
   
   
@@ -103,6 +111,18 @@ class Member(val binding: String) extends Logging {
         false
     } get
   }
+  
+  def enableReplications() = {
+	LOG.info(s"Enabling replications to $id")
+    replicationsEnabled.set(true)
+  }
+  
+  def disableReplications() = {
+    LOG.info(s"Disabling replications to $id")
+    replicationsEnabled.set(false)
+  }
+  
+  def isReplicationEnabled = replicationsEnabled.get()
   
 
   override def toString() = id

@@ -18,13 +18,14 @@ import com.twitter.finagle.thrift.ThriftClientFramedCodec
 import com.twitter.conversions.time._
 import com.twitter.finagle.service.RetryPolicy
 import com.twitter.util.Throw
+import the.walrus.ckite.rlog.Snapshot
 
 
 class ThriftConnector(binding: String) extends Connector with Logging {
 
   val client = new CKiteService.FinagledClient(ClientBuilder().hosts(binding)
   				.retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)
-  				.hostConnectionLimit(100).hostConnectionCoresize(100).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
+  				.hostConnectionLimit(2).hostConnectionCoresize(1).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
   
   override def send(member: Member, request: RequestVote): Try[RequestVoteResponse] = {
     Try {
@@ -44,6 +45,14 @@ class ThriftConnector(binding: String) extends Connector with Logging {
     val future = client.forwardCommand(command)
     val value: T = future.get
     value
+  }
+  
+  override def send(member: Member, snapshot: Snapshot) = {
+    val future: Future[Boolean] = client.installSnapshot(snapshot)
+    future.foreach { success => 
+      	 member.setNextLogIndex(snapshot.lastLogEntryIndex + 1)
+         member.enableReplications()
+    }
   }
   
 

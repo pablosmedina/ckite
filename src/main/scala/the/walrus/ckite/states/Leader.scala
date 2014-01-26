@@ -52,7 +52,7 @@ import com.twitter.concurrent.NamedPoolThreadFactory
  * servers. Apply newly committed entries to state machine.
  * •! Step down if currentTerm changes (§5.5)
  */
-class Leader extends State {
+class Leader(implicit cluster: Cluster) extends State {
 
   val heartbeater = new Heartbeater()
   val replicator = new Replicator()
@@ -178,8 +178,24 @@ class Leader extends State {
       } else {
         val currentIndex = member.nextLogIndex.decrementAndGet()
         if (currentIndex == 0) member.nextLogIndex.set(1)
+        if (isLogEntryInSnapshot(currentIndex)) {
+          LOG.info(s"Next Log index to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
+          member.disableReplications()
+          sendSnapshotAsync(member)
+        }
       }
       LOG.debug(s"Member ${member.binding} $appendEntriesResponse - NextLogIndex is ${member.nextLogIndex}")
+  }
+  
+  private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
+    val some = cluster.rlog.getSnapshot().map {snapshot => logIndex <= snapshot.lastLogEntryIndex }
+    some.getOrElse(false).asInstanceOf[Boolean]
+  }
+  
+  def sendSnapshotAsync(member: Member) = {
+	 val snapshot = cluster.rlog.getSnapshot().get
+     LOG.info(s"Sending InstallSnapshot to ${member} containing $snapshot")
+     member.sendSnapshot(snapshot)
   }
 }
 

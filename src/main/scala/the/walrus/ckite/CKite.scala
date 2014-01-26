@@ -11,11 +11,12 @@ class CKite(cluster: Cluster) {
   val http = HttpServer(cluster)
   
   def start() = {
-    thrift start
     
     http start
     
     cluster start
+    
+    thrift start
   }
   
   def stop() =  {

@@ -32,6 +32,12 @@ struct RequestVoteResponseST {
 	2: required bool granted;
 }
 
+struct InstallSnapshotST {
+	1: required binary stateMachineState;
+	2: required i32 lastLogEntryIndex;
+	3: required i32 lastLogEntryTerm;
+}
+
 service CKiteService {
 
 	RequestVoteResponseST sendRequestVote(1:RequestVoteST requestVote);
@@ -39,5 +45,7 @@ service CKiteService {
 	AppendEntriesResponseST sendAppendEntries(1:AppendEntriesST appendEntries);
 	
 	binary forwardCommand(1:binary command);
+	
+	bool installSnapshot(1:InstallSnapshotST installSnapshot);
 
 }

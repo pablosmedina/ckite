@@ -35,6 +35,8 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.Executors.DefaultThreadFactory
 import com.twitter.concurrent.NamedPoolThreadFactory
+import the.walrus.ckite.rpc.EnterJointConsensus
+import the.walrus.ckite.rlog.Snapshot
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
@@ -102,10 +104,6 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
       case write: WriteCommand => synchronized { local.on[T](write) }
       case read: ReadCommand => local.on[T](read)
     }
-  }
-
-  def on(majorityJointConsensus: MajorityJointConsensus) = {
-    local on majorityJointConsensus
   }
 
   def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
@@ -181,16 +179,34 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.toString)
   }
-
+  
+  def addMember(memberBinding: String) = {
+    val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } :+ memberBinding
+    on(EnterJointConsensus(newMemberBindings.toList))
+  }
+  
+  def removeMember(memberBinding: String) = {
+    val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } diff memberBinding
+    on(EnterJointConsensus(newMemberBindings.toList))
+  }
+  
+  //EnterJointConsensus received. Switch membership to JointConsensus
   def apply(enterJointConsensus: EnterJointConsensus) = {
     LOG.info(s"Entering in JointConsensus")
     val currentMembership = consensusMembership.get()
     consensusMembership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
     LOG.info(s"Membership ${consensusMembership.get()}")
   }
+  
+  //EnterJointConsensus reached quorum. Send LeaveJointConsensus If I'm the Leader to notify the new membership.
+  def on(majorityJointConsensus: MajorityJointConsensus) = {
+    local on majorityJointConsensus
+  }
 
+  //LeaveJointConsensus received. A new membership has been set. Switch to SimpleConsensus or shutdown If no longer part of the cluster.
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
+    //Check If I'm part of the new Cluster and shutdown if not
     consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
     LOG.info(s"Membership ${consensusMembership.get()}")
   }
@@ -221,6 +237,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     dir.mkdirs()
     val file = new File(dir, "ckite")
     file
+  }
+  
+  def installSnapshot(snapshot: Snapshot): Boolean = {
+    LOG.info("InstallSnapshot received")
+    rlog.installSnapshot(snapshot)
   }
 
 }

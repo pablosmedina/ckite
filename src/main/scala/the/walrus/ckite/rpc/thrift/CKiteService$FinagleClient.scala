@@ -20,7 +20,7 @@ import org.apache.thrift.transport.{TMemoryBuffer, TMemoryInputTransport}
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2013-12-31T02:05:30.146-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-25T23:24:11.889-0300")
 class CKiteService$FinagleClient(
   val service: FinagleService[ThriftClientRequest, Array[Byte]],
   val protocolFactory: TProtocolFactory = new TBinaryProtocol.Factory,
@@ -150,6 +150,33 @@ class CKiteService$FinagleClient(
     } onFailure { ex =>
       __stats_forwardCommand.FailuresCounter.incr()
       __stats_forwardCommand.FailuresScope.counter(ex.getClass.getName).incr()
+    }
+  }
+  private[this] object __stats_installSnapshot {
+    val RequestsCounter = scopedStats.scope("installSnapshot").counter("requests")
+    val SuccessCounter = scopedStats.scope("installSnapshot").counter("success")
+    val FailuresCounter = scopedStats.scope("installSnapshot").counter("failures")
+    val FailuresScope = scopedStats.scope("installSnapshot").scope("failures")
+  }
+  
+  
+  def installSnapshot(installSnapshot: InstallSnapshotST): Future[Boolean] = {
+    __stats_installSnapshot.RequestsCounter.incr()
+    this.service(encodeRequest("installSnapshot", installSnapshot$args(installSnapshot))) flatMap { response =>
+      val result = decodeResponse(response, installSnapshot$result)
+      val exception =
+        None
+      exception.orElse(result.success.map(Future.value)).getOrElse(Future.exception(missingResult("installSnapshot")))
+    } rescue {
+      case ex: SourcedException => {
+        if (this.serviceName != "") { ex.serviceName = this.serviceName }
+        Future.exception(ex)
+      }
+    } onSuccess { _ =>
+      __stats_installSnapshot.SuccessCounter.incr()
+    } onFailure { ex =>
+      __stats_installSnapshot.FailuresCounter.incr()
+      __stats_installSnapshot.FailuresScope.counter(ex.getClass.getName).incr()
     }
   }
 }
