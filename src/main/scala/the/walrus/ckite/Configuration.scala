@@ -6,15 +6,19 @@ import scala.collection.JavaConverters._
 
 class Configuration(var config: Config) {
 
-  val MinElectionTimeout = "minElectionTimeout"
-  val MaxElectionTimeout = "maxElectionTimeout"
-  val ReplicationTimeout = "replicationTimeout"
-  val HeartbeatsInterval = "heartbeatsInterval"
+  val MinElectionTimeout = "ckite.election.minTimeout"
+  val MaxElectionTimeout = "ckite.election.maxTimeout"
+  val CollectVotesTimeout = "ckite.election.votingTimeout"
+    
+  val ReplicationTimeout = "ckite.replication.timeout"
+  val HeartbeatsInterval = "ckite.heartbeats.period"
+    
+  val MembersBindings = "ckite.cluster.membersBindings"
+  val WaitForLeaderTimeout = "ckite.cluster.waitForLeaderTimeout"
+    
+  val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"  
   val LocalBinding = "localBinding"
-  val MembersBindings = "membersBindings"
-  val WaitForLeaderTimeout = "waitForLeaderTimeout"
-  val CollectVotesTimeout = "collectVotesTimeout"
-  val DataDir = "dataDir"
+  val DataDir = "ckite.data.dir"
 
   def withMinElectionTimeout(minElectionTimeout: Int) = {
     config = config.withValue(MinElectionTimeout, ConfigValueFactory.fromAnyRef(minElectionTimeout))
@@ -78,6 +82,10 @@ class Configuration(var config: Config) {
   
   def collectVotesTimeout: Long = { 
     config.getMilliseconds(CollectVotesTimeout)
+  }
+  
+  def fixedLogSizeCompaction: Long = {
+    config.getLong(FixedLogSizeCompaction)
   }
 
 }
