@@ -16,6 +16,7 @@ import java.util.concurrent.SynchronousQueue
 import com.twitter.concurrent.NamedPoolThreadFactory
 import the.walrus.ckite.rlog.Snapshot
 
+
 class ThriftServer(cluster: Cluster) {
 
   var finagleServer: ListeningServer = _
