@@ -156,8 +156,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
       .withExpectedResults(expectedResults, new MajoritiesExpected(this)).execute[(Member, Boolean)]()
 
     val membersVotes: Iterable[(Member, Boolean)] = rawResults
-    val membersPositiveVotes = membersVotes.filter { memberVote => memberVote._2 }.map { positiveVote => positiveVote._1 }
-    membersPositiveVotes.toSeq
+    val votesGrantedMembers = membersVotes.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
+    votesGrantedMembers.toSeq
   }
 
   def forwardToLeader[T](command: Command): T = {
