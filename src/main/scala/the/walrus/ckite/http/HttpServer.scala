@@ -15,7 +15,7 @@ class HttpServer(cluster: Cluster) {
   var adminServer: Closable = _
   
   def start() = {
-    val restServerPort = cluster.local.binding.split(":")(1).toInt + 1000
+    val restServerPort = cluster.local.id.split(":")(1).toInt + 1000
     val adminServerPort = restServerPort + 1000
      server = ServerBuilder()
       .codec(RichHttp[Request](Http()))

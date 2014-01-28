@@ -3,15 +3,16 @@ package the.walrus.ckite.rpc
 import scala.util.Try
 import the.walrus.ckite.Member
 import the.walrus.ckite.rlog.Snapshot
+import the.walrus.ckite.RemoteMember
 
 trait Connector {
 
-  def send(member: Member, request: RequestVote): Try[RequestVoteResponse]
+  def send(member: RemoteMember, request: RequestVote): Try[RequestVoteResponse]
 
-  def send(member: Member, appendEntries: AppendEntries): Try[AppendEntriesResponse]
+  def send(member: RemoteMember, appendEntries: AppendEntries): Try[AppendEntriesResponse]
   
-  def send(member: Member, snapshot: Snapshot)
+  def send(member: RemoteMember, snapshot: Snapshot)
   
-  def send[T](member: Member, command: Command): T
+  def send[T](member: RemoteMember, command: Command): T
   
 }

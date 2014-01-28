@@ -9,16 +9,22 @@ import the.walrus.ckite.rpc.AppendEntries
 
 case object Stopped extends State {
 
-  override def begin(term: Int)(implicit cluster: Cluster) = {}
+  override def begin(term: Int) = {}
 
-  override def stop(implicit cluster: Cluster) = {}
+  override def stop = {}
 
 //  override def on(command: Command)(implicit cluster: Cluster) = {}
 
-  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
+  override def on(appendEntries: AppendEntries): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
 
-  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = RequestVoteResponse(requestVote.term,false)
+  override def on(requestVote: RequestVote): RequestVoteResponse = RequestVoteResponse(requestVote.term,false)
   
   override def canTransition: Boolean = false
+  
+  override def stepDown(leaderId: Option[String], term: Int) = { }
+
+  override def info(): StateInfo = NonLeaderInfo("")
+  
+  override protected def getCluster: Cluster = throw new UnsupportedOperationException()
   
 }

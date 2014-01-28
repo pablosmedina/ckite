@@ -34,6 +34,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.SynchronousQueue
 import com.twitter.concurrent.NamedPoolThreadFactory
+import the.walrus.ckite.RemoteMember
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -52,14 +53,14 @@ import com.twitter.concurrent.NamedPoolThreadFactory
  * servers. Apply newly committed entries to state machine.
  * •! Step down if currentTerm changes (§5.5)
  */
-class Leader(implicit cluster: Cluster) extends State {
+class Leader(cluster: Cluster) extends State {
 
-  val heartbeater = new Heartbeater()
-  val replicator = new Replicator()
+  val heartbeater = new Heartbeater(cluster)
+  val replicator = new Replicator(cluster)
   val startTime = System.currentTimeMillis()
   val followersInfo = new ConcurrentHashMap[String, Long]()
 
-  override def begin(term: Int)(implicit cluster: Cluster) = {
+  override def begin(term: Int) = {
     if (term < cluster.local.term) {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
       cluster.local.becomeFollower(cluster.local.term)
@@ -72,21 +73,21 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
 
-  private def resetLastLog(implicit cluster: Cluster) = cluster.rlog.resetLastLog()
+  private def resetLastLog = cluster.rlog.resetLastLog()
 
-  private def resetNextIndexes(implicit cluster: Cluster) = {
+  private def resetNextIndexes = {
     val nextIndex = cluster.rlog.lastLog.intValue() + 1
-    cluster.membership.allMembersBut(cluster.local).foreach { member => member.setNextLogIndex(nextIndex) }
+    cluster.membership.remoteMembers.foreach { member => member.setNextLogIndex(nextIndex) }
   }
 
-  override def stop(implicit cluster: Cluster) = {
+  override def stop = {
     LOG.info("Stop being Leader")
     heartbeater stop
 
     cluster.setNoLeader
   }
 
-  override def on[T](command: Command)(implicit cluster: Cluster): T = {
+  override def on[T](command: Command): T = {
     command match {
       case w: WriteCommand => onWriteCommand[T](w)
       case r: ReadCommand => onReadCommand[T](r)
@@ -94,7 +95,7 @@ class Leader(implicit cluster: Cluster) extends State {
 
   }
 
-  private def onWriteCommand[T](command: WriteCommand)(implicit cluster: Cluster): T = {
+  private def onWriteCommand[T](command: WriteCommand): T = {
     val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
     cluster.rlog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
@@ -107,7 +108,7 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
   
-  private def replicate(logEntry: LogEntry)(implicit cluster: Cluster): Seq[Member] = {
+  private def replicate(logEntry: LogEntry): Seq[Member] = {
     if (cluster.hasRemoteMembers) {
       val acks = replicator.replicate(appendEntriesFor(logEntry))
       LOG.info(s"Got replication acks from $acks")
@@ -118,11 +119,11 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
 
-  private def onReadCommand[T](command: ReadCommand)(implicit cluster: Cluster): T = {
+  private def onReadCommand[T](command: ReadCommand): T = {
     (cluster.rlog execute command).asInstanceOf[T]
   }
 
-  private def appendEntriesFor(logEntry: LogEntry)(implicit cluster: Cluster) = {
+  private def appendEntriesFor(logEntry: LogEntry) = {
     val rlog = cluster.rlog
     val previousLogEntry = rlog.getPreviousLogEntry(logEntry)
     previousLogEntry match {
@@ -131,7 +132,7 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
 
-  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
@@ -140,7 +141,7 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
 
-  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote): RequestVoteResponse = {
     if (requestVote.term <= cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
@@ -149,14 +150,16 @@ class Leader(implicit cluster: Cluster) extends State {
     }
   }
 
-  override def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = {
+  override def on(jointConsensusCommited: MajorityJointConsensus) = {
     LOG.info(s"Sending LeaveJointConsensus")
     cluster.on(LeaveJointConsensus(jointConsensusCommited.newBindings))
   }
+  
+  override protected def getCluster: Cluster = cluster
 
   override def toString = "Leader"
     
- override def info()(implicit cluster: Cluster): StateInfo = {
+ override def info(): StateInfo = {
     val now = System.currentTimeMillis()
     val unit = TimeUnit.MILLISECONDS
     val f = followersInfo.map {
@@ -164,15 +167,15 @@ class Leader(implicit cluster: Cluster) extends State {
     LeaderInfo(Duration(now - startTime, unit).toString, f.toMap)
   }
   
-  override def onAppendEntriesResponse(member: Member, request: AppendEntries, response: AppendEntriesResponse) = {
+  override def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
       val time = System.currentTimeMillis() 
 	  if (!request.entries.isEmpty) {
             onAppendEntriesResponseUpdateNextLogIndex(member, request, response)
        }
-      followersInfo.put(member.binding, time)
+      followersInfo.put(member.id, time)
   }
 
-  private def onAppendEntriesResponseUpdateNextLogIndex(member: Member, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
+  private def onAppendEntriesResponseUpdateNextLogIndex(member: RemoteMember, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
       if (appendEntriesResponse.success) {
         member.nextLogIndex.incrementAndGet()
       } else {
@@ -184,7 +187,7 @@ class Leader(implicit cluster: Cluster) extends State {
           sendSnapshotAsync(member)
         }
       }
-      LOG.debug(s"Member ${member.binding} $appendEntriesResponse - NextLogIndex is ${member.nextLogIndex}")
+      LOG.debug(s"Member ${member} $appendEntriesResponse - NextLogIndex is ${member.nextLogIndex}")
   }
   
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
@@ -192,22 +195,22 @@ class Leader(implicit cluster: Cluster) extends State {
     some.getOrElse(false).asInstanceOf[Boolean]
   }
   
-  def sendSnapshotAsync(member: Member) = {
+  def sendSnapshotAsync(member: RemoteMember) = {
 	 val snapshot = cluster.rlog.getSnapshot().get
      LOG.info(s"Sending InstallSnapshot to ${member} containing $snapshot")
      member.sendSnapshot(snapshot)
   }
 }
 
-class Replicator extends Logging {
+class Replicator(cluster: Cluster) extends Logging {
 
   val ReplicateTimeout = 8000 //TODO: to be configurable
  
 
   //replicate and wait for a majority of acks. 
-  def replicate(appendEntries: AppendEntries)(implicit cluster: Cluster): Seq[Member] = {
+  def replicate(appendEntries: AppendEntries): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(cluster.replicatorExecutor)
-    cluster.membership.allMembersBut(cluster.local).foreach { member =>
+    cluster.membership.remoteMembers.foreach { member =>
       execution.withTask(() => {
 //        val originalName = Thread.currentThread().getName()
 //        Thread.currentThread().setName(s"$Name-$member")
@@ -250,13 +253,13 @@ class MajoritiesExpected(cluster: Cluster) extends ExpectedResultFilter {
   }
 }
 
-class Heartbeater extends Logging {
+class Heartbeater(cluster: Cluster) extends Logging {
 
   val Name = "Heartbeater"
 
   val scheduledHeartbeatsPool = Executors.newScheduledThreadPool(1)
 
-  def start(term: Int)(implicit cluster: Cluster) = {
+  def start(term: Int) = {
     LOG.trace("Start Heartbeater")
 
     scheduledHeartbeatsPool.scheduleAtFixedRate(() => {

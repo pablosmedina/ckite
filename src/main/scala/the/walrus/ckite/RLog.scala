@@ -21,7 +21,7 @@ import org.mapdb.DB
 import the.walrus.ckite.rlog.FixedLogSizeCompactionPolicy
 import the.walrus.ckite.rlog.Snapshot
 
-class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) extends Logging {
+class RLog(cluster: Cluster, val stateMachine: StateMachine, db: DB) extends Logging {
 
   val entries = db.getTreeMap[Int, LogEntry]("entries")
   val commitIndex = db.getAtomicInteger("commitIndex")
@@ -59,7 +59,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     if (lastSnapshot != null) Some(Snapshot.deserialize(lastSnapshot.getValue())) else None
   }
   
-  def tryAppend(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
+  def tryAppend(appendEntries: AppendEntries) = {
     sharedLock.lock()
     try {
       LOG.trace(s"Try appending $appendEntries")
@@ -74,11 +74,11 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     
   }
   
-  private def hasPreviousLogEntry(appendEntries: AppendEntries)(implicit cluster: Cluster) = {
+  private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
   }
   
-  private def appendWithLockAcquired(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
+  private def appendWithLockAcquired(logEntries: List[LogEntry]) = {
       logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
       entries.put(logEntry.index, logEntry)
@@ -90,7 +90,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
   
-  def append(logEntries: List[LogEntry])(implicit cluster: Cluster) = {
+  def append(logEntries: List[LogEntry]) = {
 	  	sharedLock.lock()
 	  	try {
 	  	  appendWithLockAcquired(logEntries)
@@ -105,11 +105,11 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     if (entry != null) Some(entry) else None
   }
   
-  def getLastLogEntry() = {
+  def getLastLogEntry(): Option[LogEntry] = {
     getLogEntry(findLastLogIndex)
   }
 
-  def getPreviousLogEntry(logEntry: LogEntry) = {
+  def getPreviousLogEntry(logEntry: LogEntry): Option[LogEntry] = {
     getLogEntry(logEntry.index - 1)
   }
 
@@ -125,7 +125,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
      	.getOrElse(false).asInstanceOf[Boolean]
   }
 
-  def commit(logEntry: LogEntry)(implicit cluster: Cluster) = {
+  def commit(logEntry: LogEntry) = {
     val logEntryOption = getLogEntry(logEntry.index)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
@@ -138,7 +138,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
 
-  private def commitEntriesUntil(entryIndex: Int)(implicit cluster: Cluster) = {
+  private def commitEntriesUntil(entryIndex: Int) = {
     (commitIndex.intValue() + 1) until entryIndex foreach { index =>
       if (entries.containsKey(index)) {
         safeCommit(index)
@@ -146,13 +146,13 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
 
- private def commitUntil(leaderCommitIndex: Int)(implicit cluster: Cluster) = {
+ private def commitUntil(leaderCommitIndex: Int) = {
     if (leaderCommitIndex > commitIndex.intValue()) {
       (commitIndex.intValue() + 1) to leaderCommitIndex foreach { index => safeCommit(index) }
     }
   }
 
-  private def safeCommit(entryIndex: Int)(implicit cluster: Cluster) = {
+  private def safeCommit(entryIndex: Int) = {
      val logEntryOption = getLogEntry(entryIndex)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
@@ -166,7 +166,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
 
-  def execute(command: Command)(implicit cluster: Cluster) = {
+  def execute(command: Command) = {
     LOG.info(s"Executing $command")
     sharedLock.lock()
     try {
@@ -180,7 +180,7 @@ class RLog(val stateMachine: StateMachine, db: DB)(implicit cluster: Cluster) ex
     }
   }
   
-  def execute(command: ReadCommand)(implicit cluster: Cluster) = {
+  def execute(command: ReadCommand) = {
     stateMachine.apply(command)
   }
 

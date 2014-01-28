@@ -20,9 +20,9 @@ import the.walrus.ckite.rpc.Command
  * increment term, start new election
  * •! Discover higher term: step down (§5.1)
  */
-class Candidate extends State {
+class Candidate(cluster: Cluster) extends State {
 
-  override def begin(term: Int)(implicit cluster: Cluster) = {
+  override def begin(term: Int) = {
     val inTerm = cluster.local.incrementTerm
     cluster.setNoLeader
     cluster.local voteForMyself
@@ -39,7 +39,7 @@ class Candidate extends State {
     }
   }
 
-  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     }
@@ -49,7 +49,7 @@ class Candidate extends State {
     }
   }
 
-  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote): RequestVoteResponse = {
     if (requestVote.term <= cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
@@ -58,10 +58,12 @@ class Candidate extends State {
     }
   }
   
-  override def on[T](command: Command)(implicit cluster: Cluster): T = {
+  override def on[T](command: Command): T = {
     cluster.forwardToLeader[T](command)
   }
   
   override def toString = "Candidate"
+    
+  override protected def getCluster: Cluster = cluster
   
 }

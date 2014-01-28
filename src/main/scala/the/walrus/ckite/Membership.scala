@@ -6,7 +6,7 @@ trait Membership {
 
   def allMembers: Seq[Member]
   
-  def allMembersBut(local: Member): Seq[Member]
+  def remoteMembers: Seq[RemoteMember]
 
   def reachMajority(votes: Seq[Member]): Boolean
 
@@ -18,11 +18,11 @@ trait Membership {
 
 }
 
-class SimpleConsensusMembership(members: Seq[Member]) extends Membership {
+class SimpleConsensusMembership(local: LocalMember, members: Seq[RemoteMember]) extends Membership {
 
-  override def allMembers = members
+  override def allMembers = members :+ local
   
-  override def allMembersBut(local: Member): Seq[Member] = allMembers diff Seq(local)
+  override def remoteMembers: Seq[RemoteMember] = members
 
   override def reachMajority(votes: Seq[Member]): Boolean = {
     votes.size >= internalMajority
@@ -50,7 +50,7 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
 
   override def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
-  override def allMembersBut(local: Member): Seq[Member] = allMembers diff Seq(local)
+  override def remoteMembers: Seq[RemoteMember] = oldMembership.remoteMembers.toSet.toSeq ++ newMembership.remoteMembers.toSet.toSeq
   
   override def reachMajority(votes: Seq[Member]): Boolean = {
     oldMembership.reachMajority(votes) && newMembership.reachMajority(votes)

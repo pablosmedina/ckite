@@ -29,17 +29,17 @@ import the.walrus.ckite.util.CKiteConversions._
  * •! Receiving valid AppendEntries RPC, or
  * •! Granting vote to candidate
  */
-class Follower extends State with Logging {
+class Follower(cluster: Cluster) extends State with Logging {
 
-  val electionTimeout = new ElectionTimeout()
+  val electionTimeout = new ElectionTimeout(cluster)
   
-  override def begin(term: Int)(implicit cluster: Cluster) = electionTimeout restart
+  override def begin(term: Int) = electionTimeout restart
 
-  override def stop(implicit cluster: Cluster) = electionTimeout stop
+  override def stop = electionTimeout stop
 
-  override def on[T](command: Command)(implicit cluster: Cluster): T = cluster.forwardToLeader[T](command)
+  override def on[T](command: Command): T = cluster.forwardToLeader[T](command)
 
-  override def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = {
+  override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
@@ -56,7 +56,7 @@ class Follower extends State with Logging {
     }
   }
 
-  override def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = {
+  override def on(requestVote: RequestVote): RequestVoteResponse = {
     if (requestVote.term < cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
@@ -74,33 +74,35 @@ class Follower extends State with Logging {
     }
   }
   
-  private def checkGrantVotePolicy(requestVote: RequestVote)(implicit cluster: Cluster) = {
+  private def checkGrantVotePolicy(requestVote: RequestVote) = {
     val votedFor = cluster.local.votedFor.get()
     (votedFor.isEmpty() || votedFor == requestVote.memberId) && isMuchUpToDate(requestVote)
   }
 
-  private def isMuchUpToDate(requestVote: RequestVote)(implicit cluster: Cluster) = {
+  private def isMuchUpToDate(requestVote: RequestVote) = {
     val lastLogEntry = cluster.rlog.getLastLogEntry
     lastLogEntry.isEmpty || (requestVote.lastLogTerm >= lastLogEntry.get.term && requestVote.lastLogIndex >= lastLogEntry.get.index)
   }
 
-  private def isCurrentTerm(term: Int)(implicit cluster: Cluster) = term == cluster.local.term
+  private def isCurrentTerm(term: Int) = term == cluster.local.term
   
   override def toString = "Follower"
     
+  override protected def getCluster: Cluster = cluster
+    
 }
 
-class ElectionTimeout extends Logging {
+class ElectionTimeout(cluster: Cluster) extends Logging {
 
   val scheduledFuture = new AtomicReference[ScheduledFuture[_]]()
   val random = new Random()
 
-  def restart(implicit cluster: Cluster) = {
+  def restart = {
     stop
     start
   }
   
-  private def start(implicit cluster: Cluster) = {
+  private def start = {
     val electionTimeout =  randomTimeout
     LOG.trace(s"New timeout is $electionTimeout ms")
     val future = cluster.scheduledElectionTimeoutExecutor.schedule((() => {
@@ -114,7 +116,7 @@ class ElectionTimeout extends Logging {
     scheduledFuture.set(future)
   }
 
-  private def randomTimeout(implicit cluster: Cluster) = {
+  private def randomTimeout = {
     val conf = cluster.configuration
     val diff = conf.maxElectionTimeout - conf.minElectionTimeout
     conf.minElectionTimeout + random.nextInt(if (diff > 0) diff.toInt else 1)

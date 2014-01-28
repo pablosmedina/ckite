@@ -14,20 +14,21 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rpc.AppendEntries
 import the.walrus.ckite.rpc.AppendEntriesResponse
 import the.walrus.ckite.Member
+import the.walrus.ckite.RemoteMember
 
 trait State extends Logging {
 
-  def begin(term: Int)(implicit cluster: Cluster) = {}
+  def begin(term: Int) = {}
 
-  def stop(implicit cluster: Cluster) = {}
+  def stop = {}
 
-  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse
+  def on(requestVote: RequestVote): RequestVoteResponse
 
-  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse
+  def on(appendEntries: AppendEntries): AppendEntriesResponse
 
-  def on[T](command: Command)(implicit cluster: Cluster): T = { throw new UnsupportedOperationException()}
+  def on[T](command: Command): T = throw new UnsupportedOperationException()
   
-  def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = {}
+  def on(jointConsensusCommited: MajorityJointConsensus) = {}
   
   def canTransition: Boolean = true
   
@@ -35,7 +36,8 @@ trait State extends Logging {
    * Step down from being either Candidate or Leader and start following the given Leader
    * on the given Term
    */
-  def stepDown(leaderId: Option[String], term: Int)(implicit cluster: Cluster) = {
+  def stepDown(leaderId: Option[String], term: Int) = {
+    val cluster = getCluster
 	cluster.local.updateTermIfNeeded(term)
     if (leaderId.isDefined) {
     	cluster.updateLeader(leaderId.get)
@@ -46,10 +48,12 @@ trait State extends Logging {
     cluster.local becomeFollower term
   }
 
-  def info()(implicit cluster: Cluster): StateInfo = {
-    NonLeaderInfo(cluster.leader.toString())
-   }
+  def info(): StateInfo = {
+    NonLeaderInfo(getCluster.leader.toString())
+  }
   
-  def onAppendEntriesResponse(member: Member, request: AppendEntries, response: AppendEntriesResponse) = {}
+  protected def getCluster: Cluster
+  
+  def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {}
   
 }

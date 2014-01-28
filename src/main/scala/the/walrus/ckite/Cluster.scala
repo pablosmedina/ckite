@@ -44,10 +44,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
   
-  val local = new LocalMember(configuration.localBinding, db)
+  val local = new LocalMember(this, configuration.localBinding, db)
   val InitialTerm = local.term
   val consensusMembership = new AtomicReference[Membership]()
-  val rlog = new RLog(stateMachine, db)
+  val rlog = new RLog(this, stateMachine, db)
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
   
   val heartbeaterExecutor = new ThreadPoolExecutor(0, 50,
@@ -72,7 +72,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def start = {
     updateContextInfo
     LOG.info("Start CKite Cluster")
-    consensusMembership.set(new SimpleConsensusMembership(configuration.membersBindings.map(binding => new Member(binding)) :+ local))
+    consensusMembership.set(new SimpleConsensusMembership(local, configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
     local becomeFollower InitialTerm
   }
 
@@ -106,13 +106,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  def broadcastHeartbeats(term: Int)(implicit cluster: Cluster) = synchronized {
-    val remoteMembers = membership.allMembersBut(local)
+  def broadcastHeartbeats(term: Int) = synchronized {
+    val remoteMembers = membership.remoteMembers
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
       heartbeaterExecutor.execute (() => {
         updateContextInfo
-        member.sendHeartbeat(term)(cluster)
+        member.sendHeartbeat(term)
       })
     }
   }
@@ -124,7 +124,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def collectVotes: Seq[Member] = {
     if (hasRemoteMembers) {
       val execution = Executions.newExecution().withExecutor(electionExecutor)
-      consensusMembership.get.allMembersBut(local).foreach { member =>
+      consensusMembership.get.remoteMembers.foreach { member =>
         execution.withTask(new Callable[(Member, Boolean)] {
 		          override def call() = {
 		          updateContextInfo
@@ -173,8 +173,6 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
 
-  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
-
   def updateContextInfo = {
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.toString)
@@ -207,17 +205,22 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
     //Check If I'm part of the new Cluster and shutdown if not
-    consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
-    LOG.info(s"Membership ${consensusMembership.get()}")
+    if (!leaveJointConsensus.bindings.contains(local.id)) {
+      stop
+    } else {
+    	consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
+    	LOG.info(s"Membership ${consensusMembership.get()}")
+    }
   }
 
   private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleConsensusMembership = {
-    new SimpleConsensusMembership(bindings.map { binding => obtainMember(binding).getOrElse(new Member(binding)) })
+    val bindingsWithoutLocal = bindings diff local.id
+    new SimpleConsensusMembership(local, bindingsWithoutLocal.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
   }
 
   def membership = consensusMembership.get()
 
-  def hasRemoteMembers = !membership.allMembersBut(local).isEmpty
+  def hasRemoteMembers = !membership.remoteMembers.isEmpty
 
   def awaitLeader: Member = {
     try {
@@ -231,6 +234,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     val promise = leaderPromise.get()
     if (promise.isCompleted) Some(promise.future.value.get.get) else None
   }
+  
+  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
+  private def obtainRemoteMember(memberId: String): Option[RemoteMember] = (membership.remoteMembers).find { _.id == memberId }
   
   private def file(dataDir: String): File = {
     val dir = new File(dataDir)

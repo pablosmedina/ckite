@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference
 import the.walrus.ckite.states.Starter
 import the.walrus.ckite.states.Stopped
 
-class LocalMember(binding: String, db: DB) extends Member(binding) {
+class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(binding) {
 
   val state = new AtomicReference[State](Starter)
   val currentTerm = db.getAtomicInteger("term")
@@ -25,7 +25,7 @@ class LocalMember(binding: String, db: DB) extends Member(binding) {
 
   def voteForMyself = votedFor.set(id)
 
-  def on(requestVote: RequestVote)(implicit cluster: Cluster): RequestVoteResponse = cluster.synchronized {
+  def on(requestVote: RequestVote): RequestVoteResponse = cluster.synchronized {
     if (requestVote.term < term) {
       LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
       RequestVoteResponse(term, false)
@@ -34,7 +34,7 @@ class LocalMember(binding: String, db: DB) extends Member(binding) {
     }
   }
 
-  def updateTermIfNeeded(receivedTerm: Int)(implicit cluster: Cluster) = {
+  def updateTermIfNeeded(receivedTerm: Int) = {
     if (receivedTerm > term) {
       LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
       votedFor.set("")
@@ -43,19 +43,19 @@ class LocalMember(binding: String, db: DB) extends Member(binding) {
     }
   }
 
-  def incrementTerm(implicit cluster: Cluster) = {
+  def incrementTerm = {
     val term = currentTerm.incrementAndGet()
     cluster.updateContextInfo
     term
   }
 
-  def becomeLeader(term: Int)(implicit cluster: Cluster) = become(new Leader, term)
+  def becomeLeader(term: Int) = become(new Leader(cluster), term)
 
-  def becomeCandidate(term: Int)(implicit cluster: Cluster) = become(new Candidate, term)
+  def becomeCandidate(term: Int) = become(new Candidate(cluster), term)
 
-  def becomeFollower(term: Int)(implicit cluster: Cluster) = become(new Follower, term)
+  def becomeFollower(term: Int) = become(new Follower(cluster), term)
 
-  private def become(newState: State, term: Int)(implicit cluster: Cluster) = {
+  private def become(newState: State, term: Int) = {
     if (currentState.canTransition) {
       LOG.info(s"Transition from $state to $newState")
       currentState stop
@@ -66,17 +66,19 @@ class LocalMember(binding: String, db: DB) extends Member(binding) {
     }
   }
 
-  def on(appendEntries: AppendEntries)(implicit cluster: Cluster): AppendEntriesResponse = currentState on appendEntries
+  def on(appendEntries: AppendEntries): AppendEntriesResponse = currentState on appendEntries
 
-  def on[T](command: Command)(implicit cluster: Cluster): T = currentState.on[T](command)
+  def on[T](command: Command): T = currentState.on[T](command)
 
-  def on(jointConsensusCommited: MajorityJointConsensus)(implicit cluster: Cluster) = currentState on jointConsensusCommited
+  def on(jointConsensusCommited: MajorityJointConsensus) = currentState on jointConsensusCommited
 
+  override def forwardCommand[T](command: Command): T = on(command)
+  
   def currentState = state.get()
 
   private def changeState(newState: State) = state.set(newState)
 
-  def stop(implicit cluster: Cluster) = {
+  def stop = {
     become(Stopped, cluster.local.term)
   }
 }

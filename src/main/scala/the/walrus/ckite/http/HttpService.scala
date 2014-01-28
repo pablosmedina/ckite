@@ -41,7 +41,7 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] with Twit
     request.method -> Path(request.path) match {
       case Method.Get -> Root / "status" => futurePool {
         val response = Response()
-        val clusterStatus = ClusterStatus(cluster.local.term, cluster.local.currentState.toString(), cluster.local.currentState.info()(cluster))
+        val clusterStatus = ClusterStatus(cluster.local.term, cluster.local.currentState.toString(), cluster.local.currentState.info())
         val logStatus = LogStatus(cluster.rlog.size, cluster.rlog.commitIndex.intValue(), cluster.rlog.getLastLogEntry)
         val status = Status(clusterStatus, logStatus)
         response.contentString = writer.writeValueAsString(status)
