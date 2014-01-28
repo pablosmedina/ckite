@@ -74,6 +74,12 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   override def forwardCommand[T](command: Command): T = on(command)
   
+  def stepDown(leaderId: Option[String], term: Int) = currentState.stepDown(leaderId, term)
+  
+  def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
+    currentState.onAppendEntriesResponse(member, request, response)
+  }
+  
   def currentState = state.get()
 
   private def changeState(newState: State) = state.set(newState)

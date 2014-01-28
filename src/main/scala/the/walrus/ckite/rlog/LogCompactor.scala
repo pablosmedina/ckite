@@ -45,7 +45,7 @@ class LogCompactor extends Logging {
     try {
         val commitIndex = rlog.commitIndex.get()
 	    val latestEntry = rlog.getLogEntry(commitIndex).get
-	    val bytes = rlog.stateMachine.serialize()
+	    val bytes = rlog.serializeStateMachine
 	    (commitIndex, latestEntry, bytes)
     } finally {
       rlog.exclusiveLock.unlock()

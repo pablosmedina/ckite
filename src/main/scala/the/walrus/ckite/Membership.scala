@@ -18,7 +18,7 @@ trait Membership {
 
 }
 
-class SimpleConsensusMembership(local: LocalMember, members: Seq[RemoteMember]) extends Membership {
+class SimpleMembership(local: LocalMember, members: Seq[RemoteMember]) extends Membership {
 
   override def allMembers = members :+ local
   
@@ -30,7 +30,7 @@ class SimpleConsensusMembership(local: LocalMember, members: Seq[RemoteMember]) 
 
   def internalMajority = ((members.size ) / 2) + 1
 
-  override def majority: String = s"simple majority of ${internalMajority}"
+  override def majority: String = s"${internalMajority}"
 
   override def majoritiesCount = 1
 
@@ -56,7 +56,7 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
     oldMembership.reachMajority(votes) && newMembership.reachMajority(votes)
   }
 
-  override def majority: String = s"compund majority of [${oldMembership.majority},${newMembership.majority}]"
+  override def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
 
   override def majoritiesCount = 2
 

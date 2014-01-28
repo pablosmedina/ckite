@@ -40,8 +40,6 @@ import the.walrus.ckite.rlog.Snapshot
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
-  implicit val aCluster = this
-
   val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding, db)
@@ -72,9 +70,29 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def start = {
     updateContextInfo
     LOG.info("Start CKite Cluster")
-    consensusMembership.set(new SimpleConsensusMembership(local, configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
-    local becomeFollower InitialTerm
+    val remoteMembers = configuration.membersBindings.map(binding => new RemoteMember(this, binding))
+    if (configuration.seeds) {
+//       val leader = discoverLeader(remoteMembers)
+//       if (leader.isDefined) {
+//    	   val membersFromLeader = leader.getMembership
+//    	   leader.addMember(local.id)
+//    	   consensusMembership.set(new SimpleMembership(local, membersFromLeader))
+//    	   local becomeJoiner InitialTerm
+//       } else {
+//         consensusMembership.set(new SimpleMembership(local, Seq()))
+//         local becomeFollower InitialTerm
+//       }
+       
+    } else {
+    	consensusMembership.set(new SimpleMembership(local, remoteMembers))
+    	local becomeFollower InitialTerm
+    }
   }
+  
+//  private def discoverLeader(remoteMembers: Seq[RemoteMember]): Option[RemoteMember] = {
+//      val leader:RemoteMember = remoteMembers.filter(member => member.isLeader)
+//      leader
+//  }
 
   def stop = {
     LOG.info("Stop CKite Cluster")
@@ -84,7 +102,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def on(requestVote: RequestVote) = {
     updateContextInfo
     LOG.debug(s"RequestVote received: $requestVote")
-    if (obtainMember(requestVote.memberId).isEmpty) {
+    if (obtainRemoteMember(requestVote.memberId).isEmpty) {
       LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
       RequestVoteResponse(local term, false)
     }
@@ -122,27 +140,24 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
 
   def collectVotes: Seq[Member] = {
-    if (hasRemoteMembers) {
-      val execution = Executions.newExecution().withExecutor(electionExecutor)
-      consensusMembership.get.remoteMembers.foreach { member =>
-        execution.withTask(new Callable[(Member, Boolean)] {
-		          override def call() = {
-		          updateContextInfo
-		          (member, member requestVote)
-		        }
+    if (!hasRemoteMembers) return Seq()
+    val execution = Executions.newExecution().withExecutor(electionExecutor)
+    membership.remoteMembers.foreach { remoteMember =>
+      execution.withTask(new Callable[(Member, Boolean)] {
+        override def call() = {
+          updateContextInfo
+          (remoteMember, remoteMember requestVote)
         }
-        )
-      }
-      val expectedResults = membership.majoritiesCount
-      val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
-        .withExpectedResults(expectedResults, new MajoritiesExpected(this)).execute[(Member, Boolean)]()
-
-      val results: Iterable[(Member, Boolean)] = rawResults
-      val mapres = results.filter { result => result._2 }.map { result => result._1 }
-      mapres.toSeq
-    } else {
-      Seq()
+      })
     }
+    //when in JointConsensus we need quorum on both cluster memberships (old and new)
+    val expectedResults = membership.majoritiesCount
+    val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
+      .withExpectedResults(expectedResults, new MajoritiesExpected(this)).execute[(Member, Boolean)]()
+
+    val membersVotes: Iterable[(Member, Boolean)] = rawResults
+    val membersPositiveVotes = membersVotes.filter { memberVote => memberVote._2 }.map { positiveVote => positiveVote._1 }
+    membersPositiveVotes.toSeq
   }
 
   def forwardToLeader[T](command: Command): T = {
@@ -213,9 +228,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleConsensusMembership = {
+  private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleMembership = {
     val bindingsWithoutLocal = bindings diff local.id
-    new SimpleConsensusMembership(local, bindingsWithoutLocal.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
+    new SimpleMembership(local, bindingsWithoutLocal.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
   }
 
   def membership = consensusMembership.get()

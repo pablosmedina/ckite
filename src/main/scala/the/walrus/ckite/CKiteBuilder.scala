@@ -41,6 +41,11 @@ class CKiteBuilder {
     this
   }
   
+  def withSeeds(): CKiteBuilder = {
+    configuration.withSeeds
+    this
+  }
+  
   def withStateMachine(stateMachine: StateMachine): CKiteBuilder = {
     this.stateMachine = stateMachine
     this

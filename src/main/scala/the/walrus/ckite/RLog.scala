@@ -21,7 +21,7 @@ import org.mapdb.DB
 import the.walrus.ckite.rlog.FixedLogSizeCompactionPolicy
 import the.walrus.ckite.rlog.Snapshot
 
-class RLog(cluster: Cluster, val stateMachine: StateMachine, db: DB) extends Logging {
+class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging {
 
   val entries = db.getTreeMap[Int, LogEntry]("entries")
   val commitIndex = db.getAtomicInteger("commitIndex")
@@ -216,5 +216,7 @@ class RLog(cluster: Cluster, val stateMachine: StateMachine, db: DB) extends Log
     }
     
   }
+  
+  def serializeStateMachine = stateMachine.serialize()
 
 }
