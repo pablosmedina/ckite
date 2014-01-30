@@ -10,7 +10,7 @@ A JVM implementation of the [Raft distributed consensus algorithm](http://raftco
 * Cluster Membership Changes
 * Log Compaction
 * Finagle based RPC between members
-* Rest interface
+* REST admin console
 
 ## Example
 
@@ -91,9 +91,10 @@ sbt run -Dport=9094 -Dmembers=localhost:9092,localhost:9091,localhost:9093
 ## Implementation details
 
   * Built in Scala.
-  * Twitter Finagle.
-  * Thrift.
-  * Twitter Scrooge.
+  * [Twitter Finagle](http://twitter.github.io/finagle/).
+  * [Thrift](http://thrift.apache.org/).
+  * [Twitter Scrooge](http://twitter.github.io/scrooge/).
+
 
 ## Contributions
 
