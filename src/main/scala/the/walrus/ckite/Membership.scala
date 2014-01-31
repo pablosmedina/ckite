@@ -18,9 +18,12 @@ trait Membership {
 
 }
 
-class SimpleMembership(local: LocalMember, members: Seq[RemoteMember]) extends Membership {
+class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) extends Membership {
 
-  override def allMembers = members :+ local
+  val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toSeq
+  val resultingInternalMajority = ((resultingMembers.size ) / 2) + 1
+  
+  override def allMembers =  resultingMembers
   
   override def remoteMembers: Seq[RemoteMember] = members
 
@@ -28,7 +31,7 @@ class SimpleMembership(local: LocalMember, members: Seq[RemoteMember]) extends M
     votes.size >= internalMajority
   }
 
-  def internalMajority = ((members.size ) / 2) + 1
+  def internalMajority = resultingInternalMajority
 
   override def majority: String = s"${internalMajority}"
 
@@ -36,7 +39,7 @@ class SimpleMembership(local: LocalMember, members: Seq[RemoteMember]) extends M
 
   override def majoritiesMap: java.util.Map[Seq[Member], Int] = {
     val map = new HashMap[Seq[Member], Int]()
-    map.put(members, internalMajority)
+    map.put(resultingMembers, internalMajority)
     map
   }
   
@@ -50,7 +53,7 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
 
   override def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
-  override def remoteMembers: Seq[RemoteMember] = oldMembership.remoteMembers.toSet.toSeq ++ newMembership.remoteMembers.toSet.toSeq
+  override def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
   
   override def reachMajority(votes: Seq[Member]): Boolean = {
     oldMembership.reachMajority(votes) && newMembership.reachMajority(votes)

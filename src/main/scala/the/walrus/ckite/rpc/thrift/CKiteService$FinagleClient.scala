@@ -20,7 +20,7 @@ import org.apache.thrift.transport.{TMemoryBuffer, TMemoryInputTransport}
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-28T01:35:22.626-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-31T01:53:42.892-0300")
 class CKiteService$FinagleClient(
   val service: FinagleService[ThriftClientRequest, Array[Byte]],
   val protocolFactory: TProtocolFactory = new TBinaryProtocol.Factory,
@@ -177,6 +177,60 @@ class CKiteService$FinagleClient(
     } onFailure { ex =>
       __stats_installSnapshot.FailuresCounter.incr()
       __stats_installSnapshot.FailuresScope.counter(ex.getClass.getName).incr()
+    }
+  }
+  private[this] object __stats_join {
+    val RequestsCounter = scopedStats.scope("join").counter("requests")
+    val SuccessCounter = scopedStats.scope("join").counter("success")
+    val FailuresCounter = scopedStats.scope("join").counter("failures")
+    val FailuresScope = scopedStats.scope("join").scope("failures")
+  }
+  
+  
+  def join(memberId: JoinRequestST): Future[JoinResponseST] = {
+    __stats_join.RequestsCounter.incr()
+    this.service(encodeRequest("join", join$args(memberId))) flatMap { response =>
+      val result = decodeResponse(response, join$result)
+      val exception =
+        None
+      exception.orElse(result.success.map(Future.value)).getOrElse(Future.exception(missingResult("join")))
+    } rescue {
+      case ex: SourcedException => {
+        if (this.serviceName != "") { ex.serviceName = this.serviceName }
+        Future.exception(ex)
+      }
+    } onSuccess { _ =>
+      __stats_join.SuccessCounter.incr()
+    } onFailure { ex =>
+      __stats_join.FailuresCounter.incr()
+      __stats_join.FailuresScope.counter(ex.getClass.getName).incr()
+    }
+  }
+  private[this] object __stats_getMembers {
+    val RequestsCounter = scopedStats.scope("getMembers").counter("requests")
+    val SuccessCounter = scopedStats.scope("getMembers").counter("success")
+    val FailuresCounter = scopedStats.scope("getMembers").counter("failures")
+    val FailuresScope = scopedStats.scope("getMembers").scope("failures")
+  }
+  
+  
+  def getMembers(): Future[GetMembersResponseST] = {
+    __stats_getMembers.RequestsCounter.incr()
+    this.service(encodeRequest("getMembers", getMembers$args())) flatMap { response =>
+      val result = decodeResponse(response, getMembers$result)
+      val exception =
+        None
+      exception.orElse(result.success.map(Future.value)).getOrElse(Future.exception(missingResult("getMembers")))
+    } rescue {
+      case ex: SourcedException => {
+        if (this.serviceName != "") { ex.serviceName = this.serviceName }
+        Future.exception(ex)
+      }
+    } onSuccess { _ =>
+      __stats_getMembers.SuccessCounter.incr()
+    } onFailure { ex =>
+      __stats_getMembers.FailuresCounter.incr()
+      __stats_getMembers.FailuresScope.counter(ex.getClass.getName).incr()
     }
   }
 }

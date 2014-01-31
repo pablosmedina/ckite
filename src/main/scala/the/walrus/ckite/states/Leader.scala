@@ -110,7 +110,7 @@ class Leader(cluster: Cluster) extends State {
   
   private def replicate(logEntry: LogEntry): Seq[Member] = {
     if (cluster.hasRemoteMembers) {
-      val acks = replicator.replicate(appendEntriesFor(logEntry))
+      val acks = replicator.replicate(logEntry)
       LOG.info(s"Got replication acks from $acks")
       acks
     } else {
@@ -123,14 +123,14 @@ class Leader(cluster: Cluster) extends State {
     (cluster.rlog execute command).asInstanceOf[T]
   }
 
-  private def appendEntriesFor(logEntry: LogEntry) = {
-    val rlog = cluster.rlog
-    val previousLogEntry = rlog.getPreviousLogEntry(logEntry)
-    previousLogEntry match {
-      case None => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entries = List(logEntry))
-      case Some(entry) => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entry.index, entry.term, List(logEntry))
-    }
-  }
+//  private def appendEntriesFor(logEntry: LogEntry) = {
+//    val rlog = cluster.rlog
+//    val previousLogEntry = rlog.getPreviousLogEntry(logEntry)
+//    previousLogEntry match {
+//      case None => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entries = List(logEntry))
+//      case Some(entry) => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entry.index, entry.term, List(logEntry))
+//    }
+//  }
 
   override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
@@ -152,7 +152,7 @@ class Leader(cluster: Cluster) extends State {
 
   override def on(jointConsensusCommited: MajorityJointConsensus) = {
     LOG.info(s"Sending LeaveJointConsensus")
-    cluster.on(LeaveJointConsensus(jointConsensusCommited.newBindings))
+    cluster.on[Boolean](LeaveJointConsensus(jointConsensusCommited.newBindings))
   }
   
   override protected def getCluster: Cluster = cluster
@@ -208,14 +208,11 @@ class Replicator(cluster: Cluster) extends Logging {
  
 
   //replicate and wait for a majority of acks. 
-  def replicate(appendEntries: AppendEntries): Seq[Member] = {
+  def replicate(logEntry: LogEntry): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(cluster.replicatorExecutor)
     cluster.membership.remoteMembers.foreach { member =>
       execution.withTask(() => {
-//        val originalName = Thread.currentThread().getName()
-//        Thread.currentThread().setName(s"$Name-$member")
-        val result: (Member, Boolean) = (member, member replicate appendEntries)
-//        Thread.currentThread().setName(originalName)
+        val result: (Member, Boolean) = (member, member replicate logEntry)
         result
       })
     }

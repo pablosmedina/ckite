@@ -15,6 +15,9 @@ import java.io.ObjectInputStream
 import the.walrus.ckite.util.Logging
 import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.rlog.Snapshot
+import the.walrus.ckite.rpc.JoinRequest
+import the.walrus.ckite.rpc.JoinResponse
+import the.walrus.ckite.rpc.GetMembersResponse
 
 object ThriftConverters extends Logging {
 
@@ -79,7 +82,20 @@ object ThriftConverters extends Logging {
   
   implicit def snapshotFromThrift(installSnapshotST: InstallSnapshotST): Snapshot = {
     new Snapshot(installSnapshotST.stateMachineState, installSnapshotST.lastLogEntryIndex, installSnapshotST.lastLogEntryTerm)
-  } 
+  }
+  
+  
+  implicit def joinRequestToThrift(joinRequest: JoinRequest): JoinRequestST = {
+    JoinRequestST(joinRequest.joiningMemberId)
+  }
+  
+  implicit def joinResponseFromThrift(joinResponse: JoinResponseST): JoinResponse = {
+    JoinResponse(joinResponse.success)
+  }
+  
+  implicit def getMembersResponseFromThrift(getMembersResponse: GetMembersResponseST): GetMembersResponse = {
+    GetMembersResponse(getMembersResponse.success, getMembersResponse.members)
+  }
   
   private def serialize(command: Any): Array[Byte] = {
     val baos = new ByteArrayOutputStream()

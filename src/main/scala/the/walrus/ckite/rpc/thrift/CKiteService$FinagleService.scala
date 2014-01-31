@@ -19,7 +19,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-28T01:35:22.626-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-31T01:53:42.892-0300")
 class CKiteService$FinagleService(
   iface: CKiteService[Future],
   protocolFactory: TProtocolFactory
@@ -161,6 +161,48 @@ class CKiteService$FinagleService(
       case e: TProtocolException => {
         iprot.readMessageEnd()
         exception("installSnapshot", seqid, TApplicationException.PROTOCOL_ERROR, e.getMessage)
+      }
+      case e: Exception => Future.exception(e)
+    }
+  })
+  addFunction("join", { (iprot: TProtocol, seqid: Int) =>
+    try {
+      val args = join$args.decode(iprot)
+      iprot.readMessageEnd()
+      (try {
+        iface.join(args.memberId)
+      } catch {
+        case e: Exception => Future.exception(e)
+      }) flatMap { value: JoinResponseST =>
+        reply("join", seqid, join$result(success = Some(value)))
+      } rescue {
+        case e => Future.exception(e)
+      }
+    } catch {
+      case e: TProtocolException => {
+        iprot.readMessageEnd()
+        exception("join", seqid, TApplicationException.PROTOCOL_ERROR, e.getMessage)
+      }
+      case e: Exception => Future.exception(e)
+    }
+  })
+  addFunction("getMembers", { (iprot: TProtocol, seqid: Int) =>
+    try {
+      val args = getMembers$args.decode(iprot)
+      iprot.readMessageEnd()
+      (try {
+        iface.getMembers()
+      } catch {
+        case e: Exception => Future.exception(e)
+      }) flatMap { value: GetMembersResponseST =>
+        reply("getMembers", seqid, getMembers$result(success = Some(value)))
+      } rescue {
+        case e => Future.exception(e)
+      }
+    } catch {
+      case e: TProtocolException => {
+        iprot.readMessageEnd()
+        exception("getMembers", seqid, TApplicationException.PROTOCOL_ERROR, e.getMessage)
       }
       case e: Exception => Future.exception(e)
     }

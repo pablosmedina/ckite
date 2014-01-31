@@ -14,9 +14,10 @@ class CKite(cluster: Cluster) {
     
     http start
     
+    thrift start
+    
     cluster start
     
-    thrift start
   }
   
   def stop() =  {

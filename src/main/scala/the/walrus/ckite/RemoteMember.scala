@@ -25,9 +25,16 @@ import the.walrus.ckite.rpc.Command
 import the.walrus.ckite.states.Stopped
 import java.util.concurrent.atomic.AtomicBoolean
 import the.walrus.ckite.rlog.Snapshot
+import the.walrus.ckite.rpc.JoinResponse
+import the.walrus.ckite.rpc.JoinRequest
+import the.walrus.ckite.rpc.GetMembersResponse
+import the.walrus.ckite.rpc.GetMembersRequest
+import the.walrus.ckite.rpc.LogEntry
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
+  LOG.info(s"Creating RemoteMember $binding")
+  
   val nextLogIndex = new AtomicInteger(1)
   val connector: Connector = new ThriftConnector(id)
   val replicationsEnabled = new AtomicBoolean(true)
@@ -67,10 +74,14 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     }
   }
 
-  def replicate(appendEntries: AppendEntries): Boolean = {
+  def replicate(logEntry: LogEntry): Boolean = synchronized {
     if (!isReplicationEnabled) return false
+    if (logEntry.index < nextLogIndex.intValue()) {
+      LOG.info(s"LogEntry $logEntry was already replicated to $id")
+      return true
+    }
     LOG.info(s"Replicating to $id")
-    synchronized {
+    val appendEntries = createAppendEntries(cluster.local.term)
       connector.send(this, appendEntries).map { replicationResponse =>
         localMember.onAppendEntriesResponse(this, appendEntries, replicationResponse)
         replicationResponse.success
@@ -82,7 +93,6 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
           LOG.error(s"Error replicating to $id: ${e.getMessage()}", e)
           false
       } get
-    }
   }
 
   def sendSnapshot(snapshot: Snapshot) = {
@@ -119,6 +129,23 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   def disableReplications() = {
     LOG.info(s"Disabling replications to $id")
     replicationsEnabled.set(false)
+  }
+  
+  def join(joiningMemberId: String): JoinResponse = {
+    LOG.info(s"Joining with $id")
+    connector.send(this, JoinRequest(joiningMemberId)).recover {
+      case ChannelWriteException(e: ConnectException) =>
+        LOG.debug(s"Can't connect to member $id")
+        JoinResponse(false)
+    } get
+  }
+  
+  def getMembers(): GetMembersResponse = {
+    connector.send(this, GetMembersRequest()).recover {
+      case ChannelWriteException(e: ConnectException) =>
+        LOG.debug(s"Can't connect to member $id")
+        GetMembersResponse(false, Seq())
+    } get
   }
 
   def isReplicationEnabled = replicationsEnabled.get()

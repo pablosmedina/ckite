@@ -38,6 +38,19 @@ struct InstallSnapshotST {
 	3: required i32 lastLogEntryTerm;
 }
 
+struct JoinRequestST {
+	1: required string memberId;
+}
+
+struct JoinResponseST {
+	1: required bool success;
+}
+
+struct GetMembersResponseST {
+	1: required bool success;
+	2: required list<string> members;
+}
+
 service CKiteService {
 
 	RequestVoteResponseST sendRequestVote(1:RequestVoteST requestVote);
@@ -47,5 +60,9 @@ service CKiteService {
 	binary forwardCommand(1:binary command);
 	
 	bool installSnapshot(1:InstallSnapshotST installSnapshot);
+	
+	JoinResponseST join(1:JoinRequestST memberId);
+	
+	GetMembersResponseST getMembers();
 
 }

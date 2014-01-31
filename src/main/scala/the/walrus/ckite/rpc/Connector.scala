@@ -15,4 +15,10 @@ trait Connector {
   
   def send[T](member: RemoteMember, command: Command): T
   
+  def send(member: RemoteMember, joinRequest: JoinRequest): Try[JoinResponse]
+  
+  def send(member: RemoteMember, getMembersRequest: GetMembersRequest): Try[GetMembersResponse]
+  
+  
+  
 }

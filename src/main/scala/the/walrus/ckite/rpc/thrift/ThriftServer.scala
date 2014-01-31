@@ -50,6 +50,15 @@ class ThriftServer(cluster: Cluster) {
       override def installSnapshot(installSnapshot: InstallSnapshotST) = futurePool {
          cluster.installSnapshot(installSnapshot)
       }
+      
+      override def join(joinRequest: JoinRequestST) = futurePool {
+        val success = cluster.addMember(joinRequest._1)
+        JoinResponseST(success)
+      }
+      
+      override def getMembers() = futurePool {
+           GetMembersResponseST(true, cluster.getMembers())
+      }
     }
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())
   }

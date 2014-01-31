@@ -25,7 +25,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   def voteForMyself = votedFor.set(id)
 
-  def on(requestVote: RequestVote): RequestVoteResponse = cluster.synchronized {
+  def on(requestVote: RequestVote): RequestVoteResponse = cluster.inLock {
     if (requestVote.term < term) {
       LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
       RequestVoteResponse(term, false)
@@ -54,15 +54,20 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
   def becomeCandidate(term: Int) = become(new Candidate(cluster), term)
 
   def becomeFollower(term: Int) = become(new Follower(cluster), term)
-
-  private def become(newState: State, term: Int) = {
+  
+  private def become(newState: State, term: Int): Unit = {
     if (currentState.canTransition) {
-      LOG.info(s"Transition from $state to $newState")
-      currentState stop
+      if (cluster.isActiveMember(id)) {
+        LOG.info(s"Transition from $state to $newState")
+        currentState stop
 
-      changeState(newState)
+        changeState(newState)
 
-      currentState begin term
+        currentState begin term
+      } else {
+        LOG.info(s"No longer part of the Cluster. Shutdown!")
+        cluster.stop
+      }
     }
   }
 
@@ -84,7 +89,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   private def changeState(newState: State) = state.set(newState)
 
-  def stop = {
+  def stop: Unit = {
     become(Stopped, cluster.local.term)
   }
 }

@@ -20,7 +20,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-28T01:35:22.626-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-31T01:53:42.892-0300")
 trait CKiteService[+MM[_]] extends ThriftService {
   
   def sendRequestVote(requestVote: RequestVoteST): MM[RequestVoteResponseST]
@@ -30,6 +30,10 @@ trait CKiteService[+MM[_]] extends ThriftService {
   def forwardCommand(command: ByteBuffer): MM[ByteBuffer]
   
   def installSnapshot(installSnapshot: InstallSnapshotST): MM[Boolean]
+  
+  def join(memberId: JoinRequestST): MM[JoinResponseST]
+  
+  def getMembers(): MM[GetMembersResponseST]
 }
 
 
@@ -1098,6 +1102,507 @@ object CKiteService {
   
     override def productPrefix: String = "installSnapshot$result"
   }
+  
+  object join$args extends ThriftStructCodec3[join$args] {
+    val Struct = new TStruct("join_args")
+    val MemberIdField = new TField("memberId", TType.STRUCT, 1)
+    val MemberIdFieldManifest = implicitly[Manifest[JoinRequestST]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: join$args) {
+    }
+  
+    override def encode(_item: join$args, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): join$args = Immutable.decode(_iprot)
+  
+    def apply(
+      memberId: JoinRequestST
+    ): join$args = new Immutable(
+      memberId
+    )
+  
+    def unapply(_item: join$args): Option[JoinRequestST] = Some(_item.memberId)
+  
+    object Immutable extends ThriftStructCodec3[join$args] {
+      override def encode(_item: join$args, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): join$args = {
+        var memberId: JoinRequestST = null
+        var _got_memberId = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 1 => { /* memberId */
+                _field.`type` match {
+                  case TType.STRUCT => {
+                    memberId = {
+                      JoinRequestST.decode(_iprot)
+                    }
+                    _got_memberId = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          memberId
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of join$args.  You typically should not need to
+     * directly reference this class; instead, use the join$args.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val memberId: JoinRequestST
+    ) extends join$args
+  
+  }
+  
+  trait join$args extends ThriftStruct
+    with Product1[JoinRequestST]
+    with java.io.Serializable
+  {
+    import join$args._
+  
+  
+    def memberId: JoinRequestST
+  
+    def _1 = memberId
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): join$args =
+      _fieldId match {
+        case 1 => copy(memberId = null)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      join$args.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (memberId ne null) {
+        val memberId_item = memberId
+        _oprot.writeFieldBegin(MemberIdField)
+        memberId_item.write(_oprot)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      memberId: JoinRequestST = this.memberId
+    ): join$args =
+      new Immutable(
+        memberId
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[join$args]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => memberId
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "join$args"
+  }
+  
+  object join$result extends ThriftStructCodec3[join$result] {
+    val Struct = new TStruct("join_result")
+    val SuccessField = new TField("success", TType.STRUCT, 0)
+    val SuccessFieldManifest = implicitly[Manifest[JoinResponseST]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: join$result) {
+    }
+  
+    override def encode(_item: join$result, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): join$result = Immutable.decode(_iprot)
+  
+    def apply(
+      success: Option[JoinResponseST] = None
+    ): join$result = new Immutable(
+      success
+    )
+  
+    def unapply(_item: join$result): Option[Option[JoinResponseST]] = Some(_item.success)
+  
+    object Immutable extends ThriftStructCodec3[join$result] {
+      override def encode(_item: join$result, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): join$result = {
+        var success: JoinResponseST = null
+        var _got_success = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 0 => { /* success */
+                _field.`type` match {
+                  case TType.STRUCT => {
+                    success = {
+                      JoinResponseST.decode(_iprot)
+                    }
+                    _got_success = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          if (_got_success) Some(success) else None
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of join$result.  You typically should not need to
+     * directly reference this class; instead, use the join$result.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val success: Option[JoinResponseST] = None
+    ) extends join$result
+  
+  }
+  
+  trait join$result extends ThriftStruct
+    with Product1[Option[JoinResponseST]]
+    with java.io.Serializable
+  {
+    import join$result._
+  
+  
+    def success: Option[JoinResponseST]
+  
+    def _1 = success
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): join$result =
+      _fieldId match {
+        case 0 => copy(success = None)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      join$result.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (success.isDefined) {
+        val success_item = success.get
+        _oprot.writeFieldBegin(SuccessField)
+        success_item.write(_oprot)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      success: Option[JoinResponseST] = this.success
+    ): join$result =
+      new Immutable(
+        success
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[join$result]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => success
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "join$result"
+  }
+  
+  object getMembers$args extends ThriftStructCodec3[getMembers$args] {
+    val Struct = new TStruct("getMembers_args")
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: getMembers$args) {
+    }
+  
+    override def encode(_item: getMembers$args, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): getMembers$args = Immutable.decode(_iprot)
+  
+    def apply(
+    ): getMembers$args = new Immutable(
+    )
+  
+    def unapply(_item: getMembers$args): Boolean = true
+  
+    object Immutable extends ThriftStructCodec3[getMembers$args] {
+      override def encode(_item: getMembers$args, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): getMembers$args = {
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of getMembers$args.  You typically should not need to
+     * directly reference this class; instead, use the getMembers$args.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+    ) extends getMembers$args
+  
+  }
+  
+  trait getMembers$args extends ThriftStruct
+    with Product
+    with java.io.Serializable
+  {
+    import getMembers$args._
+  
+  
+  
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): getMembers$args =
+      _fieldId match {
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      getMembers$args.validate(this)
+      _oprot.writeStructBegin(Struct)
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+    ): getMembers$args =
+      new Immutable(
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[getMembers$args]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 0
+  
+    override def productElement(n: Int): Any = n match {
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "getMembers$args"
+  }
+  
+  object getMembers$result extends ThriftStructCodec3[getMembers$result] {
+    val Struct = new TStruct("getMembers_result")
+    val SuccessField = new TField("success", TType.STRUCT, 0)
+    val SuccessFieldManifest = implicitly[Manifest[GetMembersResponseST]]
+  
+    /**
+     * Checks that all required fields are non-null.
+     */
+    def validate(_item: getMembers$result) {
+    }
+  
+    override def encode(_item: getMembers$result, _oproto: TProtocol) { _item.write(_oproto) }
+    override def decode(_iprot: TProtocol): getMembers$result = Immutable.decode(_iprot)
+  
+    def apply(
+      success: Option[GetMembersResponseST] = None
+    ): getMembers$result = new Immutable(
+      success
+    )
+  
+    def unapply(_item: getMembers$result): Option[Option[GetMembersResponseST]] = Some(_item.success)
+  
+    object Immutable extends ThriftStructCodec3[getMembers$result] {
+      override def encode(_item: getMembers$result, _oproto: TProtocol) { _item.write(_oproto) }
+      override def decode(_iprot: TProtocol): getMembers$result = {
+        var success: GetMembersResponseST = null
+        var _got_success = false
+        var _done = false
+        _iprot.readStructBegin()
+        while (!_done) {
+          val _field = _iprot.readFieldBegin()
+          if (_field.`type` == TType.STOP) {
+            _done = true
+          } else {
+            _field.id match {
+              case 0 => { /* success */
+                _field.`type` match {
+                  case TType.STRUCT => {
+                    success = {
+                      GetMembersResponseST.decode(_iprot)
+                    }
+                    _got_success = true
+                  }
+                  case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+                }
+              }
+              case _ =>
+                TProtocolUtil.skip(_iprot, _field.`type`)
+            }
+            _iprot.readFieldEnd()
+          }
+        }
+        _iprot.readStructEnd()
+        new Immutable(
+          if (_got_success) Some(success) else None
+        )
+      }
+    }
+  
+    /**
+     * The default read-only implementation of getMembers$result.  You typically should not need to
+     * directly reference this class; instead, use the getMembers$result.apply method to construct
+     * new instances.
+     */
+    class Immutable(
+      val success: Option[GetMembersResponseST] = None
+    ) extends getMembers$result
+  
+  }
+  
+  trait getMembers$result extends ThriftStruct
+    with Product1[Option[GetMembersResponseST]]
+    with java.io.Serializable
+  {
+    import getMembers$result._
+  
+  
+    def success: Option[GetMembersResponseST]
+  
+    def _1 = success
+  
+  
+    /**
+     * If the specified field is optional, it is set to None.  Otherwise, if the field is
+     * known, it is reverted to its default value; if the field is unknown, it is subtracked
+     * from the passthroughFields map, if present.
+     */
+    def unsetField(_fieldId: Short): getMembers$result =
+      _fieldId match {
+        case 0 => copy(success = None)
+        case _ => this
+      }
+  
+    override def write(_oprot: TProtocol) {
+      getMembers$result.validate(this)
+      _oprot.writeStructBegin(Struct)
+      if (success.isDefined) {
+        val success_item = success.get
+        _oprot.writeFieldBegin(SuccessField)
+        success_item.write(_oprot)
+        _oprot.writeFieldEnd()
+      }
+      _oprot.writeFieldStop()
+      _oprot.writeStructEnd()
+    }
+  
+    def copy(
+      success: Option[GetMembersResponseST] = this.success
+    ): getMembers$result =
+      new Immutable(
+        success
+      )
+  
+    override def canEqual(other: Any): Boolean = other.isInstanceOf[getMembers$result]
+  
+    override def equals(other: Any): Boolean =
+      _root_.scala.runtime.ScalaRunTime._equals(this, other)
+  
+    override def hashCode: Int = _root_.scala.runtime.ScalaRunTime._hashCode(this)
+  
+    override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
+  
+  
+    override def productArity: Int = 1
+  
+    override def productElement(n: Int): Any = n match {
+      case 0 => success
+      case _ => throw new IndexOutOfBoundsException(n.toString)
+    }
+  
+    override def productPrefix: String = "getMembers$result"
+  }
 
   import com.twitter.util.Future
 
@@ -1111,6 +1616,10 @@ object CKiteService {
     def forwardCommand(command: ByteBuffer): Future[ByteBuffer]
     
     def installSnapshot(installSnapshot: InstallSnapshotST): Future[Boolean]
+    
+    def join(memberId: JoinRequestST): Future[JoinResponseST]
+    
+    def getMembers(): Future[GetMembersResponseST]
   }
 
   @deprecated("use CKiteService$FinagleClient", "3.4.0")

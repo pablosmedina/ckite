@@ -56,6 +56,18 @@ class ThriftConnector(binding: String) extends Connector with Logging {
     }
   }
   
+  override def send(member: RemoteMember, joinRequest: JoinRequest): Try[JoinResponse] = {
+    Try {
+       client.join(joinRequest).get
+     } 
+  }
+  
+  override def send(member: RemoteMember,  getMembersRequest: GetMembersRequest): Try[GetMembersResponse] = {
+    Try {
+       client.getMembers().get
+     } 
+  }
+  
 
 }
 

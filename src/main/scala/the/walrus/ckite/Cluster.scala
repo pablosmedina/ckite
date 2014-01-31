@@ -37,6 +37,8 @@ import java.util.concurrent.Executors.DefaultThreadFactory
 import com.twitter.concurrent.NamedPoolThreadFactory
 import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rlog.Snapshot
+import scala.util.control.Breaks._
+import java.util.concurrent.locks.ReentrantLock
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
@@ -67,33 +69,41 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   val waitForLeaderTimeout = Duration(configuration.waitForLeaderTimeout, TimeUnit.MILLISECONDS)
   
+  
+  val lock = new ReentrantLock()
+  
   def start = {
     updateContextInfo
     LOG.info("Start CKite Cluster")
-    val remoteMembers = configuration.membersBindings.map(binding => new RemoteMember(this, binding))
-    if (configuration.seeds) {
-//       val leader = discoverLeader(remoteMembers)
-//       if (leader.isDefined) {
-//    	   val membersFromLeader = leader.getMembership
-//    	   leader.addMember(local.id)
-//    	   consensusMembership.set(new SimpleMembership(local, membersFromLeader))
-//    	   local becomeJoiner InitialTerm
-//       } else {
-//         consensusMembership.set(new SimpleMembership(local, Seq()))
-//         local becomeFollower InitialTerm
-//       }
-       
+    if (configuration.dynamicBootstrap) {
+         val dynaMembership = createSimpleConsensusMembership(Seq(local.id))
+    	 consensusMembership.set(dynaMembership)
+         breakable {
+        	 local becomeFollower InitialTerm
+        	 for(remoteMemberBinding <- configuration.membersBindings) {
+        		 consensusMembership.set(createSimpleConsensusMembership(Seq(local.id, remoteMemberBinding)))
+        		 val remoteMember = obtainRemoteMember(remoteMemberBinding).get
+        	     val response = remoteMember.getMembers()
+        	     if (response.success) {
+        	    	 consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
+        	    	 val joinResponse = remoteMember.join(local.id)
+        	    	 if (joinResponse.success) {
+        	    		 LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
+        	    		 break
+        	    	 } 
+        	     } else {
+        	     }
+        	 }
+        	 consensusMembership.set(dynaMembership)
+        	 //dynamicBootstrap fail to join. I'm the only one?
+         }
     } else {
-    	consensusMembership.set(new SimpleMembership(local, remoteMembers))
+    	val remoteMembers = configuration.membersBindings.map(binding => new RemoteMember(this, binding))
+    	consensusMembership.set(new SimpleMembership(Some(local), remoteMembers))
     	local becomeFollower InitialTerm
     }
   }
   
-//  private def discoverLeader(remoteMembers: Seq[RemoteMember]): Option[RemoteMember] = {
-//      val leader:RemoteMember = remoteMembers.filter(member => member.isLeader)
-//      leader
-//  }
-
   def stop = {
     LOG.info("Stop CKite Cluster")
     local stop
@@ -119,12 +129,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     updateContextInfo
     LOG.debug(s"Command received: $command")
     command match {
-      case write: WriteCommand => synchronized { local.on[T](write) }
+      case write: WriteCommand => inLock { local.on[T](write) }
       case read: ReadCommand => local.on[T](read)
     }
   }
 
-  def broadcastHeartbeats(term: Int) = synchronized {
+  def broadcastHeartbeats(term: Int) = inLock {
     val remoteMembers = membership.remoteMembers
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
@@ -133,6 +143,15 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         member.sendHeartbeat(term)
       })
     }
+  }
+  
+  def inLock[T](f: => T): T = {
+       lock.lock()
+       try {
+         f
+       } finally {
+         lock.unlock()
+       }
   }
 
   def onLocal(readCommand: ReadCommand) = {
@@ -195,7 +214,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   def addMember(memberBinding: String) = {
     val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } :+ memberBinding
-    on(EnterJointConsensus(newMemberBindings.toList))
+    on[Boolean](EnterJointConsensus(newMemberBindings.toList))
   }
   
   def removeMember(memberBinding: String) = {
@@ -220,17 +239,15 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
     //Check If I'm part of the new Cluster and shutdown if not
-    if (!leaveJointConsensus.bindings.contains(local.id)) {
-      stop
-    } else {
-    	consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
-    	LOG.info(s"Membership ${consensusMembership.get()}")
-    }
+	consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
+	LOG.info(s"Membership ${consensusMembership.get()}")
   }
 
   private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleMembership = {
-    val bindingsWithoutLocal = bindings diff local.id
-    new SimpleMembership(local, bindingsWithoutLocal.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
+    val localOption = if (bindings.contains(local.id)) Some(local) else None
+    val bindingsWithoutLocal = bindings diff Seq(local.id) toSet
+    
+    new SimpleMembership(localOption, bindingsWithoutLocal.toSeq.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
   }
 
   def membership = consensusMembership.get()
@@ -264,5 +281,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     LOG.info("InstallSnapshot received")
     rlog.installSnapshot(snapshot)
   }
+  
+  def getMembers(): Seq[String] = {
+     val leader = awaitLeader
+     if (awaitLeader == local) membership.allMembers.map(member => member.id) else leader.asInstanceOf[RemoteMember].getMembers().members
+  }
+  
+  def isActiveMember(memberId: String): Boolean = !membership.allMembers.filter( member => member.id.equals(memberId)).isEmpty
 
 }

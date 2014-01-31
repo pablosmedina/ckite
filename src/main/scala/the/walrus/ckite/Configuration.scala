@@ -14,7 +14,7 @@ class Configuration(var config: Config) {
   val HeartbeatsInterval = "ckite.heartbeats.period"
     
   val MembersBindings = "ckite.cluster.membersBindings"
-  val Seeds = "ckite.cluster.seeds"  
+  val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"  
   val WaitForLeaderTimeout = "ckite.cluster.waitForLeaderTimeout"
     
   val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"  
@@ -81,12 +81,12 @@ class Configuration(var config: Config) {
     config.getStringList(MembersBindings).asScala
   }
   
-  def seeds: Boolean = {
-    config.getBoolean(Seeds)
+  def dynamicBootstrap: Boolean = {
+    config.getBoolean(DynamicBootstrap)
   }
   
   def withSeeds = {
-    config = config.withValue(Seeds, ConfigValueFactory.fromAnyRef(true))
+    config = config.withValue(DynamicBootstrap, ConfigValueFactory.fromAnyRef(true))
   }
   
   def collectVotesTimeout: Long = { 

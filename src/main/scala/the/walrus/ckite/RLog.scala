@@ -20,6 +20,12 @@ import java.io.File
 import org.mapdb.DB
 import the.walrus.ckite.rlog.FixedLogSizeCompactionPolicy
 import the.walrus.ckite.rlog.Snapshot
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeUnit
+import com.twitter.concurrent.NamedPoolThreadFactory
+import java.util.concurrent.SynchronousQueue
+import the.walrus.ckite.util.CKiteConversions._
 
 class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging {
 
@@ -31,6 +37,11 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
   val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, db)
+  
+  val asyncApplierExecutor = new ThreadPoolExecutor(0, 1,
+                                      10L, TimeUnit.SECONDS,
+                                      new SynchronousQueue[Runnable](),
+                                      new NamedPoolThreadFactory("AsyncApplierWorker", true))
   
   replay()
   
@@ -171,8 +182,13 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
     sharedLock.lock()
     try {
     	command match {
-    	case c: EnterJointConsensus => cluster.on(MajorityJointConsensus(c.newBindings))
-    	case c: LeaveJointConsensus => Unit
+    	case c: EnterJointConsensus => {
+    	   asyncApplierExecutor.execute(() => {
+    		   cluster.on(MajorityJointConsensus(c.newBindings))
+    	   })
+    	   true
+    	}
+    	case c: LeaveJointConsensus => true
     	case _ => stateMachine.apply(command)
     	} 
     } finally {
