@@ -60,7 +60,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("ElectionWorker", true))
   
-  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout", true))
+  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
   
   val replicatorExecutor = new ThreadPoolExecutor(0, 50,
                                       60L, TimeUnit.SECONDS,
@@ -91,15 +91,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         	    		 LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
         	    		 break
         	    	 } 
-        	     } else {
-        	     }
+        	     } 
         	 }
-        	 consensusMembership.set(dynaMembership)
         	 //dynamicBootstrap fail to join. I'm the only one?
+        	 consensusMembership.set(dynaMembership)
          }
     } else {
-    	val remoteMembers = configuration.membersBindings.map(binding => new RemoteMember(this, binding))
-    	consensusMembership.set(new SimpleMembership(Some(local), remoteMembers))
+    	consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map( binding => new RemoteMember(this, binding)) ) )
     	local becomeFollower InitialTerm
     }
   }
@@ -129,23 +127,23 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     updateContextInfo
     LOG.debug(s"Command received: $command")
     command match {
-      case write: WriteCommand => inLock { local.on[T](write) }
+      case write: WriteCommand => locked { local.on[T](write) }
       case read: ReadCommand => local.on[T](read)
     }
   }
 
-  def broadcastHeartbeats(term: Int) = inLock {
+  def broadcastHeartbeats(term: Int) = locked {
     val remoteMembers = membership.remoteMembers
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
-      heartbeaterExecutor.execute (() => {
+      heartbeaterExecutor.execute(() => {
         updateContextInfo
         member.sendHeartbeat(term)
       })
     }
   }
   
-  def inLock[T](f: => T): T = {
+  def locked[T](f: => T): T = {
        lock.lock()
        try {
          f
@@ -162,12 +160,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     if (!hasRemoteMembers) return Seq()
     val execution = Executions.newExecution().withExecutor(electionExecutor)
     membership.remoteMembers.foreach { remoteMember =>
-      execution.withTask(new Callable[(Member, Boolean)] {
-        override def call() = {
+      execution.withTask( () => {
           updateContextInfo
           (remoteMember, remoteMember requestVote)
-        }
-      })
+        })
     }
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
     val expectedResults = membership.majoritiesCount

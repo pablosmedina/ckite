@@ -40,6 +40,14 @@ class CKite(cluster: Cluster) {
     cluster.onLocal(readCommand).asInstanceOf[T]
   }
   
+  def addMember(memberBinding: String) = {
+    cluster.addMember(memberBinding)
+  }
+  
+  def removeMember(memberBinding: String) = {
+    cluster.removeMember(memberBinding)
+  }
+  
   def isLeader: Boolean = cluster.awaitLeader == cluster.local
   
   

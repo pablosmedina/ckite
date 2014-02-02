@@ -20,7 +20,7 @@ import org.apache.thrift.transport.{TMemoryBuffer, TMemoryInputTransport}
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-01-31T01:53:42.892-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-02-02T14:44:16.592-0300")
 class CKiteService$FinagleClient(
   val service: FinagleService[ThriftClientRequest, Array[Byte]],
   val protocolFactory: TProtocolFactory = new TBinaryProtocol.Factory,

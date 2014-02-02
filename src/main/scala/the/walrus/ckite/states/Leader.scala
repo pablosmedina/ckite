@@ -35,6 +35,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.SynchronousQueue
 import com.twitter.concurrent.NamedPoolThreadFactory
 import the.walrus.ckite.RemoteMember
+import java.util.concurrent.ScheduledThreadPoolExecutor
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -122,15 +123,6 @@ class Leader(cluster: Cluster) extends State {
   private def onReadCommand[T](command: ReadCommand): T = {
     (cluster.rlog execute command).asInstanceOf[T]
   }
-
-//  private def appendEntriesFor(logEntry: LogEntry) = {
-//    val rlog = cluster.rlog
-//    val previousLogEntry = rlog.getPreviousLogEntry(logEntry)
-//    previousLogEntry match {
-//      case None => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entries = List(logEntry))
-//      case Some(entry) => AppendEntries(cluster.local.term, cluster.local.id, rlog.getCommitIndex, entry.index, entry.term, List(logEntry))
-//    }
-//  }
 
   override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
     if (appendEntries.term < cluster.local.term) {
@@ -252,15 +244,12 @@ class MajoritiesExpected(cluster: Cluster) extends ExpectedResultFilter {
 
 class Heartbeater(cluster: Cluster) extends Logging {
 
-  val Name = "Heartbeater"
-
-  val scheduledHeartbeatsPool = Executors.newScheduledThreadPool(1)
+  val scheduledHeartbeatsPool = new ScheduledThreadPoolExecutor(1, new NamedPoolThreadFactory("Heartbeater", true))
 
   def start(term: Int) = {
     LOG.trace("Start Heartbeater")
 
-    scheduledHeartbeatsPool.scheduleAtFixedRate(() => {
-      Thread.currentThread().setName(Name)
+    scheduledHeartbeatsPool.scheduleAtFixedRate( () => {
       cluster updateContextInfo
 
       LOG.trace("Heartbeater running")

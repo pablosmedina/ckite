@@ -25,7 +25,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   def voteForMyself = votedFor.set(id)
 
-  def on(requestVote: RequestVote): RequestVoteResponse = cluster.inLock {
+  def on(requestVote: RequestVote): RequestVoteResponse = cluster.locked {
     if (requestVote.term < term) {
       LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
       RequestVoteResponse(term, false)

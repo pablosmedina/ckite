@@ -6,6 +6,7 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest._
 import the.walrus.ckite.example.Get
+import the.walrus.ckite.example.Put
 
 @RunWith(classOf[JUnitRunner])
 class CKiteIntegrationTest extends FlatSpec with Matchers {
@@ -201,6 +202,51 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      member1.stop()
      member2.stop()
      restartedMember3.stop()
+  } 
+  
+  "A 3 member cluster" should "add a new member" in {
+     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
+    		 					.withDataDir(someTmpDir)
+    		 				     .withStateMachine(new KVStore()).build
+    		 				   
+     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
+    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
+    		 				   .withStateMachine(new KVStore()).build
+    		 				   
+     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
+    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
+    		 				   .withStateMachine(new KVStore()).build
+    		 				   
+     val members = Seq(member1, member2, member3)
+     
+     members foreach {_ start}
+     
+     //write k1=v1
+     member1.write(Put("k1","v1"))
+     
+     //add member4 to the cluster
+     member1.addMember("localhost:9094")
+     
+	 val member4 = CKiteBuilder().withLocalBinding("localhost:9094").withMembersBindings(Seq("localhost:9092","localhost:9091","localhost:9093"))
+		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
+		 				   .withStateMachine(new KVStore()).build
+	 //start member4
+     member4.start
+     
+     //get value for k1. this is going to be forwarded to the Leader.
+     val replicatedValue = member4.read[String](Get("k1"))
+     replicatedValue should be ("v1")
+     
+     //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
+     Thread.sleep(1000)
+     
+     //get value for k1 from local
+     val localValue = member4.readLocal[String](Get("k1"))
+     
+     localValue should be (replicatedValue)
+		 				   
+     members foreach {_ stop}
+     member4.stop
   } 
   
   
