@@ -147,9 +147,9 @@ curl http://localhost:10091/put/key1/value1
 ```bash
 curl http://localhost:10092/get/key1
 ```
-#### Retrieve the log on any member to see the replicated log entries
+#### Checkout the admin console on any member to see the cluster status
 ```bash
-curl http://localhost:10093/rlog
+curl http://localhost:10093/status
 ```
 #### Add a new member (localhost:9094) to the Cluster
 ```bash
