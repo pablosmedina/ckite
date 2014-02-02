@@ -52,6 +52,66 @@ ckite.isLeader()
 ckite.stop()
 ```
 
+## Rest admin console
+
+CKite exposes an admin console showing its status and useful metrics. If the rpc port is 9091 then the admin console is exposed under http://localhost:10091/status by default.
+
+#### Leader
+
+```yaml
+{
+	cluster: {
+		term: 1,
+		state: "Leader",
+		stateInfo: {
+			leaderUptime: "2.minutes+13.seconds+148.milliseconds",
+			lastHeartbeatsACKs: {
+				localhost:9093: "128.milliseconds",
+				localhost:9092: "128.milliseconds",
+				localhost:9095: "127.milliseconds",
+				localhost:9094: "128.milliseconds"
+			}
+		}
+	},
+	log: {
+		length: 9,
+		commitIndex: 9,
+		lastLog: {
+			term: 1,
+			index: 9,
+			command: {
+				key: "k1",
+				value: "v1"
+			}
+		}
+	}
+}
+```
+
+#### Follower
+```yaml
+{
+	cluster: {
+		term: 1,
+		state: "Follower",
+		stateInfo: {
+			following: "Some(localhost:9091)"
+		}
+	},
+	log: {
+		length: 9,
+		commitIndex: 9,
+		lastLog: {
+			term: 1,
+			index: 9,
+			command: {
+				key: "k1",
+				value: "v1"
+			}
+		}
+	}
+}
+```
 
 ## Running KVStore example (3 members)
 
