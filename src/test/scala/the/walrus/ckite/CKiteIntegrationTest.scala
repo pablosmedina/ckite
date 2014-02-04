@@ -7,6 +7,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest._
 import the.walrus.ckite.example.Get
 import the.walrus.ckite.example.Put
+import org.junit.Test
 
 @RunWith(classOf[JUnitRunner])
 class CKiteIntegrationTest extends FlatSpec with Matchers {
@@ -68,8 +69,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
   }
   
   "A 3 member cluster" should "failover Leader" in {
-     //member1 has default election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
+     //member1 has election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
      val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
+    		 					.withMinElectionTimeout(150).withMaxElectionTimeout(300)
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     
@@ -147,20 +149,24 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
     		 				   
      val members = Seq(member1, member2, member3)
      
-     members foreach {_ start}
-     
-     member2.write(Put(Key1,Value1))
-     
-     val member1Read = member1.read[String](Get(Key1))
-     val member2Read = member2.read[String](Get(Key1))
-     val member3Read = member3.read[String](Get(Key1))
-     
-     member1Read should be (Value1)
-     member2Read should be (Value1)
-     member3Read should be (Value1)
-     
-     members foreach {_ stop}
+     try {
+	     members foreach {_ start}
+	     
+	     member2.write(Put(Key1,Value1))
+	     
+	     val member1Read = member1.read[String](Get(Key1))
+	     val member2Read = member2.read[String](Get(Key1))
+	     val member3Read = member3.read[String](Get(Key1))
+	     
+	     member1Read should be (Value1)
+	     member2Read should be (Value1)
+	     member3Read should be (Value1)
+     }
+     finally {
+    	 members foreach {_ stop}
+     }
   }
+   
    
   "A 3 member cluster" should "replicate missing commands on restarted member" in {
      val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
@@ -179,6 +185,10 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      
      members foreach {_ start}
      
+     val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
+    		 .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
+    		 .withStateMachine(new KVStore()).build
+     try {
      //member3 goes down
      member3.stop()
      
@@ -186,9 +196,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      member1.write(Put(Key1,Value1))
      
      //member3 is back
-     val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
      restartedMember3.start()
      
      //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
@@ -198,10 +205,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      val readValue = restartedMember3.readLocal[String](Get(Key1))
      
      readValue should be (Value1)
-     
-     member1.stop()
-     member2.stop()
-     restartedMember3.stop()
+     } finally {
+    	 member1.stop()
+    	 member2.stop()
+    	 restartedMember3.stop()
+     }
   } 
   
   "A 3 member cluster" should "add a new member" in {

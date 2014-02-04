@@ -42,7 +42,10 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   val localMember = cluster.local
   val rlog = cluster.rlog
 
-  override def forwardCommand[T](command: Command): T = connector.send[T](this, command)
+  override def forwardCommand[T](command: Command): T = {
+    LOG.debug(s"Forward command $command to $id")
+    connector.send[T](this, command)
+  }
 
   def sendHeartbeat(term: Int) = synchronized {
     LOG.trace(s"Sending heartbeat to $id in term $term")
@@ -83,6 +86,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     LOG.info(s"Replicating to $id")
     val appendEntries = createAppendEntries(cluster.local.term)
       connector.send(this, appendEntries).map { replicationResponse =>
+        LOG.debug(s"Got replication response $replicationResponse from $id")
         localMember.onAppendEntriesResponse(this, appendEntries, replicationResponse)
         replicationResponse.success
       }.recover {
@@ -109,7 +113,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
       case None => RequestVote(localMember.id, localMember.term)
       case Some(entry) => RequestVote(localMember.id, localMember.term, entry.index, entry.term)
     }).map { voteResponse =>
-      LOG.debug(s"Got Request vote response: $voteResponse")
+      LOG.debug(s"Got $voteResponse from $id")
       voteResponse.granted
     } recover {
       case ChannelWriteException(e: ConnectException) =>

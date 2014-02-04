@@ -55,7 +55,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   def becomeFollower(term: Int) = become(new Follower(cluster), term)
   
-  private def become(newState: State, term: Int): Unit = {
+  private def become(newState: State, term: Int): Unit = cluster.locked {
     if (currentState.canTransition) {
       if (cluster.isActiveMember(id)) {
         LOG.info(s"Transition from $state to $newState")

@@ -24,7 +24,6 @@ import scala.util.Success
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.Callable
 import the.walrus.ckite.executions.Executions
-import the.walrus.ckite.states.MajoritiesExpected
 import scala.collection.JavaConversions._
 import the.walrus.ckite.util.CKiteConversions._
 import the.walrus.ckite.rpc.ReadCommand
@@ -39,6 +38,7 @@ import the.walrus.ckite.rpc.EnterJointConsensus
 import the.walrus.ckite.rlog.Snapshot
 import scala.util.control.Breaks._
 import java.util.concurrent.locks.ReentrantLock
+import the.walrus.ckite.states.ReachMajorities
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
@@ -50,19 +50,19 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val rlog = new RLog(this, stateMachine, db)
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
   
-  val heartbeaterExecutor = new ThreadPoolExecutor(0, 50,
+  val heartbeaterExecutor = new ThreadPoolExecutor(0, configuration.heartbeatsWorkers,
                                       10L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("HeartbeaterWorker", true))
   
-  val electionExecutor = new ThreadPoolExecutor(0, 50,
+  val electionExecutor = new ThreadPoolExecutor(0, configuration.electionWorkers,
                                       15L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("ElectionWorker", true))
   
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
   
-  val replicatorExecutor = new ThreadPoolExecutor(0, 50,
+  val replicatorExecutor = new ThreadPoolExecutor(0, configuration.replicationWorkers,
                                       60L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("ReplicatorWorker", true))
@@ -103,6 +103,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   def stop = {
+    updateContextInfo
     LOG.info("Stop CKite Cluster")
     local stop
   }
@@ -127,12 +128,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     updateContextInfo
     LOG.debug(s"Command received: $command")
     command match {
-      case write: WriteCommand => locked { local.on[T](write) }
+      case write: WriteCommand =>  local.on[T](write)
       case read: ReadCommand => local.on[T](read)
     }
   }
 
-  def broadcastHeartbeats(term: Int) = locked {
+  def broadcastHeartbeats(term: Int) = {
     val remoteMembers = membership.remoteMembers
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
@@ -168,7 +169,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
     val expectedResults = membership.majoritiesCount
     val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
-      .withExpectedResults(expectedResults, new MajoritiesExpected(this)).execute[(Member, Boolean)]()
+      .withExpectedResults(1, new ReachMajorities(this)).execute[(Member, Boolean)]()
 
     val membersVotes: Iterable[(Member, Boolean)] = rawResults
     val votesGrantedMembers = membersVotes.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
@@ -176,6 +177,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
 
   def forwardToLeader[T](command: Command): T = {
+    LOG.debug(s"Forward command $command")
     awaitLeader.forwardCommand[T](command)
   }
 
@@ -204,6 +206,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
 
   def updateContextInfo = {
+    MDC.put("binding", local.id)
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.toString)
   }

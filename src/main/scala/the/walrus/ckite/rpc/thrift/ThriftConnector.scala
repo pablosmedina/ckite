@@ -26,7 +26,7 @@ class ThriftConnector(binding: String) extends Connector with Logging {
 
   val client = new CKiteService.FinagledClient(ClientBuilder().hosts(binding)
   				.retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)
-  				.hostConnectionLimit(2).hostConnectionCoresize(1).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
+  				.hostConnectionLimit(10).hostConnectionCoresize(1).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
   
   override def send(member: RemoteMember, request: RequestVote): Try[RequestVoteResponse] = {
     Try {

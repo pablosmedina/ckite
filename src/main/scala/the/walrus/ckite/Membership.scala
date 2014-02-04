@@ -14,13 +14,13 @@ trait Membership {
 
   def majoritiesCount: Int
 
-  def majoritiesMap: java.util.Map[Seq[Member], Int]
+  def majoritiesMap: Map[Seq[Member], Int]
 
 }
 
 class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) extends Membership {
 
-  val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toSeq
+  val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toList
   val resultingInternalMajority = ((resultingMembers.size ) / 2) + 1
   
   override def allMembers =  resultingMembers
@@ -37,10 +37,8 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
 
   override def majoritiesCount = 1
 
-  override def majoritiesMap: java.util.Map[Seq[Member], Int] = {
-    val map = new HashMap[Seq[Member], Int]()
-    map.put(resultingMembers, internalMajority)
-    map
+  override def majoritiesMap: Map[Seq[Member], Int] = {
+    Map((resultingMembers, internalMajority))
   }
   
   override def toString(): String = {
@@ -55,18 +53,16 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
 
   override def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
   
-  override def reachMajority(votes: Seq[Member]): Boolean = {
-    oldMembership.reachMajority(votes) && newMembership.reachMajority(votes)
+  override def reachMajority(members: Seq[Member]): Boolean = {
+    oldMembership.reachMajority(members) && newMembership.reachMajority(members)
   }
 
   override def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
 
   override def majoritiesCount = 2
 
-  override def majoritiesMap: java.util.Map[Seq[Member], Int] = {
-    val map = oldMembership.majoritiesMap
-    map.putAll(newMembership.majoritiesMap)
-    map
+  override def majoritiesMap: Map[Seq[Member], Int] = {
+    oldMembership.majoritiesMap ++: newMembership.majoritiesMap
   }
 
   override def toString(): String = {

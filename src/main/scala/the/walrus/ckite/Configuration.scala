@@ -9,15 +9,19 @@ class Configuration(var config: Config) {
   val MinElectionTimeout = "ckite.election.minTimeout"
   val MaxElectionTimeout = "ckite.election.maxTimeout"
   val CollectVotesTimeout = "ckite.election.votingTimeout"
-    
+
   val ReplicationTimeout = "ckite.replication.timeout"
   val HeartbeatsInterval = "ckite.heartbeats.period"
-    
+
   val MembersBindings = "ckite.cluster.membersBindings"
-  val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"  
+  val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"
   val WaitForLeaderTimeout = "ckite.cluster.waitForLeaderTimeout"
-    
-  val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"  
+
+  val HeartbeatsWorkers = "ckite.heartbeats.workers"
+  val ElectionWorkers = "ckite.election.workers"
+  val ReplicationWorkers = "ckite.replication.workers"
+
+  val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"
   val LocalBinding = "localBinding"
   val DataDir = "ckite.data.dir"
 
@@ -48,11 +52,11 @@ class Configuration(var config: Config) {
   def withLocalBinding(localBinding: String) = {
     config = config.withValue(LocalBinding, ConfigValueFactory.fromAnyRef(localBinding))
   }
-  
+
   def withDataDir(dataDir: String) = {
     config = config.withValue(DataDir, ConfigValueFactory.fromAnyRef(dataDir))
   }
-  
+
   def dataDir: String = {
     config.getString(DataDir)
   }
@@ -64,15 +68,15 @@ class Configuration(var config: Config) {
   def withMembersBindings(membersBindings: Seq[String]) = {
     config = config.withValue(MembersBindings, ConfigValueFactory.fromIterable(membersBindings.asJava))
   }
-  
+
   def withWaitForLeaderTimeout(waitForLeaderTimeout: Int) = {
     config = config.withValue(WaitForLeaderTimeout, ConfigValueFactory.fromAnyRef(waitForLeaderTimeout))
   }
-  
+
   def withCollectVotesTimeout(collectVotesTimeout: Int) = {
     config = config.withValue(CollectVotesTimeout, ConfigValueFactory.fromAnyRef(collectVotesTimeout))
   }
-  
+
   def waitForLeaderTimeout: Long = {
     config.getMilliseconds(WaitForLeaderTimeout)
   }
@@ -80,21 +84,36 @@ class Configuration(var config: Config) {
   def membersBindings: Seq[String] = {
     config.getStringList(MembersBindings).asScala
   }
-  
+
   def dynamicBootstrap: Boolean = {
     config.getBoolean(DynamicBootstrap)
   }
-  
+
   def withSeeds = {
     config = config.withValue(DynamicBootstrap, ConfigValueFactory.fromAnyRef(true))
   }
-  
-  def collectVotesTimeout: Long = { 
+
+  def collectVotesTimeout: Long = {
     config.getMilliseconds(CollectVotesTimeout)
   }
-  
+
   def fixedLogSizeCompaction: Long = {
     config.getLong(FixedLogSizeCompaction)
   }
 
+  def replicationTimeout: Long = {
+    config.getMilliseconds(ReplicationTimeout)
+  }
+
+  def heartbeatsWorkers: Int = {
+    config.getInt(HeartbeatsWorkers)
+  }
+
+  def electionWorkers: Int = {
+    config.getInt(ElectionWorkers)
+  }
+
+  def replicationWorkers: Int = {
+    config.getInt(ReplicationWorkers)
+  }
 }
