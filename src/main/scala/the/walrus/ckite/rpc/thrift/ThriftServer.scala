@@ -19,6 +19,7 @@ import the.walrus.ckite.rlog.Snapshot
 
 class ThriftServer(cluster: Cluster) {
 
+  var closed = false
   var finagleServer: ListeningServer = _
   
   val futurePool = FuturePool(new ThreadPoolExecutor(0, 50,
@@ -33,16 +34,13 @@ class ThriftServer(cluster: Cluster) {
   def ckiteService = {
     val ckiteService = new CKiteService[Future]() {
       override def sendRequestVote(requestVote: RequestVoteST) = futurePool {
-//        Thread.currentThread().setName("requestVote")
         cluster on requestVote
       }
       override def sendAppendEntries(appendEntries: AppendEntriesST) = futurePool {
-//        Thread.currentThread().setName("appendEntries")
         cluster on appendEntries
       }
       
       override def forwardCommand(bb: ByteBuffer) =  futurePool {
-//        Thread.currentThread().setName("forwardCommand")
         val command: Command  = bb
         cluster.on[Any](command)
       }
@@ -63,8 +61,11 @@ class ThriftServer(cluster: Cluster) {
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())
   }
 
-  def stop() = {
-	finagleServer.close()
+  def stop() = synchronized {
+    if (!closed) {
+    	finagleServer.close()
+    	closed = true
+    }
   }
 
 }

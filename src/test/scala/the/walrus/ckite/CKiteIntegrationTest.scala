@@ -14,8 +14,23 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
   
   val Key1 = "key1"
   val Value1 = "value1"
+    
+  implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
+      new CKiteSequence(members)
+  }
   
-
+  class CKiteSequence(members: Seq[CKite]) {
+    
+    def followers = members filterNot {_ isLeader}
+    def leader =  {
+      val leaders = (members diff followers)
+      val theLeader = leaders.head
+      withClue("Not unique Leader") { leaders diff Seq(theLeader) should be ('empty) }
+      theLeader
+    }
+    
+  }
+  
   "A single member cluster" should "elect a Leader" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
@@ -28,7 +43,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
   }
   
   
-  "A single member cluster" should "read committed writes" in {
+  it should "read committed writes" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
@@ -43,133 +58,81 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      ckite stop
   }
   
-  "A 3 member cluster" should "elect a Leader" in {
+  private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
      //member1 has default election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
      val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(4000).withMaxElectionTimeout(5000) //higher election timeout
+    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(4000).withMaxElectionTimeout(5000) //higher election timeout
+    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val members = Seq(member1, member2, member3)
-     
-     members foreach {_ start}
-     
-     (members filter {_ isLeader} size) should be (1)
-     
-     members foreach {_ stop}
+    val members = Seq(member1, member2, member3)
+    members foreach {_ start}
+     try {
+         test (members)
+     } finally {
+    	members foreach {_ stop}
+     }
   }
   
-  "A 3 member cluster" should "failover Leader" in {
-     //member1 has election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 					.withMinElectionTimeout(150).withMaxElectionTimeout(300)
-    		 					.withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000) //1 second election timeout. Should be the leader on failover
-    		 				   .withDataDir(someTmpDir)
-    		 					.withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000) //bigger election timeout. Won't be leader.
-    		 				   .withDataDir(someTmpDir)
-    		 					.withStateMachine(new KVStore()).build
-    		 				   
-     val members = Seq(member1, member2, member3)
+  private def waitSomeTimeForElection = Thread.sleep(2000)
+  
+  "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
+     val leader =  members leader
+     val followers = members followers
      
-     members foreach {_ start}
+     leader should not be null
+     followers.length should be (2)
+  }
+  
+  it should "failover Leader" in withThreeMemberCluster { members =>
+     val originalLeader = members leader
+     val followers = members followers
      
-     val leaders = members filter {_ isLeader}
-     val followers = members filterNot {_ isLeader}
+     originalLeader stop
      
-     //leader stops
-     leaders foreach {_ stop}
-     
-     //wait for followers election timeout
-     Thread.sleep(2000)
+     waitSomeTimeForElection
      
      //a leader must be elected from the followers
-     (followers filter {_ isLeader} size) should be (1)
+     val newLeader = followers leader
      
-     followers foreach {_ stop}
+     newLeader should not be null
+     newLeader should not be originalLeader
   }
   
-    "A 3 member cluster" should "read committed writes" in {
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 				     .withDataDir(someTmpDir)
-    		 					 .withStateMachine(new KVStore()).build
+    it should "read committed writes" in withThreeMemberCluster { members =>
     		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val members = Seq(member1, member2, member3)
+     val leader = members leader
      
-     members foreach {_ start}
+     leader.write(Put(Key1,Value1))
      
-     member1.write(Put(Key1,Value1))
+     members foreach { member => 
+       			member.read[String](Get(Key1)) should be (Value1) }
      
-     val member1Read = member1.read[String](Get(Key1))
-     val member2Read = member2.read[String](Get(Key1))
-     val member3Read = member3.read[String](Get(Key1))
-     
-     member1Read should be (Value1)
-     member2Read should be (Value1)
-     member3Read should be (Value1)
-     
-     members foreach {_ stop}
   }
     
-   "A 3 member cluster" should "forward writes to the Leader" in {
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 					 .withDataDir(someTmpDir)
-    		 				     .withStateMachine(new KVStore()).build
+   it should "forward writes to the Leader" in withThreeMemberCluster { members =>
     		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val members = Seq(member1, member2, member3)
+     val someFollower = (members followers) head
      
-     try {
-	     members foreach {_ start}
-	     
-	     member2.write(Put(Key1,Value1))
-	     
-	     val member1Read = member1.read[String](Get(Key1))
-	     val member2Read = member2.read[String](Get(Key1))
-	     val member3Read = member3.read[String](Get(Key1))
-	     
-	     member1Read should be (Value1)
-	     member2Read should be (Value1)
-	     member3Read should be (Value1)
-     }
-     finally {
-    	 members foreach {_ stop}
-     }
+     //this write is forwarded to the Leader
+     someFollower.write(Put(Key1,Value1))
+     
+     members foreach { member => 
+       			member.read[String](Get(Key1)) should be (Value1) }
   }
    
    
-  "A 3 member cluster" should "replicate missing commands on restarted member" in {
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
+  it should "replicate missing commands on restarted member" in {
+    		 				   
+         val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
     		 					.withDataDir(someTmpDir)
     		 				     .withStateMachine(new KVStore()).build
     		 				   
@@ -180,11 +143,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
     		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
+    
+    val members = Seq(member1, member2, member3)
+    
+    members foreach {_ start}
     		 				   
-     val members = Seq(member1, member2, member3)
-     
-     members foreach {_ start}
-     
      val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
     		 .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
     		 .withStateMachine(new KVStore()).build
@@ -212,7 +175,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      }
   } 
   
-  "A 3 member cluster" should "add a new member" in {
+  it should "add a new member" in {
      val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
     		 					.withDataDir(someTmpDir)
     		 				     .withStateMachine(new KVStore()).build

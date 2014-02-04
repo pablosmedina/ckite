@@ -11,6 +11,7 @@ import com.twitter.finagle.http.HttpMuxer
 
 class HttpServer(cluster: Cluster) {
   
+  var closed = false
   var server: Closable = _
   var adminServer: Closable = _
   
@@ -25,9 +26,12 @@ class HttpServer(cluster: Cluster) {
      adminServer = com.twitter.finagle.Http.serve(s":$adminServerPort", HttpMuxer)
   }
   
-  def stop() = {
-    server.close()
-    adminServer.close()
+  def stop() = synchronized {
+    if (!closed) {
+    	server.close()
+    	adminServer.close()
+    	closed = true
+    }
   }
   
 }
