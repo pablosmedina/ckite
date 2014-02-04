@@ -1,7 +1,13 @@
 CKite [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https://travis-ci.org/pablosmedina/ckite)
 =====
 
-A JVM implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a library to be used by distributed applications needing consensus agreement. It is a work in constant progress. For development & testing purposes it contains an embedded key-value store app demonstrating the algorithm functioning trough simple puts and gets. It will be extracted soon from the CKite library as an example of use.
+## Overview
+
+A JVM implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a library to be used by distributed applications needing consensus agreement. 
+
+## Status
+
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. It is a work in constant progress. For development & testing purposes it contains an embedded key-value store app demonstrating the algorithm functioning trough simple puts and gets. It will be extracted soon from the CKite library as an example of use. Performance tests will be included soon.
 
 ## Features
 
@@ -180,7 +186,7 @@ Feel free to contribute to CKite!. Any kind of help will be very welcome. We are
   * ~~Log persistence & compaction~~
   * Extract the key value store app from CKite
   * Metrics / monitoring
-  * Akka?
-  * Improve rest api for testing
+  * Akka
+  * Improve REST admin console
   * Other things...
 
