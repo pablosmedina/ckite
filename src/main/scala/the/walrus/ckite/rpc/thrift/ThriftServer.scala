@@ -22,7 +22,7 @@ class ThriftServer(cluster: Cluster) {
   var closed = false
   var finagleServer: ListeningServer = _
   
-  val futurePool = FuturePool(new ThreadPoolExecutor(0, 50,
+  val futurePool = FuturePool(new ThreadPoolExecutor(0, cluster.configuration.thriftWorkers,
                                       15L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("ThriftWorker", true)))

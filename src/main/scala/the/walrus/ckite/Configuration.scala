@@ -20,6 +20,7 @@ class Configuration(var config: Config) {
   val HeartbeatsWorkers = "ckite.heartbeats.workers"
   val ElectionWorkers = "ckite.election.workers"
   val ReplicationWorkers = "ckite.replication.workers"
+  val ThriftWorkers = "ckite.thrift.workers"
 
   val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"
   val LocalBinding = "localBinding"
@@ -115,5 +116,9 @@ class Configuration(var config: Config) {
 
   def replicationWorkers: Int = {
     config.getInt(ReplicationWorkers)
+  }
+  
+  def thriftWorkers: Int = {
+    config.getInt(ThriftWorkers)
   }
 }
