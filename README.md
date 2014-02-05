@@ -27,6 +27,7 @@ class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
 
+  //called when a consensus has been reached for a WriteCommand or when a ReadCommand was received
   override def apply(command: Command): Any = {
     command match {
       case Put(key: String, value: String) => { 
