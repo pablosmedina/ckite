@@ -79,7 +79,7 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
       LOG.trace(s"Try appending $appendEntries")
       val canAppend = hasPreviousLogEntry(appendEntries)
       if (canAppend) appendWithLockAcquired(appendEntries.entries)
-      commitUntil(appendEntries.commitIndex)
+      commitEntriesUntil(appendEntries.commitIndex)
       canAppend
     } finally {
       sharedLock.unlock()
@@ -93,6 +93,7 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
   }
 
   private def appendWithLockAcquired(logEntries: List[LogEntry]) = {
+    LOG.info(s"About to append $logEntries")
     logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
       entries.put(logEntry.index, logEntry)
@@ -144,39 +145,32 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
     	if (entry.term == cluster.local.term) {
-    		commitEntriesUntil(logEntry.index)
+    		commitEntriesUntil(logEntry.index, true) //exclusive
     		safeCommit(logEntry.index)
     	} else {
     		LOG.warn(s"Unsafe to commit an old term entry: $entry")
     	}
     }
+    else raiseMissingLogEntryException(logEntry.index)
   }
 
-  private def commitEntriesUntil(entryIndex: Int) = {
-    (commitIndex.intValue() + 1) until entryIndex foreach { index =>
-      if (entries.containsKey(index)) {
-        safeCommit(index)
-      }
-    }
-  }
-
- private def commitUntil(leaderCommitIndex: Int) = {
-    if (leaderCommitIndex > commitIndex.intValue()) {
-      (commitIndex.intValue() + 1) to leaderCommitIndex foreach { index => safeCommit(index) }
-    }
+  private def commitEntriesUntil(entryIndex: Int, exclusive: Boolean = false) = {
+     val start = commitIndex.intValue() + 1
+     val end = if (exclusive) entryIndex - 1 else entryIndex
+     (start to end) foreach { index => safeCommit(index) }
   }
 
   private def safeCommit(entryIndex: Int) = {
-     val logEntryOption = getLogEntry(entryIndex)
+    val logEntryOption = getLogEntry(entryIndex)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
-    	if (entryIndex > commitIndex.intValue()) {
-    		LOG.info(s"Commiting entry $entry")
-    		commitIndex.set(entry.index)
-    		execute(entry.command)
-    	} else {
-    		LOG.info(s"Already commited entry $entry")
-    	}
+      if (entryIndex > commitIndex.intValue()) {
+        LOG.info(s"Commiting entry $entry")
+        commitIndex.set(entry.index)
+        execute(entry.command)
+      } else {
+        LOG.info(s"Already committed entry $entry")
+      }
     }
   }
 
@@ -238,5 +232,11 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
   }
   
   def serializeStateMachine = stateMachine.serialize()
+  
+  private def raiseMissingLogEntryException(entryIndex: Int) =  {
+	val e = new IllegalStateException(s"Tried to commit a missing LogEntry with index $entryIndex. A Hole?")
+    LOG.error("Error",e)
+    throw e
+  }
 
 }
