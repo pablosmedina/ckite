@@ -56,8 +56,8 @@ class HttpService(cluster: Cluster) extends Service[Request, Response] with Twit
       case Method.Get -> Root / "put" / key / value => futurePool {
         Thread.currentThread().setName("Command")
         val response = Response()
-        cluster on Put(key, value)
-        response.contentString = s"put[$key,$value]"
+        val result = cluster.on[String](Put(key, value))
+        response.contentString = result
         response
       }
       case Method.Get -> Root / "changecluster" / bindings => futurePool {
