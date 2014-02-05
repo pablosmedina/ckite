@@ -9,7 +9,7 @@ import java.io.Serializable
 import java.io.ByteArrayInputStream
 import java.io.ObjectInputStream
 
-class KVStore extends StateMachine with Serializable {
+class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
 
@@ -20,7 +20,6 @@ class KVStore extends StateMachine with Serializable {
         value
       }
       case Get(key: String) => map.get(key)
-      case _ => ""
     }
   }
 
