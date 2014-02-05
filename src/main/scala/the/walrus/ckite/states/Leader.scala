@@ -37,6 +37,8 @@ import com.twitter.concurrent.NamedPoolThreadFactory
 import the.walrus.ckite.RemoteMember
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import scala.collection.mutable.ArrayBuffer
+import the.walrus.ckite.rpc.NoOpWriteCommand
+import the.walrus.ckite.rpc.NoOpWriteCommand
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -71,8 +73,24 @@ class Leader(cluster: Cluster) extends State {
       resetLastLog
       resetNextIndexes
       heartbeater start term
+      async {
+    	  on[Unit](NoOpWriteCommand())
+      }
       LOG.info(s"Start being Leader")
     }
+  }
+  
+  private def async(block: => Unit) = {
+    cluster.replicatorExecutor.execute(() => { cluster.inContext {
+    		LOG.info("Replicate a NoOp as part of Leader initialization")
+    		block
+    	}
+       }
+    )
+  }
+  
+  private def noOp(): LogEntry = {
+     LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, NoOpWriteCommand())
   }
 
   private def resetLastLog = cluster.rlog.resetLastLog()
@@ -216,7 +234,7 @@ class Replicator(cluster: Cluster) extends Logging {
     val mapres = results.filter { result => result._2 }.map { result => result._1 }
     mapres.toSeq
   }
-
+  
 }
 
 class ReachMajorities(cluster: Cluster) extends ExpectedResultFilter with Logging {

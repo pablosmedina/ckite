@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit
 import com.twitter.concurrent.NamedPoolThreadFactory
 import java.util.concurrent.SynchronousQueue
 import the.walrus.ckite.util.CKiteConversions._
+import the.walrus.ckite.rpc.NoOpWriteCommand
 
 class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging {
 
@@ -191,6 +192,7 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
     	   true
     	}
     	case c: LeaveJointConsensus => true
+    	case c: NoOpWriteCommand => Unit
     	case _ => stateMachine.apply(command)
     	} 
     } finally {
