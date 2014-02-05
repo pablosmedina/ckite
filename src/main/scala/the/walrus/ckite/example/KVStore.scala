@@ -15,7 +15,10 @@ class KVStore extends StateMachine with Serializable {
 
   override def apply(command: Command): Any = {
     command match {
-      case Put(key: String, value: String) => map.put(key, value)
+      case Put(key: String, value: String) => { 
+        map.put(key, value)
+        value
+      }
       case Get(key: String) => map.get(key)
       case _ => ""
     }
