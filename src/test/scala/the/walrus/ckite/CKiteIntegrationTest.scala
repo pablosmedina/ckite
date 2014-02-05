@@ -8,6 +8,7 @@ import org.scalatest._
 import the.walrus.ckite.example.Get
 import the.walrus.ckite.example.Put
 import org.junit.Test
+import the.walrus.ckite.exception.NoMajorityReachedException
 
 @RunWith(classOf[JUnitRunner])
 class CKiteIntegrationTest extends FlatSpec with Matchers {
@@ -15,22 +16,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
   val Key1 = "key1"
   val Value1 = "value1"
     
-  implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
-      new CKiteSequence(members)
-  }
-  
-  class CKiteSequence(members: Seq[CKite]) {
-    
-    def followers = members filterNot {_ isLeader}
-    def leader =  {
-      val leaders = (members diff followers)
-      val theLeader = leaders.head
-      withClue("Not unique Leader") { leaders diff Seq(theLeader) should be ('empty) }
-      theLeader
-    }
-    
-  }
-  
   "A single member cluster" should "elect a Leader" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
@@ -57,32 +42,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      
      ckite stop
   }
-  
-  private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
-     //member1 has default election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 					.withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
-    		 					.withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
-    		 					.withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    val members = Seq(member1, member2, member3)
-    members foreach {_ start}
-     try {
-         test (members)
-     } finally {
-    	members foreach {_ stop}
-     }
-  }
-  
-  private def waitSomeTimeForElection = Thread.sleep(2000)
   
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
      val leader =  members leader
@@ -129,6 +88,36 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
        			member.read[String](Get(Key1)) should be (Value1) }
   }
    
+  it should "maintain quorum when 1 member goes down" in withThreeMemberCluster { members =>
+    		 				   
+     val someFollower = (members followers) head
+     
+     //a member goes down
+     someFollower.stop
+     
+     val leader = members leader
+     
+     //leader still have quorum. this write is going to be committed
+     leader.write(Put(Key1,Value1))
+     
+     (members diff Seq(someFollower)) foreach { member => 
+       			member.read[String](Get(Key1)) should be (Value1) }
+  }
+
+  it should "loose quorum when 2 members goes down" in withThreeMemberCluster { members =>
+
+    val leader = members leader
+
+    //all the followers goes down
+    (members followers) foreach { _.stop }
+
+    
+    //leader no longer have quorum. this write is going to be rejected
+    intercept[NoMajorityReachedException] {
+    	leader.write(Put(Key1, Value1))
+    }
+  } 
+   
    
   it should "replicate missing commands on restarted member" in {
     		 				   
@@ -162,7 +151,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      restartedMember3.start()
      
      //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
-     Thread.sleep(1000)
+     waitSomeTimeForAppendEntries
      
      //read from its local state machine to check if missing appendEntries have been replicated
      val readValue = restartedMember3.readLocal[String](Get(Key1))
@@ -175,28 +164,14 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      }
   } 
   
-  it should "add a new member" in {
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 					.withDataDir(someTmpDir)
-    		 				     .withStateMachine(new KVStore()).build
+  it should "add a new member" in withThreeMemberCluster { members =>
     		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val members = Seq(member1, member2, member3)
+     val leader = members leader
      
-     members foreach {_ start}
-     
-     //write k1=v1
-     member1.write(Put("k1","v1"))
+     leader.write(Put(Key1,Value1))
      
      //add member4 to the cluster
-     member1.addMember("localhost:9094")
+     leader.addMember("localhost:9094")
      
 	 val member4 = CKiteBuilder().withLocalBinding("localhost:9094").withMembersBindings(Seq("localhost:9092","localhost:9091","localhost:9093"))
 		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
@@ -205,21 +180,63 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
      member4.start
      
      //get value for k1. this is going to be forwarded to the Leader.
-     val replicatedValue = member4.read[String](Get("k1"))
-     replicatedValue should be ("v1")
+     val replicatedValue = member4.read[String](Get(Key1))
+     replicatedValue should be (Value1)
      
      //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
-     Thread.sleep(1000)
+     waitSomeTimeForAppendEntries
      
-     //get value for k1 from local
-     val localValue = member4.readLocal[String](Get("k1"))
+     //get value for Key1 from local
+     val localValue = member4.readLocal[String](Get(Key1))
      
      localValue should be (replicatedValue)
 		 				   
-     members foreach {_ stop}
      member4.stop
   } 
   
+  implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
+      new CKiteSequence(members)
+  }
+  
+  class CKiteSequence(members: Seq[CKite]) {
+    
+    def followers = members filterNot {_ isLeader}
+    def leader =  {
+      val leaders = (members diff followers)
+      val theLeader = leaders.head
+      withClue("Not unique Leader") { leaders diff Seq(theLeader) should be ('empty) }
+      theLeader
+    }
+    
+  }
+  
+  private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
+     //member1 has default election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
+     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
+    		 					.withDataDir(someTmpDir)
+    		 				   .withStateMachine(new KVStore()).build
+    		 				   
+     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
+    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
+    		 					.withDataDir(someTmpDir)
+    		 				   .withStateMachine(new KVStore()).build
+    		 				   
+     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
+    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
+    		 					.withDataDir(someTmpDir)
+    		 				   .withStateMachine(new KVStore()).build
+    val members = Seq(member1, member2, member3)
+    members foreach {_ start}
+     try {
+         test (members)
+     } finally {
+    	members foreach {_ stop}
+     }
+  }
+  
+  private def waitSomeTimeForElection = Thread.sleep(2000)
+
+  private def waitSomeTimeForAppendEntries = Thread.sleep(1000)
   
   private def someTmpDir: String = {
     "/tmp/"+System.currentTimeMillis()
