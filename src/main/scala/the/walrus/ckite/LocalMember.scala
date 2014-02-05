@@ -34,19 +34,16 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
     }
   }
 
-  def updateTermIfNeeded(receivedTerm: Int) = {
+  def updateTermIfNeeded(receivedTerm: Int) = cluster.inContext {
     if (receivedTerm > term) {
       LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
       votedFor.set("")
       currentTerm.set(receivedTerm)
-      cluster.updateContextInfo
     }
   }
 
-  def incrementTerm = {
-    val term = currentTerm.incrementAndGet()
-    cluster.updateContextInfo
-    term
+  def incrementTerm = cluster.inContext {
+    currentTerm.incrementAndGet()
   }
 
   def becomeLeader(term: Int) = become(new Leader(cluster), term)
@@ -65,7 +62,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
         currentState begin term
       } else {
-        LOG.info(s"No longer part of the Cluster. Shutdown!")
+        LOG.warn(s"No longer part of the Cluster. Shutdown!")
         cluster.stop
       }
     }

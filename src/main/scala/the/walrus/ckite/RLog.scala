@@ -33,9 +33,11 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
   val commitIndex = db.getAtomicInteger("commitIndex")
   
   val lastLog = new AtomicInteger(0)
+  
   val lock = new ReentrantReadWriteLock()
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
+  
   val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, db)
   
   val asyncApplierExecutor = new ThreadPoolExecutor(0, 1,
@@ -53,10 +55,10 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
         startIndex = snapshot.lastLogEntryIndex + 1
         stateMachine.deserialize(snapshot.stateMachineState)
     }
-    val ci = commitIndex.get()
-    if (ci > 0) {
+    val currentCommitIndex = commitIndex.get()
+    if (currentCommitIndex > 0) {
     	LOG.info(s"Start log replay from index $startIndex to $commitIndex")
-    	startIndex to ci foreach { index => 
+    	startIndex to currentCommitIndex foreach { index => 
     	  LOG.info(s"Replaying index $index")
     	  execute(entries.get(index).command) 
     	}
@@ -88,27 +90,27 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
   private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
   }
-  
+
   private def appendWithLockAcquired(logEntries: List[LogEntry]) = {
-      logEntries.foreach { logEntry =>
+    logEntries.foreach { logEntry =>
       LOG.info(s"Appending log entry $logEntry")
       entries.put(logEntry.index, logEntry)
       logEntry.command match {
         case c: EnterJointConsensus => cluster.apply(c)
         case c: LeaveJointConsensus => cluster.apply(c)
         case _ => Unit
-      } 
+      }
     }
   }
-  
+
   def append(logEntries: List[LogEntry]) = {
-	  	sharedLock.lock()
-	  	try {
-	  	  appendWithLockAcquired(logEntries)
-	  	} finally {
-	  	  sharedLock.unlock()
-	  	  compactionPolicy.apply(this)
-	  	}
+    sharedLock.lock()
+    try {
+      appendWithLockAcquired(logEntries)
+    } finally {
+      sharedLock.unlock()
+      compactionPolicy.apply(this)
+    }
   }
 
   def getLogEntry(index: Int): Option[LogEntry] = {
@@ -144,7 +146,7 @@ class RLog(cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging
     		commitEntriesUntil(logEntry.index)
     		safeCommit(logEntry.index)
     	} else {
-    		LOG.info(s"Unsafe to commit an old term entry: $entry")
+    		LOG.warn(s"Unsafe to commit an old term entry: $entry")
     	}
     }
   }

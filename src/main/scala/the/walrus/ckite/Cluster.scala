@@ -72,44 +72,47 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   val lock = new ReentrantLock()
   
-  def start = {
-    updateContextInfo
+  def start = inContext {
     LOG.info("Start CKite Cluster")
-    if (configuration.dynamicBootstrap) {
-         val dynaMembership = createSimpleConsensusMembership(Seq(local.id))
-    	 consensusMembership.set(dynaMembership)
-         breakable {
-        	 local becomeFollower InitialTerm
-        	 for(remoteMemberBinding <- configuration.membersBindings) {
-        		 consensusMembership.set(createSimpleConsensusMembership(Seq(local.id, remoteMemberBinding)))
-        		 val remoteMember = obtainRemoteMember(remoteMemberBinding).get
-        	     val response = remoteMember.getMembers()
-        	     if (response.success) {
-        	    	 consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
-        	    	 val joinResponse = remoteMember.join(local.id)
-        	    	 if (joinResponse.success) {
-        	    		 LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
-        	    		 break
-        	    	 } 
-        	     } 
-        	 }
-        	 //dynamicBootstrap fail to join. I'm the only one?
-        	 consensusMembership.set(dynaMembership)
-         }
-    } else {
-    	consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map( binding => new RemoteMember(this, binding)) ) )
-    	local becomeFollower InitialTerm
+    if (configuration.dynamicBootstrap) startDynamic else startStatic
+  }
+
+  //Members are known from the beginning
+  private def startStatic = {
+    consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
+    local becomeFollower InitialTerm
+  }
+
+  //Members are seeds to discover the Leader and hence the Cluster
+  private def startDynamic = {
+    val dynaMembership = createSimpleConsensusMembership(Seq(local.id))
+    consensusMembership.set(dynaMembership)
+    breakable {
+      local becomeFollower InitialTerm
+      for (remoteMemberBinding <- configuration.membersBindings) {
+        consensusMembership.set(createSimpleConsensusMembership(Seq(local.id, remoteMemberBinding)))
+        val remoteMember = obtainRemoteMember(remoteMemberBinding).get
+        val response = remoteMember.getMembers()
+        if (response.success) {
+          consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
+          val joinResponse = remoteMember.join(local.id)
+          if (joinResponse.success) {
+            LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
+            break
+          }
+        }
+      }
+      //dynamicBootstrap fail to join. I'm the only one?
+      consensusMembership.set(dynaMembership)
     }
   }
   
-  def stop = {
-    updateContextInfo
+  def stop = inContext {
     LOG.info("Stop CKite Cluster")
     local stop
   }
 
-  def on(requestVote: RequestVote) = {
-    updateContextInfo
+  def on(requestVote: RequestVote) = inContext {
     LOG.debug(s"RequestVote received: $requestVote")
     if (obtainRemoteMember(requestVote.memberId).isEmpty) {
       LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
@@ -118,18 +121,17 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     local on requestVote
   }
 
-  def on(appendEntries: AppendEntries) = {
-    updateContextInfo
+  def on(appendEntries: AppendEntries) = inContext {
     local on appendEntries
   }
 
-  def on[T](command: Command): T = {
-    awaitLeader
-    updateContextInfo
-    LOG.debug(s"Command received: $command")
-    command match {
-      case write: WriteCommand =>  local.on[T](write)
-      case read: ReadCommand => local.on[T](read)
+  def on[T](command: Command): T = havingLeader {
+    inContext {
+      LOG.debug(s"Command received: $command")
+      command match {
+        case write: WriteCommand => local.on[T](write)
+        case read: ReadCommand => local.on[T](read)
+      }
     }
   }
 
@@ -138,21 +140,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
       heartbeaterExecutor.execute(() => {
-        updateContextInfo
-        member.sendHeartbeat(term)
+        inContext {
+        	member.sendHeartbeat(term)
+        }
       })
     }
   }
   
-  def locked[T](f: => T): T = {
-       lock.lock()
-       try {
-         f
-       } finally {
-         lock.unlock()
-       }
-  }
-
   def onLocal(readCommand: ReadCommand) = {
     rlog execute readCommand
   }
@@ -176,41 +170,33 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     votesGrantedMembers.toSeq
   }
 
-  def forwardToLeader[T](command: Command): T = {
-    LOG.debug(s"Forward command $command")
-    awaitLeader.forwardCommand[T](command)
+  def forwardToLeader[T](command: Command): T = withLeader { leader => 
+    inContext {
+    	LOG.debug(s"Forward command $command")
+    	leader.forwardCommand[T](command)
+    }
   }
 
   def updateLeader(memberId: String): Boolean = leaderPromise.synchronized {
-    val newLeader = obtainMember(memberId)
-    val promise = leaderPromise.get()
-    if (!promise.isCompleted || promise.future.value.get.get != newLeader.get) {
-      leaderPromise.get().success(newLeader.get) //complete current promise for operations waiting for it
-      leaderPromise.set(Promise.successful(newLeader.get)) //kept promise for subsequent leader 
-      updateContextInfo
-      true
-    } else false
+    inContext {
+      val newLeader = obtainMember(memberId)
+      val promise = leaderPromise.get()
+      if (!promise.isCompleted || promise.future.value.get.get != newLeader.get) {
+        leaderPromise.get().success(newLeader.get) //complete current promise for operations waiting for it
+        leaderPromise.set(Promise.successful(newLeader.get)) //kept promise for subsequent leader 
+        true
+      } else false
+    }
   }
 
   def setNoLeader = leaderPromise.synchronized {
-    if (leaderPromise.get().isCompleted) {
-      leaderPromise.set(Promise[Member]())
+    inContext {
+      if (leaderPromise.get().isCompleted) {
+        leaderPromise.set(Promise[Member]())
+      }
     }
-    updateContextInfo
   }
 
-  def anyLeader = leader != None
-
-  def majority = membership.majority
-
-  def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
-
-  def updateContextInfo = {
-    MDC.put("binding", local.id)
-    MDC.put("term", local.term.toString)
-    MDC.put("leader", leader.toString)
-  }
-  
   def addMember(memberBinding: String) = {
     val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } :+ memberBinding
     on[Boolean](EnterJointConsensus(newMemberBindings.toList))
@@ -266,8 +252,63 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     if (promise.isCompleted) Some(promise.future.value.get.get) else None
   }
   
+  def installSnapshot(snapshot: Snapshot): Boolean = inContext {
+    LOG.info("InstallSnapshot received")
+    rlog.installSnapshot(snapshot)
+  }
+  
+  def getMembers(): Seq[String] = withLeader { leader =>
+     if (leader == local)  {
+       membership.allMembers.map(member => member.id) 
+     }
+     else  {
+       leader.asInstanceOf[RemoteMember].getMembers().members
+     }
+  }
+  
+  def isActiveMember(memberId: String): Boolean = !membership.allMembers.filter( member => member.id.equals(memberId)).isEmpty
+  
   private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
+  
   private def obtainRemoteMember(memberId: String): Option[RemoteMember] = (membership.remoteMembers).find { _.id == memberId }
+  
+  def anyLeader = leader != None
+
+  def majority = membership.majority
+
+  def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
+  
+  def updateContextInfo = {
+    MDC.put("binding", local.id)
+    MDC.put("term", local.term.toString)
+    MDC.put("leader", leader.toString)
+  }
+  
+  def locked[T](f: => T): T = {
+       lock.lock()
+       try {
+         f
+       } finally {
+         lock.unlock()
+       }
+  }
+  
+  def inContext[T](f: => T): T = {
+    updateContextInfo
+    val result = f
+    updateContextInfo
+    result
+  }
+  
+  def withLeader[T](f: Member => T): T = {
+      val leader = awaitLeader
+      f(leader)
+  }
+  
+  def havingLeader[T](f: => T): T = {
+      awaitLeader
+      f
+  }
   
   private def file(dataDir: String): File = {
     val dir = new File(dataDir)
@@ -275,17 +316,5 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     val file = new File(dir, "ckite")
     file
   }
-  
-  def installSnapshot(snapshot: Snapshot): Boolean = {
-    LOG.info("InstallSnapshot received")
-    rlog.installSnapshot(snapshot)
-  }
-  
-  def getMembers(): Seq[String] = {
-     val leader = awaitLeader
-     if (awaitLeader == local) membership.allMembers.map(member => member.id) else leader.asInstanceOf[RemoteMember].getMembers().members
-  }
-  
-  def isActiveMember(memberId: String): Boolean = !membership.allMembers.filter( member => member.id.equals(memberId)).isEmpty
 
 }
