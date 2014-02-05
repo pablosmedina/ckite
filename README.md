@@ -20,7 +20,41 @@ CKite covers all the major topics of Raft including leader election, log replica
 
 ## Example
 
-#### Create a CKite instance using the builder
+#### 1) Define a StateMachine and its commands
+```scala
+//KVStore is a simple distributed Map accepting Puts and Gets
+class KVStore extends StateMachine {
+
+  val map = new ConcurrentHashMap[String, String]()
+
+  override def apply(command: Command): Any = {
+    command match {
+      case Put(key: String, value: String) => { 
+        map.put(key, value)
+        value
+      }
+      case Get(key: String) => map.get(key)
+    }
+  }
+
+  def deserialize(snapshotBytes: Array[Byte]) = {
+	//some deserialization mechanism
+  }
+
+  def serialize(): Array[Byte] = {
+	//some serialization mechanism
+  }
+
+}
+
+//WriteCommands are replicated under Raft rules
+case class Put[Key,Value](key: Key, value: Value) extends WriteCommand
+
+//ReadCommands are not replicated but forwarded to the Leader
+case class Get[Key](key: Key) extends ReadCommand
+```
+
+#### 2) Create a CKite instance using the builder
 ```scala
 val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
                           .withMembersBindings(Seq("localhost:9092","localhost:9093"))
@@ -31,41 +65,41 @@ val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
                           .build
 ckite.start()
 ```
-#### Send a write command
+#### 3) Send a write command
 ```scala
 //this Put command is forwarded to the Leader and applied under Raft rules
 ckite.write(Put("key1","value1")) 
 ```
 
-#### Send a consistent read command
+#### 4) Send a consistent read command
 ```scala
 //consistent read commands are forwarded to the Leader
 val value = ckite.read[String](Get("key1")) 
 ```
-#### Add a new Member
+#### 5) Add a new Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
 ckite.addMember("someHost:9094")
 ```
 
-#### Remove a Member
+#### 6) Remove a Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
 ckite.removeMember("someHost:9094")
 ```
 
-#### Issue a local read command
+#### 7) Send a local read command
 ```scala
 //alternatively you can read from its local state machine allowing possible stale values
 val value = ckite.readLocal[String](Get("key1")) 
 ```
 
-#### Check leadership
+#### 8) Check leadership
 ```scala
 //if necessary waits for elections to end
 ckite.isLeader() 
 ```
-#### Stop ckite
+#### 9) Stop ckite
 ```scala
 ckite.stop()
 ```
