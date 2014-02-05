@@ -42,7 +42,7 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
   }
   
   override def toString(): String = {
-    allMembers.map {m => m.id }.mkString(",")
+    allMembers.toString
   }
 
 }
