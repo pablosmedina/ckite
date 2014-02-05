@@ -37,11 +37,13 @@ class KVStore extends StateMachine {
     }
   }
 
-  def deserialize(snapshotBytes: Array[Byte]) = {
+  //called during Log replay on startup and upon installSnapshot requests
+  override def deserialize(snapshotBytes: Array[Byte]) = {
 	//some deserialization mechanism
   }
-
-  def serialize(): Array[Byte] = {
+ 
+  //called when Log compaction is required
+  override def serialize(): Array[Byte] = {
 	//some serialization mechanism
   }
 
