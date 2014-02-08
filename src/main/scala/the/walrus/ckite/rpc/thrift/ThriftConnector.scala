@@ -28,41 +28,38 @@ class ThriftConnector(binding: String) extends Connector with Logging {
   				.retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)
   				.hostConnectionLimit(10).hostConnectionCoresize(1).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
   
-  override def send(member: RemoteMember, request: RequestVote): Try[RequestVoteResponse] = {
+  override def send(request: RequestVote): Try[RequestVoteResponse] = {
     Try {
-      LOG.debug(s"Sending $request to ${member.id}")
+      LOG.debug(s"Sending $request to $binding")
       client.sendRequestVote(request).get
     } 
   }
   
-  override def send(member: RemoteMember, appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
+  override def send(appendEntries: AppendEntries): Try[AppendEntriesResponse] = {
    Try {
-      LOG.trace(s"Sending $appendEntries to ${member.id}")
+      LOG.trace(s"Sending $appendEntries to $binding")
       client.sendAppendEntries(appendEntries).get
     }
   }
   
-  override def send[T](leader: RemoteMember, command: Command): T = {
+  override def send[T](command: Command): T = {
     val future = client.forwardCommand(command)
     val value: T = future.get
     value
   }
   
-  override def send(member: RemoteMember, snapshot: Snapshot) = {
+  override def send(snapshot: Snapshot) = {
     val future: Future[Boolean] = client.installSnapshot(snapshot)
-    future.foreach { success => 
-      	 member.setNextLogIndex(snapshot.lastLogEntryIndex + 1)
-         member.enableReplications()
-    }
+    future
   }
   
-  override def send(member: RemoteMember, joinRequest: JoinRequest): Try[JoinResponse] = {
+  override def send(joinRequest: JoinRequest): Try[JoinResponse] = {
     Try {
        client.join(joinRequest).get
      } 
   }
   
-  override def send(member: RemoteMember,  getMembersRequest: GetMembersRequest): Try[GetMembersResponse] = {
+  override def send(getMembersRequest: GetMembersRequest): Try[GetMembersResponse] = {
     Try {
        client.getMembers().get
      } 

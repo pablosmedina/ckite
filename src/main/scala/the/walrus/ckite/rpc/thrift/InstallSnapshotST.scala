@@ -26,12 +26,15 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
   val LastLogEntryIndexFieldManifest = implicitly[Manifest[Int]]
   val LastLogEntryTermField = new TField("lastLogEntryTerm", TType.I32, 3)
   val LastLogEntryTermFieldManifest = implicitly[Manifest[Int]]
+  val MembershipStateField = new TField("membershipState", TType.STRING, 4)
+  val MembershipStateFieldManifest = implicitly[Manifest[ByteBuffer]]
 
   /**
    * Checks that all required fields are non-null.
    */
   def validate(_item: InstallSnapshotST) {
     if (_item.stateMachineState == null) throw new TProtocolException("Required field stateMachineState cannot be null")
+    if (_item.membershipState == null) throw new TProtocolException("Required field membershipState cannot be null")
   }
 
   override def encode(_item: InstallSnapshotST, _oproto: TProtocol) { _item.write(_oproto) }
@@ -40,14 +43,16 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
   def apply(
     stateMachineState: ByteBuffer,
     lastLogEntryIndex: Int,
-    lastLogEntryTerm: Int
+    lastLogEntryTerm: Int,
+    membershipState: ByteBuffer
   ): InstallSnapshotST = new Immutable(
     stateMachineState,
     lastLogEntryIndex,
-    lastLogEntryTerm
+    lastLogEntryTerm,
+    membershipState
   )
 
-  def unapply(_item: InstallSnapshotST): Option[Product3[ByteBuffer, Int, Int]] = Some(_item)
+  def unapply(_item: InstallSnapshotST): Option[Product4[ByteBuffer, Int, Int, ByteBuffer]] = Some(_item)
 
   object Immutable extends ThriftStructCodec3[InstallSnapshotST] {
     override def encode(_item: InstallSnapshotST, _oproto: TProtocol) { _item.write(_oproto) }
@@ -58,6 +63,8 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
       var _got_lastLogEntryIndex = false
       var lastLogEntryTerm: Int = 0
       var _got_lastLogEntryTerm = false
+      var membershipState: ByteBuffer = null
+      var _got_membershipState = false
       var _done = false
       _iprot.readStructBegin()
       while (!_done) {
@@ -99,6 +106,17 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
                 case _ => TProtocolUtil.skip(_iprot, _field.`type`)
               }
             }
+            case 4 => { /* membershipState */
+              _field.`type` match {
+                case TType.STRING => {
+                  membershipState = {
+                    _iprot.readBinary()
+                  }
+                  _got_membershipState = true
+                }
+                case _ => TProtocolUtil.skip(_iprot, _field.`type`)
+              }
+            }
             case _ =>
               TProtocolUtil.skip(_iprot, _field.`type`)
           }
@@ -109,10 +127,12 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
       if (!_got_stateMachineState) throw new TProtocolException("Required field 'InstallSnapshotST' was not found in serialized data for struct InstallSnapshotST")
       if (!_got_lastLogEntryIndex) throw new TProtocolException("Required field 'InstallSnapshotST' was not found in serialized data for struct InstallSnapshotST")
       if (!_got_lastLogEntryTerm) throw new TProtocolException("Required field 'InstallSnapshotST' was not found in serialized data for struct InstallSnapshotST")
+      if (!_got_membershipState) throw new TProtocolException("Required field 'InstallSnapshotST' was not found in serialized data for struct InstallSnapshotST")
       new Immutable(
         stateMachineState,
         lastLogEntryIndex,
-        lastLogEntryTerm
+        lastLogEntryTerm,
+        membershipState
       )
     }
   }
@@ -125,7 +145,8 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
   class Immutable(
     val stateMachineState: ByteBuffer,
     val lastLogEntryIndex: Int,
-    val lastLogEntryTerm: Int
+    val lastLogEntryTerm: Int,
+    val membershipState: ByteBuffer
   ) extends InstallSnapshotST
 
   /**
@@ -138,11 +159,12 @@ object InstallSnapshotST extends ThriftStructCodec3[InstallSnapshotST] {
     override def stateMachineState: ByteBuffer = _underlying_InstallSnapshotST.stateMachineState
     override def lastLogEntryIndex: Int = _underlying_InstallSnapshotST.lastLogEntryIndex
     override def lastLogEntryTerm: Int = _underlying_InstallSnapshotST.lastLogEntryTerm
+    override def membershipState: ByteBuffer = _underlying_InstallSnapshotST.membershipState
   }
 }
 
 trait InstallSnapshotST extends ThriftStruct
-  with Product3[ByteBuffer, Int, Int]
+  with Product4[ByteBuffer, Int, Int, ByteBuffer]
   with java.io.Serializable
 {
   import InstallSnapshotST._
@@ -151,10 +173,12 @@ trait InstallSnapshotST extends ThriftStruct
   def stateMachineState: ByteBuffer
   def lastLogEntryIndex: Int
   def lastLogEntryTerm: Int
+  def membershipState: ByteBuffer
 
   def _1 = stateMachineState
   def _2 = lastLogEntryIndex
   def _3 = lastLogEntryTerm
+  def _4 = membershipState
 
 
   /**
@@ -167,6 +191,7 @@ trait InstallSnapshotST extends ThriftStruct
       case 1 => copy(stateMachineState = null)
       case 2 => copy(lastLogEntryIndex = 0)
       case 3 => copy(lastLogEntryTerm = 0)
+      case 4 => copy(membershipState = null)
       case _ => this
     }
 
@@ -191,6 +216,12 @@ trait InstallSnapshotST extends ThriftStruct
       _oprot.writeI32(lastLogEntryTerm_item)
       _oprot.writeFieldEnd()
     }
+    if (membershipState ne null) {
+      val membershipState_item = membershipState
+      _oprot.writeFieldBegin(MembershipStateField)
+      _oprot.writeBinary(membershipState_item)
+      _oprot.writeFieldEnd()
+    }
     _oprot.writeFieldStop()
     _oprot.writeStructEnd()
   }
@@ -198,12 +229,14 @@ trait InstallSnapshotST extends ThriftStruct
   def copy(
     stateMachineState: ByteBuffer = this.stateMachineState, 
     lastLogEntryIndex: Int = this.lastLogEntryIndex, 
-    lastLogEntryTerm: Int = this.lastLogEntryTerm
+    lastLogEntryTerm: Int = this.lastLogEntryTerm, 
+    membershipState: ByteBuffer = this.membershipState
   ): InstallSnapshotST =
     new Immutable(
       stateMachineState,
       lastLogEntryIndex,
-      lastLogEntryTerm
+      lastLogEntryTerm,
+      membershipState
     )
 
   override def canEqual(other: Any): Boolean = other.isInstanceOf[InstallSnapshotST]
@@ -216,12 +249,13 @@ trait InstallSnapshotST extends ThriftStruct
   override def toString: String = _root_.scala.runtime.ScalaRunTime._toString(this)
 
 
-  override def productArity: Int = 3
+  override def productArity: Int = 4
 
   override def productElement(n: Int): Any = n match {
     case 0 => stateMachineState
     case 1 => lastLogEntryIndex
     case 2 => lastLogEntryTerm
+    case 3 => membershipState
     case _ => throw new IndexOutOfBoundsException(n.toString)
   }
 

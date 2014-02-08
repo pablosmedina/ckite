@@ -72,6 +72,7 @@ class Leader(cluster: Cluster) extends State {
       cluster.updateLeader(cluster.local.id)
       resetLastLog
       resetNextIndexes
+      resetFollowerInfo
       heartbeater start term
       async {
     	  on[Unit](NoOpWriteCommand())
@@ -81,12 +82,11 @@ class Leader(cluster: Cluster) extends State {
   }
   
   private def async(block: => Unit) = {
-    cluster.replicatorExecutor.execute(() => { cluster.inContext {
+    cluster.replicatorExecutor.execute { cluster.inContext {
     		LOG.info("Replicate a NoOp as part of Leader initialization")
     		block
     	}
-       }
-    )
+      }
   }
   
   private def noOp(): LogEntry = {
@@ -123,8 +123,8 @@ class Leader(cluster: Cluster) extends State {
     if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
       (cluster.rlog commit logEntry).asInstanceOf[T]
     } else {
-      LOG.info("Uncommited entry due to no majority")
-      throw new NoMajorityReachedException()
+      LOG.warn(s"ReplicationTimeout! Could not commit $logEntry due to no majority")
+      throw new NoMajorityReachedException(logEntry)
     }
   }
   
@@ -174,8 +174,13 @@ class Leader(cluster: Cluster) extends State {
     val now = System.currentTimeMillis()
     val unit = TimeUnit.MILLISECONDS
     val f = followersInfo.map {
-      tuple => (tuple._1, Duration(now - tuple._2, unit).toString )  }
+      tuple => (tuple._1, FollowerInfo(if (tuple._2 > 0) Duration(now - tuple._2, unit).toString else "Never", 
+          cluster.obtainRemoteMember(tuple._1).get.nextLogIndex.intValue()))  }
     LeaderInfo(Duration(now - startTime, unit).toString, f.toMap)
+  }
+  
+  private def resetFollowerInfo = {
+    cluster.membership.remoteMembers.foreach { member => followersInfo.put(member.id, -1) }
   }
   
   override def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
@@ -183,6 +188,14 @@ class Leader(cluster: Cluster) extends State {
 	  if (!request.entries.isEmpty) {
             onAppendEntriesResponseUpdateNextLogIndex(member, request, response)
        }
+      val nextIndex = member.nextLogIndex.intValue()
+       if (isLogEntryInSnapshot(nextIndex)) {
+          val wasEnabled = member.disableReplications()
+          if (wasEnabled) { 
+        	LOG.info(s"Next Log index $nextIndex to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
+            sendSnapshotAsync(member)
+          }
+      }
       followersInfo.put(member.id, time)
   }
 
@@ -192,13 +205,9 @@ class Leader(cluster: Cluster) extends State {
       } else {
         val currentIndex = member.nextLogIndex.decrementAndGet()
         if (currentIndex == 0) member.nextLogIndex.set(1)
-        if (isLogEntryInSnapshot(currentIndex)) {
-          LOG.info(s"Next Log index to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
-          member.disableReplications()
-          sendSnapshotAsync(member)
-        }
       }
-      LOG.debug(s"Member ${member} $appendEntriesResponse - NextLogIndex is ${member.nextLogIndex}")
+      appendEntries.entries.last.index
+      LOG.debug(s"Member ${member} $appendEntriesResponse - LogIndex sent ${appendEntries.entries.last.index} - NextLogIndex is ${member.nextLogIndex}")
   }
   
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
@@ -209,7 +218,9 @@ class Leader(cluster: Cluster) extends State {
   def sendSnapshotAsync(member: RemoteMember) = {
 	 val snapshot = cluster.rlog.getSnapshot().get
      LOG.info(s"Sending InstallSnapshot to ${member} containing $snapshot")
-     member.sendSnapshot(snapshot)
+     com.twitter.util.Future {
+		 member.sendSnapshot(snapshot)
+	 }
   }
 }
 
@@ -221,13 +232,11 @@ class Replicator(cluster: Cluster) extends Logging {
   def replicate(logEntry: LogEntry): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(cluster.replicatorExecutor)
     cluster.membership.remoteMembers.foreach { member =>
-      execution.withTask(() => {
-        val result: (Member, Boolean) = (member, member replicate logEntry)
-        result
-      })
+      execution.withTask {
+        (member, member replicate logEntry)
+      }
     }
-    val expectedResults = cluster.membership.majoritiesCount
-    LOG.debug(s"Waiting for $expectedResults majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
+    LOG.debug(s"Waiting for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
     val rawResults = execution.withTimeout(ReplicationTimeout, TimeUnit.MILLISECONDS)
       .withExpectedResults(1, new ReachMajorities(cluster)).execute[(Member, Boolean)]()
     val results: Iterable[(Member, Boolean)] = rawResults
@@ -260,12 +269,13 @@ class Heartbeater(cluster: Cluster) extends Logging {
   def start(term: Int) = {
     LOG.debug("Start Heartbeater")
 
-    scheduledHeartbeatsPool.scheduleAtFixedRate( () => {
+    val task:Runnable = {
       cluster updateContextInfo
 
       LOG.trace("Heartbeater running")
       cluster.broadcastHeartbeats(term)
-    }, 0, cluster.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)
+    } 
+    scheduledHeartbeatsPool.scheduleAtFixedRate(task, 0, cluster.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)
 
   }
 

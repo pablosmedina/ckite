@@ -4,20 +4,21 @@ import scala.util.Try
 import the.walrus.ckite.Member
 import the.walrus.ckite.rlog.Snapshot
 import the.walrus.ckite.RemoteMember
+import com.twitter.util.Future
 
 trait Connector {
 
-  def send(member: RemoteMember, request: RequestVote): Try[RequestVoteResponse]
+  def send(request: RequestVote): Try[RequestVoteResponse]
 
-  def send(member: RemoteMember, appendEntries: AppendEntries): Try[AppendEntriesResponse]
+  def send(appendEntries: AppendEntries): Try[AppendEntriesResponse]
   
-  def send(member: RemoteMember, snapshot: Snapshot)
+  def send(snapshot: Snapshot): Future[Boolean]
   
-  def send[T](member: RemoteMember, command: Command): T
+  def send[T](command: Command): T
   
-  def send(member: RemoteMember, joinRequest: JoinRequest): Try[JoinResponse]
+  def send(joinRequest: JoinRequest): Try[JoinResponse]
   
-  def send(member: RemoteMember, getMembersRequest: GetMembersRequest): Try[GetMembersResponse]
+  def send(getMembersRequest: GetMembersRequest): Try[GetMembersResponse]
   
   
   

@@ -81,7 +81,7 @@ class Election(cluster: Cluster) extends Logging {
   val electionFutureTask = new AtomicReference[Future[_]]()
   
   def start(inTerm: Int) = {
-    val task:Runnable = () => {
+    val task:Runnable =  {
 	        cluster.local voteForMyself
 	    
 	     val votes = (cluster collectVotes) :+ cluster.local

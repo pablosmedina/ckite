@@ -1,23 +1,18 @@
 package the.walrus.ckite.rpc.thrift
 
-import the.walrus.ckite.rpc.RequestVote
-import the.walrus.ckite.rpc.AppendEntries
 import java.nio.ByteBuffer
-import the.walrus.ckite.rpc.RequestVoteResponse
-import the.walrus.ckite.rpc.AppendEntriesResponse
-import the.walrus.ckite.rpc.LogEntry
-import the.walrus.ckite.rpc.WriteCommand
-import java.nio.HeapByteBuffer
-import java.io.ObjectOutputStream
-import java.io.ByteArrayOutputStream
-import java.io.ByteArrayInputStream
-import java.io.ObjectInputStream
-import the.walrus.ckite.util.Logging
-import the.walrus.ckite.rpc.Command
+
 import the.walrus.ckite.rlog.Snapshot
+import the.walrus.ckite.rpc.AppendEntries
+import the.walrus.ckite.rpc.AppendEntriesResponse
+import the.walrus.ckite.rpc.GetMembersResponse
 import the.walrus.ckite.rpc.JoinRequest
 import the.walrus.ckite.rpc.JoinResponse
-import the.walrus.ckite.rpc.GetMembersResponse
+import the.walrus.ckite.rpc.LogEntry
+import the.walrus.ckite.rpc.RequestVote
+import the.walrus.ckite.rpc.RequestVoteResponse
+import the.walrus.ckite.util.Logging
+import the.walrus.ckite.util.Serializer
 
 object ThriftConverters extends Logging {
 
@@ -63,25 +58,27 @@ object ThriftConverters extends Logging {
     LogEntry(entry.term, entry.index, entry.command)
   } 
   
-  implicit def anyToThrift(command: Any): ByteBuffer = {
-    val bb = ByteBuffer.wrap(serialize(command))
+  implicit def anyToThrift[T](command: T): ByteBuffer = {
+    val bb = ByteBuffer.wrap(Serializer.serialize(command))
     bb
   } 
   
-  implicit def commandFromThrift[T](byteBuffer: ByteBuffer): T = {
+  implicit def anyFromThrift[T](byteBuffer: ByteBuffer): T = {
     val remaining = byteBuffer.remaining()
     val bytes = new Array[Byte](remaining)
     byteBuffer.get(bytes)
-    val c = deserialize[T](bytes)
+    val c = Serializer.deserialize[T](bytes)
     c
   } 
   
   implicit def snapshotToThrift(snapshot: Snapshot): InstallSnapshotST = {
-    InstallSnapshotST(snapshot.stateMachineState, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm)
+	val bb2:ByteBuffer = snapshot.membership
+    val bb:ByteBuffer = snapshot.stateMachineState
+    InstallSnapshotST(bb, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm,bb2)
   }
   
   implicit def snapshotFromThrift(installSnapshotST: InstallSnapshotST): Snapshot = {
-    new Snapshot(installSnapshotST.stateMachineState, installSnapshotST.lastLogEntryIndex, installSnapshotST.lastLogEntryTerm)
+    new Snapshot(installSnapshotST.stateMachineState, installSnapshotST.lastLogEntryIndex, installSnapshotST.lastLogEntryTerm, installSnapshotST.membershipState)
   }
   
   
@@ -95,25 +92,6 @@ object ThriftConverters extends Logging {
   
   implicit def getMembersResponseFromThrift(getMembersResponse: GetMembersResponseST): GetMembersResponse = {
     GetMembersResponse(getMembersResponse.success, getMembersResponse.members)
-  }
-  
-  private def serialize(command: Any): Array[Byte] = {
-    val baos = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(baos)
-    oos.writeObject(command)
-    oos.flush()
-    baos.flush()
-    val bytes = baos.toByteArray()
-    oos.close()
-    bytes
-  }
-  
-  private def deserialize[T](bytes: Array[Byte]): T = {
-    val bais = new ByteArrayInputStream(bytes)
-    val ois = new ObjectInputStream(bais)
-    val command = ois.readObject().asInstanceOf[T]
-    ois.close()
-    command
   }
   
 }

@@ -1,21 +1,11 @@
 package the.walrus.ckite.rlog
 
-import java.io.ObjectOutputStream
-import java.io.ByteArrayOutputStream
-import java.io.Serializable
-import java.io.ObjectInputStream
-import java.io.ByteArrayInputStream
+import the.walrus.ckite.MembershipState
+import the.walrus.ckite.util.Serializer
 
-class Snapshot(val stateMachineState: Array[Byte], val lastLogEntryIndex: Int, val lastLogEntryTerm: Int) extends Serializable {
+class Snapshot(val stateMachineState: Array[Byte], val lastLogEntryIndex: Int, val lastLogEntryTerm: Int, val membership: MembershipState) extends Serializable {
 
-  def serialize(): Array[Byte] = {
-    val baos = new ByteArrayOutputStream()
-    val oos =   new ObjectOutputStream(baos)
-    oos.writeObject(this)
-    oos.flush()
-    oos.close()
-    baos.toByteArray()
-  }
+  def serialize(): Array[Byte] = Serializer.serialize(this)
   
   override def toString(): String = s"Snapshot(lastLogEntryTerm=$lastLogEntryTerm,lastLogEntryIndex=$lastLogEntryIndex)"
   
@@ -23,11 +13,6 @@ class Snapshot(val stateMachineState: Array[Byte], val lastLogEntryIndex: Int, v
 
 object Snapshot {
   
-    def deserialize(snapshotBytes: Array[Byte]): Snapshot = {
-    	  val inputStream = new ObjectInputStream(new ByteArrayInputStream(snapshotBytes))
-		  val snapshot = inputStream.readObject().asInstanceOf[Snapshot]
-		  inputStream.close()
-		  snapshot
-    }
+    def deserialize(snapshotBytes: Array[Byte]): Snapshot =  Serializer.deserialize(snapshotBytes)
 }
 

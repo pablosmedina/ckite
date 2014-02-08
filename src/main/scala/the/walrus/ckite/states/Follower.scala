@@ -104,13 +104,14 @@ class ElectionTimeout(cluster: Cluster) extends Logging {
   private def start = {
     val electionTimeout =  randomTimeout
     LOG.trace(s"New timeout is $electionTimeout ms")
-    val future = cluster.scheduledElectionTimeoutExecutor.schedule((() => {
+    val task: Runnable = () => {
           cluster updateContextInfo
           
     	  LOG.debug("Timeout reached! Time to elect a new Leader")
     	  cluster.local becomeCandidate (cluster.local.term)
           
-      }):Runnable, electionTimeout, TimeUnit.MILLISECONDS)
+    }
+    val future = cluster.scheduledElectionTimeoutExecutor.schedule(task, electionTimeout, TimeUnit.MILLISECONDS)
     scheduledFuture.set(future)
   }
 

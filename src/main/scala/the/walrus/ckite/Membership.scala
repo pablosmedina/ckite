@@ -1,70 +1,86 @@
 package the.walrus.ckite
 
-import java.util.HashMap
-
 trait Membership {
 
   def allMembers: Seq[Member]
   
   def remoteMembers: Seq[RemoteMember]
 
-  def reachMajority(votes: Seq[Member]): Boolean
+  def reachMajority(members: Seq[Member]): Boolean
 
   def majority: String
 
-  def majoritiesCount: Int
-
   def majoritiesMap: Map[Seq[Member], Int]
+  
+  def captureState: MembershipState
+  
+}
 
+trait MembershipState extends Serializable {
+  def recoverIn(cluster: Cluster)
+  def getMembershipFor(cluster: Cluster): Membership
+}
+
+class SimpleMembershipState(bindings: List[String]) extends MembershipState {
+   def recoverIn(cluster: Cluster) = {
+      val membership = getMembershipFor(cluster)
+      cluster.consensusMembership.set(membership)
+   }
+   
+   def getMembershipFor(cluster: Cluster) = {
+      val localOption = if (bindings.contains(cluster.local.id)) Some(cluster.local) else None
+      val remoteMembers = (bindings diff Seq(cluster.local.id)).map { 
+    	  				binding => cluster.obtainRemoteMember(binding).getOrElse(new RemoteMember(cluster, binding))}.toSeq
+      new SimpleMembership(localOption, remoteMembers)
+   }
+}
+ 
+class JointMembershipState(oldBindings: MembershipState, newBindings: MembershipState)  extends MembershipState {
+  def recoverIn(cluster: Cluster) = {
+    cluster.consensusMembership.set(getMembershipFor(cluster))
+  }
+  def getMembershipFor(cluster: Cluster): Membership = {
+    val oldMembership = oldBindings.getMembershipFor(cluster)
+    val newMembership = newBindings.getMembershipFor(cluster)
+    new JointConsensusMembership(oldMembership, newMembership)
+  }
 }
 
 class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) extends Membership {
 
   val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toList
-  val resultingInternalMajority = ((resultingMembers.size ) / 2) + 1
+  val quorum = (resultingMembers.size  / 2) + 1
   
-  override def allMembers =  resultingMembers
+  def allMembers =  resultingMembers
   
-  override def remoteMembers: Seq[RemoteMember] = members
+  def remoteMembers: Seq[RemoteMember] = members
 
-  override def reachMajority(votes: Seq[Member]): Boolean = {
-    votes.size >= internalMajority
-  }
+  def reachMajority(membersRequestingMajority: Seq[Member]): Boolean =  membersRequestingMajority.size >= quorum 
 
-  def internalMajority = resultingInternalMajority
+  def majority: String = s"$quorum"
 
-  override def majority: String = s"${internalMajority}"
-
-  override def majoritiesCount = 1
-
-  override def majoritiesMap: Map[Seq[Member], Int] = {
-    Map((resultingMembers, internalMajority))
-  }
+  def majoritiesMap: Map[Seq[Member], Int] = Map(resultingMembers -> quorum)
   
-  override def toString(): String = {
-    allMembers.toString
-  }
+  def captureState = new SimpleMembershipState(allMembers.map{ _.id})
+  
+  override def toString(): String = allMembers.toString 
 
 }
 
 class JointConsensusMembership(oldMembership: Membership, newMembership: Membership) extends Membership {
 
-  override def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
+  def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
-  override def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
+  def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
   
-  override def reachMajority(members: Seq[Member]): Boolean = {
-    oldMembership.reachMajority(members) && newMembership.reachMajority(members)
-  }
+  def reachMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) && newMembership.reachMajority(members)
 
-  override def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
+  def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
 
-  override def majoritiesCount = 2
+  def majoritiesMap: Map[Seq[Member], Int] = oldMembership.majoritiesMap ++: newMembership.majoritiesMap
 
-  override def majoritiesMap: Map[Seq[Member], Int] = {
-    oldMembership.majoritiesMap ++: newMembership.majoritiesMap
-  }
-
+  def captureState = new JointMembershipState(oldMembership.captureState, newMembership.captureState)
+  
   override def toString(): String = {
     s"[Cold=(${oldMembership}), Cnew=(${newMembership})]"
   }

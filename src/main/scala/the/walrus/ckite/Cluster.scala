@@ -46,7 +46,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   val local = new LocalMember(this, configuration.localBinding, db)
   val InitialTerm = local.term
-  val consensusMembership = new AtomicReference[Membership]()
+  val consensusMembership = new AtomicReference[Membership](new SimpleMembership(None,Seq()))
   val rlog = new RLog(this, stateMachine, db)
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
   
@@ -79,7 +79,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   //Members are known from the beginning
   private def startStatic = {
-    consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
+    val currentMembership = consensusMembership.get()
+    if (currentMembership.allMembers.isEmpty) {
+    	consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
+    }
     local becomeFollower InitialTerm
   }
 
@@ -95,6 +98,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         val response = remoteMember.getMembers()
         if (response.success) {
           consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
+          if (response.members.contains(local.id)) {
+            LOG.info("I'm already part of the Cluster")
+            break
+          }
           val joinResponse = remoteMember.join(local.id)
           if (joinResponse.success) {
             LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
@@ -139,11 +146,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     val remoteMembers = membership.remoteMembers
     LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     remoteMembers.foreach { member =>
-      heartbeaterExecutor.execute(() => {
+      heartbeaterExecutor.execute {
         inContext {
         	member.sendHeartbeat(term)
         }
-      })
+      }
     }
   }
   
@@ -155,13 +162,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     if (!hasRemoteMembers) return Seq()
     val execution = Executions.newExecution().withExecutor(electionExecutor)
     membership.remoteMembers.foreach { remoteMember =>
-      execution.withTask( () => {
+      execution.withTask  {
           updateContextInfo
           (remoteMember, remoteMember requestVote)
-        })
+        }
     }
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
-    val expectedResults = membership.majoritiesCount
     val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
       .withExpectedResults(1, new ReachMajorities(this)).execute[(Member, Boolean)]()
 
@@ -270,7 +276,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
   
-  private def obtainRemoteMember(memberId: String): Option[RemoteMember] = (membership.remoteMembers).find { _.id == memberId }
+  def obtainRemoteMember(memberId: String): Option[RemoteMember] = (membership.remoteMembers).find { _.id == memberId }
   
   def anyLeader = leader != None
 

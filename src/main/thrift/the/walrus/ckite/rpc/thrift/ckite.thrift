@@ -36,6 +36,7 @@ struct InstallSnapshotST {
 	1: required binary stateMachineState;
 	2: required i32 lastLogEntryIndex;
 	3: required i32 lastLogEntryTerm;
+	4: required binary membershipState;
 }
 
 struct JoinRequestST {

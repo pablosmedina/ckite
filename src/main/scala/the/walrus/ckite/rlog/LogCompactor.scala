@@ -5,22 +5,28 @@ import the.walrus.ckite.util.Logging
 import java.io.FileOutputStream
 import the.walrus.ckite.rpc.LogEntry
 import org.mapdb.DB
+import the.walrus.ckite.Member
+import the.walrus.ckite.MembershipState
 
 class LogCompactor extends Logging {
 
   def compact(rlog: RLog, db: DB) = {
     val capturedState = captureState(rlog)
     if (capturedState != null) {
-    	val snapshotId = save(new Snapshot(capturedState._3, capturedState._2.index, capturedState._2.term), db)
+    	save(new Snapshot(capturedState._3, capturedState._2.index, capturedState._2.term, capturedState._4), db)
     	removeCompactedLogEntries(rlog, capturedState._1)
     }
   }
 
   private def save(snapshot: Snapshot, db: DB): Long = {
     val id = System.currentTimeMillis()
-    LOG.info(s"Saving Snapshot $id")
+    LOG.info(s"Saving Snapshot $snapshot")
     val snapshots = db.getTreeMap[Long,Array[Byte]]("snapshots")
+    val ids = snapshots.keySet().toArray()
     snapshots.put(id, snapshot.serialize())
+    ids.foreach { id =>
+      snapshots.remove(id)
+    }
     LOG.info(s"Finished saving Snapshot $id")
     id
   }
@@ -34,22 +40,13 @@ class LogCompactor extends Logging {
     LOG.info(s"Finished compaction")
   }
 
-  //deletes all the snapshots in the snapshot dir except the new one
-  private def deleteOldSnapshots(newSnapshotId: Long) = {
-
-  }
-
-  private def captureState(rlog: RLog): (Int, LogEntry, Array[Byte]) = {
+  private def captureState(rlog: RLog): (Int, LogEntry, Array[Byte],MembershipState) = rlog.exclusive {
     // During compaction the following actions must be blocked: 1. add log entries  2. execute commands in the state machine
-    rlog.exclusiveLock.lock()
-    try {
-        val commitIndex = rlog.commitIndex.get()
-	    val latestEntry = rlog.getLogEntry(commitIndex).get
-	    val bytes = rlog.serializeStateMachine
-	    (commitIndex, latestEntry, bytes)
-    } finally {
-      rlog.exclusiveLock.unlock()
-    }
+    val commitIndex = rlog.commitIndex.get()
+    val membershipState = rlog.cluster.membership.captureState
+    val latestEntry = rlog.getLogEntry(commitIndex).get
+    val bytes = rlog.serializeStateMachine
+    (commitIndex, latestEntry, bytes, membershipState)
   }
 }
 

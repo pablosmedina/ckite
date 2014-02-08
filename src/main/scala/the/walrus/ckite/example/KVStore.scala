@@ -1,13 +1,10 @@
 package the.walrus.ckite.example
 
-import the.walrus.ckite.statemachine.StateMachine
 import java.util.concurrent.ConcurrentHashMap
+
 import the.walrus.ckite.rpc.Command
-import java.io.ByteArrayOutputStream
-import java.io.ObjectOutputStream
-import java.io.Serializable
-import java.io.ByteArrayInputStream
-import java.io.ObjectInputStream
+import the.walrus.ckite.statemachine.StateMachine
+import the.walrus.ckite.util.Serializer
 
 class KVStore extends StateMachine {
 
@@ -24,20 +21,11 @@ class KVStore extends StateMachine {
   }
 
   def deserialize(snapshotBytes: Array[Byte]) = {
-	  val inputStream = new ObjectInputStream(new ByteArrayInputStream(snapshotBytes))
-	  val deserializedMap = inputStream.readObject().asInstanceOf[ConcurrentHashMap[String, String]]
-	  inputStream.close()
+	  val deserializedMap:ConcurrentHashMap[String, String] = Serializer.deserialize[ConcurrentHashMap[String, String]](snapshotBytes)
 	  map.clear()
 	  map.putAll(deserializedMap)
   }
 
-  def serialize(): Array[Byte] = {
-    val baos = new ByteArrayOutputStream()
-    val oos =   new ObjectOutputStream(baos)
-    oos.writeObject(map)
-    oos.flush()
-    oos.close()
-    baos.toByteArray()
-  }
+  def serialize(): Array[Byte] = Serializer.serialize(map)
 
 }
