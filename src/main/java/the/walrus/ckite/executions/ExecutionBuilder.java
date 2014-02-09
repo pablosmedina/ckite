@@ -20,7 +20,8 @@ public class ExecutionBuilder {
 	private ExecutorService executor;
 	private List<Timeout> timeouts = new ArrayList<Timeout>();
 	private Integer expectedResults;
-	private ExpectedResultFilter expectedResultFilter; 
+	private ExpectedResultFilter expectedResultFilter;
+	private CountDownLatch countDownLatch; 
 	
 	public ExecutionBuilder withTask(Callable<?> task) {
 		tasks.add(task);
@@ -41,12 +42,16 @@ public class ExecutionBuilder {
 	 */
 	
 	public <T>Collection<T> execute() throws InterruptedException, ExecutionException {
-		final CountDownLatch countDownLatch = createCountDownLatch();
+		countDownLatch = createCountDownLatch();
 		BlockingQueue<Future<T>> queue = completionQueue(countDownLatch);
 		ExecutorCompletionService<T> completionExecutor = new ExecutorCompletionService<T>(obtainExecutor(), queue);
 		Collection<Future<T>> results = submitCallables(completionExecutor);
 		await(countDownLatch);
 		return collect(results, completionExecutor);
+	}
+	
+	public void stop() {
+		countDownLatch.countDown();
 	}
 
 	@SuppressWarnings("serial")

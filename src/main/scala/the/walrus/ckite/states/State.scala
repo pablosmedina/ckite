@@ -37,7 +37,7 @@ trait State extends Logging {
    * on the given Term
    */
   def stepDown(leaderId: Option[String], term: Int) = {
-    LOG.debug(s"Step down")
+    LOG.debug(s"Step down from being $this")
     val cluster = getCluster
 	cluster.local.updateTermIfNeeded(term)
     if (leaderId.isDefined) {

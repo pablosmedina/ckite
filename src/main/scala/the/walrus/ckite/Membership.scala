@@ -9,6 +9,8 @@ trait Membership {
   def remoteMembers: Seq[RemoteMember]
 
   def reachMajority(members: Seq[Member]): Boolean
+  
+  def reachAnyMajority(members: Seq[Member]): Boolean
 
   def majority: String
 
@@ -59,7 +61,9 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
   
   def remoteMembers: Seq[RemoteMember] = members
 
-  def reachMajority(membersRequestingMajority: Seq[Member]): Boolean =  membersRequestingMajority.size >= quorum 
+  def reachMajority(membersRequestingMajority: Seq[Member]): Boolean =  membersRequestingMajority.size >= quorum
+  
+  def reachAnyMajority(members: Seq[Member]): Boolean = reachMajority(members)
 
   def majority: String = s"$quorum"
 
@@ -81,6 +85,8 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
   
   def reachMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) && newMembership.reachMajority(members)
 
+  def reachAnyMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) || newMembership.reachMajority(members)
+  
   def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
 
   def majoritiesMap: Map[Seq[Member], Int] = oldMembership.majoritiesMap ++: newMembership.majoritiesMap

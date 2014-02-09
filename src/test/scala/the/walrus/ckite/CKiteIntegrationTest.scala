@@ -7,11 +7,11 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest._
 import the.walrus.ckite.example.Get
 import the.walrus.ckite.example.Put
-import org.junit.Test
 import the.walrus.ckite.exception.NoMajorityReachedException
+import the.walrus.ckite.util.Logging
 
 @RunWith(classOf[JUnitRunner])
-class CKiteIntegrationTest extends FlatSpec with Matchers {
+class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   
   val Key1 = "key1"
   val Value1 = "value1"
@@ -217,20 +217,24 @@ class CKiteIntegrationTest extends FlatSpec with Matchers {
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
+//    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
+//    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     val members = Seq(member1, member2, member3)
-    members foreach {_ start}
+    LOG.info(s"Starting all the members")
+    members.par foreach {_ start}
+    waitSomeTimeForElection 
      try {
+    	 LOG.info(s"Running test...")
          test (members)
      } finally {
-    	members foreach {_ stop}
+       LOG.info(s"Stopping all the members")
+       members foreach {_ stop}
      }
   }
   

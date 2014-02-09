@@ -140,14 +140,16 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
 
   def broadcastHeartbeats(term: Int) = {
-    val remoteMembers = membership.remoteMembers
-    LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
-    remoteMembers.foreach { member =>
-      heartbeaterExecutor.execute {
-        inContext {
-        	member.sendHeartbeat(term)
-        }
-      }
+    if (term == local.term) {
+    	val remoteMembers = membership.remoteMembers
+    			LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
+    			remoteMembers.foreach { member =>
+    			heartbeaterExecutor.execute {
+    				inContext {
+    					member.sendHeartbeat(term)
+    				}
+    			}
+    	}
     }
   }
   

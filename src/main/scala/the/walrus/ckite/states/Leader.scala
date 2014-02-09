@@ -39,6 +39,8 @@ import java.util.concurrent.ScheduledThreadPoolExecutor
 import scala.collection.mutable.ArrayBuffer
 import the.walrus.ckite.rpc.NoOp
 import the.walrus.ckite.rpc.NoOp
+import scala.collection.JavaConverters._
+import the.walrus.ckite.executions.ExecutionBuilder
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -74,16 +76,14 @@ class Leader(cluster: Cluster) extends State {
       resetNextIndexes
       resetFollowerInfo
       heartbeater start term
-      async {
-    	  on[Unit](NoOp())
-      }
+      LOG.info("Replicate a NoOp as part of Leader initialization")
+      on[Unit](NoOp())
       LOG.info(s"Start being Leader")
     }
   }
   
   private def async(block: => Unit) = {
     cluster.replicatorExecutor.execute { cluster.inContext {
-    		LOG.info("Replicate a NoOp as part of Leader initialization")
     		block
     	}
       }
@@ -101,7 +101,9 @@ class Leader(cluster: Cluster) extends State {
   override def stop = {
     LOG.info("Stop being Leader")
     heartbeater stop
-
+    
+    replicator stop
+    
     cluster.setNoLeader
   }
 
@@ -226,6 +228,7 @@ class Leader(cluster: Cluster) extends State {
 class Replicator(cluster: Cluster) extends Logging {
 
   val ReplicationTimeout = cluster.configuration.replicationTimeout
+  val replicationsInProgress = new ConcurrentHashMap[Int, ExecutionBuilder]()
  
   //replicate and wait for a majority of acks. 
   def replicate(logEntry: LogEntry): Seq[Member] = {
@@ -236,39 +239,52 @@ class Replicator(cluster: Cluster) extends Logging {
       }
     }
     LOG.debug(s"Waiting for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
+    replicationsInProgress.put(logEntry.index, execution)
     val rawResults = execution.withTimeout(ReplicationTimeout, TimeUnit.MILLISECONDS)
       .withExpectedResults(1, new ReachMajorities(cluster)).execute[(Member, Boolean)]()
+    replicationsInProgress.remove(logEntry.index)
     val results: Iterable[(Member, Boolean)] = rawResults
     val mapres = results.filter { result => result._2 }.map { result => result._1 }
     mapres.toSeq
   }
   
+  def stop() = {
+    replicationsInProgress.values().asScala map { execution => execution.stop() }
+  }
+  
 }
 
-class ReachMajorities(cluster: Cluster) extends ExpectedResultFilter with Logging {
+class ReachMajorities(cluster: Cluster) extends ExpectedResultFilter {
   
-  val members = ArrayBuffer[Member]()
-  members.add(cluster.local)
+  val membersAcks = ArrayBuffer[Member]()
+  val membersRejects = ArrayBuffer[Member]()
+  membersAcks.add(cluster.local)
   
   override def matches(x: Any) = {
 	  val memberAck = x.asInstanceOf[(Member, Boolean)]
 	  val ack = memberAck._2
 	  val member = memberAck._1
 	  if (ack) {
-		  members.add(member)
+		  membersAcks.add(member)
+	  } else {
+	     membersRejects.add(member)
 	  }
-	  if (cluster.membership.reachMajority(members.toSeq)) 1 else 0
+	  val membership = cluster.membership
+	  if (membership.reachMajority(membersAcks.toSeq) || 
+	      membership.reachAnyMajority(membersRejects.toSeq) || 
+	      membership.allMembers.size == (membersAcks.size + membersRejects.size)) 1 else 0
   }
+  
 }
 
 class Heartbeater(cluster: Cluster) extends Logging {
 
   val scheduledHeartbeatsPool = new ScheduledThreadPoolExecutor(1, new NamedPoolThreadFactory("Heartbeater", true))
-
+  
   def start(term: Int) = {
     LOG.debug("Start Heartbeater")
 
-    val task:Runnable = {
+    val task:Runnable = () => {
       cluster updateContextInfo
 
       LOG.trace("Heartbeater running")
