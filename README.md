@@ -143,7 +143,7 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 	log: {
 		length: 9,
 		commitIndex: 9,
-		lastLog: {
+		lastEntry: {
 			term: 1,
 			index: 9,
 			command: {
