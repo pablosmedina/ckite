@@ -120,11 +120,23 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 		state: "Leader",
 		stateInfo: {
 			leaderUptime: "13.hours+4.minutes+47.seconds+214.milliseconds",
-			lastHeartbeatsACKs: {
-				localhost:9093: "11.milliseconds",
-				localhost:9092: "8.milliseconds",
-				localhost:9095: "10.milliseconds",
-				localhost:9094: "12.milliseconds"
+			followers: {
+				localhost:9093: {
+					lastHeartbeatACK: "11.milliseconds",
+					nextIndex: 10
+				},
+				localhost:9092: {
+					lastHeartbeatACK: "8.milliseconds",
+					nextIndex: 10
+				}
+				localhost:9095: {
+					lastHeartbeatACK: "10.milliseconds",
+					nextIndex: 10
+				}
+				localhost:9094: {
+					lastHeartbeatACK: "12.milliseconds",
+					nextIndex: 10
+				}
 			}
 		}
 	},
@@ -156,7 +168,7 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 	log: {
 		length: 9,
 		commitIndex: 9,
-		lastLog: {
+		lastEntry: {
 			term: 1,
 			index: 9,
 			command: {
