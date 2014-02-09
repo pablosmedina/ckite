@@ -55,9 +55,6 @@ class Follower(cluster: Cluster) extends State with Logging {
   }
 
   override def on(requestVote: RequestVote): RequestVoteResponse = {
-    if (requestVote.term < cluster.local.term) {
-      RequestVoteResponse(cluster.local.term, false)
-    } else {
       cluster setNoLeader //Some member started an election. Assuming no Leader.
       
       cluster.local.updateTermIfNeeded(requestVote.term)
@@ -70,7 +67,6 @@ class Follower(cluster: Cluster) extends State with Logging {
         LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term ${requestVote.term}")
       }
       RequestVoteResponse(cluster.local.term, grantVote)
-    }
   }
   
   private def checkGrantVotePolicy(requestVote: RequestVote) = {

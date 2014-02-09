@@ -37,8 +37,8 @@ import com.twitter.concurrent.NamedPoolThreadFactory
 import the.walrus.ckite.RemoteMember
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import scala.collection.mutable.ArrayBuffer
-import the.walrus.ckite.rpc.NoOpWriteCommand
-import the.walrus.ckite.rpc.NoOpWriteCommand
+import the.walrus.ckite.rpc.NoOp
+import the.walrus.ckite.rpc.NoOp
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -75,7 +75,7 @@ class Leader(cluster: Cluster) extends State {
       resetFollowerInfo
       heartbeater start term
       async {
-    	  on[Unit](NoOpWriteCommand())
+    	  on[Unit](NoOp())
       }
       LOG.info(s"Start being Leader")
     }
@@ -89,9 +89,7 @@ class Leader(cluster: Cluster) extends State {
       }
   }
   
-  private def noOp(): LogEntry = {
-     LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, NoOpWriteCommand())
-  }
+  private def noOp(): LogEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, NoOp())
 
   private def resetLastLog = cluster.rlog.resetLastLog()
 
@@ -115,7 +113,7 @@ class Leader(cluster: Cluster) extends State {
 
   }
 
-  private def onWriteCommand[T](command: WriteCommand): T = cluster.locked {
+  private def onWriteCommand[T](command: WriteCommand): T = cluster.local.locked {
     val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
     cluster.rlog.append(List(logEntry))
     LOG.info(s"Replicating log entry $logEntry")
@@ -189,10 +187,11 @@ class Leader(cluster: Cluster) extends State {
             onAppendEntriesResponseUpdateNextLogIndex(member, request, response)
        }
       val nextIndex = member.nextLogIndex.intValue()
-       if (isLogEntryInSnapshot(nextIndex)) {
+      val nextIndexPrevious = nextIndex - 1
+       if (isLogEntryInSnapshot(nextIndex) || isLogEntryInSnapshot(nextIndexPrevious)) {
           val wasEnabled = member.disableReplications()
           if (wasEnabled) { 
-        	LOG.info(s"Next Log index $nextIndex to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
+        	LOG.info(s"Next LogIndex #$nextIndex (or its previous #$nextIndexPrevious) to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
             sendSnapshotAsync(member)
           }
       }
@@ -207,7 +206,7 @@ class Leader(cluster: Cluster) extends State {
         if (currentIndex == 0) member.nextLogIndex.set(1)
       }
       appendEntries.entries.last.index
-      LOG.debug(s"Member ${member} $appendEntriesResponse - LogIndex sent ${appendEntries.entries.last.index} - NextLogIndex is ${member.nextLogIndex}")
+      LOG.debug(s"Member ${member} $appendEntriesResponse - LogIndex sent #${appendEntries.entries.last.index} - next LogIndex is #${member.nextLogIndex}")
   }
   
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {

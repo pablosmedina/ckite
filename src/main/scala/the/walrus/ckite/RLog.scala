@@ -26,9 +26,10 @@ import java.util.concurrent.TimeUnit
 import com.twitter.concurrent.NamedPoolThreadFactory
 import java.util.concurrent.SynchronousQueue
 import the.walrus.ckite.util.CKiteConversions._
-import the.walrus.ckite.rpc.NoOpWriteCommand
+import the.walrus.ckite.rpc.NoOp
 import com.twitter.util.Future
 import the.walrus.ckite.exception.NoMajorityReachedException
+import the.walrus.ckite.rpc.CompactedEntry
 
 class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging {
 
@@ -50,17 +51,21 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
 
   replay()
 
-  def tryAppend(appendEntries: AppendEntries) = shared {
+  def tryAppend(appendEntries: AppendEntries) = {
     LOG.trace(s"Try appending $appendEntries")
     val canAppend = hasPreviousLogEntry(appendEntries)
-    if (canAppend) appendWithLockAcquired(appendEntries.entries)
-    commitEntriesUntil(appendEntries.commitIndex)
+    shared {
+    	if (canAppend) appendWithLockAcquired(appendEntries.entries)
+    	commitEntriesUntil(appendEntries.commitIndex)
+    }
     applyLogCompactionPolicyAsync
     canAppend
   }
 
-  def append(logEntries: List[LogEntry]) = shared {
-    appendWithLockAcquired(logEntries)
+  def append(logEntries: List[LogEntry]) = {
+    shared {
+      appendWithLockAcquired(logEntries)
+    }
     applyLogCompactionPolicyAsync
   }
 
@@ -77,12 +82,12 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
   private def appendWithLockAcquired(logEntries: List[LogEntry]) = {
     logEntries.foreach { logEntry =>
       if (!containsEntry(logEntry.index, logEntry.term)) {
-    	  LOG.info(s"Appending log entry $logEntry")
+    	  LOG.info(s"Appending $logEntry")
     	  entries.put(logEntry.index, logEntry)
     	  logEntry.command match {
-    	  case c: EnterJointConsensus => cluster.apply(c)
-    	  case c: LeaveJointConsensus => cluster.apply(c)
-    	  case _ => Unit
+	    	  case c: EnterJointConsensus => cluster.apply(c)
+	    	  case c: LeaveJointConsensus => cluster.apply(c)
+	    	  case _ => Unit
     	  }
       } else {
         LOG.warn(s"Discarding append of a duplicate entry $logEntry")
@@ -90,7 +95,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
     }
   }
 
-  def commit(logEntry: LogEntry) = {
+  def commit(logEntry: LogEntry) = shared {
     val logEntryOption = getLogEntry(logEntry.index)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
@@ -114,7 +119,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
       if (entryIndex > commitIndex.intValue()) {
-        LOG.info(s"Commiting entry $entry")
+        LOG.info(s"Committing $entry")
         commitIndex.set(entry.index)
         execute(entry.command)
       } else {
@@ -138,15 +143,13 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
           true
         }
         case c: LeaveJointConsensus => true
-        case c: NoOpWriteCommand => Unit
+        case c: NoOp => Unit
         case _ => stateMachine.apply(command)
       }
     }
   }
 
-  def execute(command: ReadCommand) = {
-    stateMachine.apply(command)
-  }
+  def execute(command: ReadCommand) = stateMachine.apply(command)
 
   def getLogEntry(index: Int): Option[LogEntry] = {
     val entry = entries.get(index)
@@ -154,7 +157,12 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
   }
 
   def getLastLogEntry(): Option[LogEntry] = {
-    getLogEntry(findLastLogIndex)
+    val lastLogIndex = findLastLogIndex
+    if (isInSnapshot(lastLogIndex)) return {
+      val snapshot = getSnapshot().get
+      return Some(LogEntry(snapshot.lastLogEntryTerm, snapshot.lastLogEntryIndex, CompactedEntry()))
+    }
+    getLogEntry(lastLogIndex)
   }
 
   def getPreviousLogEntry(logEntry: LogEntry): Option[LogEntry] = {
@@ -168,8 +176,13 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
 
   private def isZeroEntry(index: Int, term: Int): Boolean = index == -1 && term == -1
 
-  private def isInSnapshot(index: Int, term: Int): Boolean = {
+  private def isInSnapshot(index: Int, term: Int): Boolean = shared {
     getSnapshot().map { snapshot => snapshot.lastLogEntryTerm >= term && snapshot.lastLogEntryIndex >= index }
+      .getOrElse(false).asInstanceOf[Boolean]
+  }
+  
+  private def isInSnapshot(index: Int): Boolean = shared {
+    getSnapshot().map { snapshot =>  snapshot.lastLogEntryIndex >= index }
       .getOrElse(false).asInstanceOf[Boolean]
   }
 
@@ -206,15 +219,17 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
     var startIndex = 1
     if (lastSnapshot.isDefined) {
       val snapshot = lastSnapshot.get
+      LOG.info(s"Installing $snapshot")
       startIndex = snapshot.lastLogEntryIndex + 1
       stateMachine.deserialize(snapshot.stateMachineState)
-       snapshot.membership.recoverIn(cluster)
+      snapshot.membership.recoverIn(cluster)
+      LOG.info(s"Finished install $snapshot")
     }
     val currentCommitIndex = commitIndex.get()
-    if (currentCommitIndex > 0) {
-      LOG.info(s"Start log replay from index $startIndex to $commitIndex")
+    if (currentCommitIndex > 0 && startIndex <= currentCommitIndex) {
+      LOG.info(s"Start log replay from index #$startIndex to #$commitIndex")
       startIndex to currentCommitIndex foreach { index =>
-        LOG.info(s"Replaying index $index")
+        LOG.info(s"Replaying index #$index")
         val logEntry = entries.get(index)
         logEntry.command match {
     	  case c: EnterJointConsensus => cluster.apply(c)
@@ -224,6 +239,8 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
         execute(logEntry.command)
       }
       LOG.info(s"Finished log replay")
+    } else {
+      LOG.info(s"No entries to be replayed")
     }
   }
 

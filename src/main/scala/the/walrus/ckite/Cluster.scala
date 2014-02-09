@@ -25,6 +25,7 @@ import java.util.concurrent.TimeoutException
 import java.util.concurrent.Callable
 import the.walrus.ckite.executions.Executions
 import scala.collection.JavaConversions._
+import scala.collection.JavaConverters._
 import the.walrus.ckite.util.CKiteConversions._
 import the.walrus.ckite.rpc.ReadCommand
 import the.walrus.ckite.rpc.Command
@@ -39,6 +40,7 @@ import the.walrus.ckite.rlog.Snapshot
 import scala.util.control.Breaks._
 import java.util.concurrent.locks.ReentrantLock
 import the.walrus.ckite.states.ReachMajorities
+
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
@@ -69,8 +71,6 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   val waitForLeaderTimeout = Duration(configuration.waitForLeaderTimeout, TimeUnit.MILLISECONDS)
   
-  
-  val lock = new ReentrantLock()
   
   def start = inContext {
     LOG.info("Start CKite Cluster")
@@ -119,11 +119,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     local stop
   }
 
-  def on(requestVote: RequestVote) = inContext {
+  def on(requestVote: RequestVote):RequestVoteResponse = inContext {
     LOG.debug(s"RequestVote received: $requestVote")
     if (obtainRemoteMember(requestVote.memberId).isEmpty) {
       LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
-      RequestVoteResponse(local term, false)
+      return RequestVoteResponse(local term, false)
     }
     local on requestVote
   }
@@ -135,10 +135,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def on[T](command: Command): T = havingLeader {
     inContext {
       LOG.debug(s"Command received: $command")
-      command match {
-        case write: WriteCommand => local.on[T](write)
-        case read: ReadCommand => local.on[T](read)
-      }
+      local.on[T](command)
     }
   }
 
@@ -168,11 +165,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         }
     }
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
-    val rawResults = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
+    val membersVotes = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
       .withExpectedResults(1, new ReachMajorities(this)).execute[(Member, Boolean)]()
-
-    val membersVotes: Iterable[(Member, Boolean)] = rawResults
-    val votesGrantedMembers = membersVotes.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
+    val votesGrantedMembers = membersVotes.asScala.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
     votesGrantedMembers.toSeq
   }
 
@@ -204,12 +199,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
 
   def addMember(memberBinding: String) = {
-    val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } :+ memberBinding
+    val newMemberBindings = membership.allBindings :+ memberBinding
     on[Boolean](EnterJointConsensus(newMemberBindings.toList))
   }
   
   def removeMember(memberBinding: String) = {
-    val newMemberBindings = consensusMembership.get().allMembers.map {member => member.id } diff memberBinding
+    val newMemberBindings = membership.allBindings diff memberBinding
     on(EnterJointConsensus(newMemberBindings.toList))
   }
   
@@ -229,7 +224,6 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   //LeaveJointConsensus received. A new membership has been set. Switch to SimpleConsensus or shutdown If no longer part of the cluster.
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
-    //Check If I'm part of the new Cluster and shutdown if not
 	consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
 	LOG.info(s"Membership ${consensusMembership.get()}")
   }
@@ -265,16 +259,14 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   def getMembers(): Seq[String] = withLeader { leader =>
      if (leader == local)  {
-       membership.allMembers.map(member => member.id) 
+       membership.allBindings
      }
      else  {
        leader.asInstanceOf[RemoteMember].getMembers().members
      }
   }
   
-  def isActiveMember(memberId: String): Boolean = !membership.allMembers.filter( member => member.id.equals(memberId)).isEmpty
-  
-  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
+  def isActiveMember(memberId: String): Boolean = membership.allBindings.contains(memberId)
   
   def obtainRemoteMember(memberId: String): Option[RemoteMember] = (membership.remoteMembers).find { _.id == memberId }
   
@@ -282,21 +274,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def majority = membership.majority
 
-  def reachMajority(votes: Seq[Member]): Boolean = membership.reachMajority(votes)
+  def reachMajority(members: Seq[Member]): Boolean = membership.reachMajority(members)
   
   def updateContextInfo = {
     MDC.put("binding", local.id)
     MDC.put("term", local.term.toString)
     MDC.put("leader", leader.toString)
-  }
-  
-  def locked[T](f: => T): T = {
-       lock.lock()
-       try {
-         f
-       } finally {
-         lock.unlock()
-       }
   }
   
   def inContext[T](f: => T): T = {
@@ -316,6 +299,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
       f
   }
   
+  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
+
   private def file(dataDir: String): File = {
     val dir = new File(dataDir)
     dir.mkdirs()

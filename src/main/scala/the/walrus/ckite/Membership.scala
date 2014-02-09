@@ -4,6 +4,8 @@ trait Membership {
 
   def allMembers: Seq[Member]
   
+  def allBindings: Seq[String]
+  
   def remoteMembers: Seq[RemoteMember]
 
   def reachMajority(members: Seq[Member]): Boolean
@@ -53,6 +55,8 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
   
   def allMembers =  resultingMembers
   
+  def allBindings = resultingMembers map { member => member.id}
+  
   def remoteMembers: Seq[RemoteMember] = members
 
   def reachMajority(membersRequestingMajority: Seq[Member]): Boolean =  membersRequestingMajority.size >= quorum 
@@ -71,6 +75,8 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
 
   def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
+  def allBindings = allMembers map {member => member.id}
+  
   def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
   
   def reachMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) && newMembership.reachMajority(members)

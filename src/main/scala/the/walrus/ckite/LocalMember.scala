@@ -14,6 +14,7 @@ import the.walrus.ckite.rpc.AppendEntries
 import java.util.concurrent.atomic.AtomicReference
 import the.walrus.ckite.states.Starter
 import the.walrus.ckite.states.Stopped
+import java.util.concurrent.locks.ReentrantLock
 
 class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(binding) {
 
@@ -21,24 +22,27 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
   val currentTerm = db.getAtomicInteger("term")
   val votedFor = db.getAtomicString("votedFor")
 
+  val lock = new ReentrantLock()
+  
   def term(): Int = currentTerm.intValue()
 
   def voteForMyself = votedFor.set(id)
 
-  def on(requestVote: RequestVote): RequestVoteResponse = cluster.locked {
+  def on(requestVote: RequestVote): RequestVoteResponse = locked {
     if (requestVote.term < term) {
       LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
-      RequestVoteResponse(term, false)
-    } else {
-      currentState on requestVote
+      return RequestVoteResponse(term, false)
     }
+    currentState on requestVote
   }
 
-  def updateTermIfNeeded(receivedTerm: Int) = cluster.inContext {
-    if (receivedTerm > term) {
-      LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
-      votedFor.set("")
-      currentTerm.set(receivedTerm)
+  def updateTermIfNeeded(receivedTerm: Int) = locked {
+    cluster.inContext {
+    	if (receivedTerm > term) {
+    		LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
+    		votedFor.set("")
+    		currentTerm.set(receivedTerm)
+    	}
     }
   }
 
@@ -52,7 +56,7 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
 
   def becomeFollower(term: Int) = become(new Follower(cluster), term)
   
-  private def become(newState: State, term: Int): Unit = cluster.locked {
+  private def become(newState: State, term: Int): Unit = locked {
     if (currentState.canTransition) {
       if (cluster.isActiveMember(id)) {
         LOG.info(s"Transition from $state to $newState")
@@ -89,4 +93,14 @@ class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(bind
   def stop: Unit = {
     become(Stopped, cluster.local.term)
   }
+  
+  def locked[T](f: => T): T = {
+       lock.lock()
+       try {
+         f
+       } finally {
+         lock.unlock()
+       }
+  }
+  
 }
