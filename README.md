@@ -119,12 +119,12 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 		term: 1,
 		state: "Leader",
 		stateInfo: {
-			leaderUptime: "2.minutes+13.seconds+148.milliseconds",
+			leaderUptime: "13.hours+4.minutes+47.seconds+214.milliseconds",
 			lastHeartbeatsACKs: {
-				localhost:9093: "128.milliseconds",
-				localhost:9092: "128.milliseconds",
-				localhost:9095: "127.milliseconds",
-				localhost:9094: "128.milliseconds"
+				localhost:9093: "11.milliseconds",
+				localhost:9092: "8.milliseconds",
+				localhost:9095: "10.milliseconds",
+				localhost:9094: "12.milliseconds"
 			}
 		}
 	},
@@ -135,8 +135,8 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 			term: 1,
 			index: 9,
 			command: {
-				key: "k1",
-				value: "v1"
+				key: "foo",
+				value: "bar"
 			}
 		}
 	}
@@ -160,8 +160,8 @@ CKite exposes an admin console showing its status and useful metrics. If the rpc
 			term: 1,
 			index: 9,
 			command: {
-				key: "k1",
-				value: "v1"
+				key: "foo",
+				value: "bar"
 			}
 		}
 	}
