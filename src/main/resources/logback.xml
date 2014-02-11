@@ -7,7 +7,7 @@
     </layout>
   </appender>
    
-  <logger name="the.walrus" level="debug"/>
+  <logger name="ckite" level="debug"/>
    
  
   <root level="info">
