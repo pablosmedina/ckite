@@ -8,8 +8,8 @@ import com.typesafe.config.ConfigValueFactory
 
 class CKiteBuilder {
 
-  val configuration = new Configuration(ConfigFactory.load("ckite-defaults.conf"))
-  var stateMachine: StateMachine = _
+  private val configuration = new Configuration(ConfigFactory.load("ckite-defaults.conf"))
+  private var stateMachine: StateMachine = _
 
   def withMinElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
     configuration.withMinElectionTimeout(minElectionTimeout)
@@ -36,8 +36,18 @@ class CKiteBuilder {
     this
   }
 
+//  def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
+//    configuration.withMembersBindings(membersBindings)
+//    this
+//  }
+  
   def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
     configuration.withMembersBindings(membersBindings)
+    this
+  }
+  
+  def withMembersBindings(membersBindings: String): CKiteBuilder = {
+    configuration.withMembersBindings(membersBindings.split(","))
     this
   }
   

@@ -7,8 +7,8 @@ import the.walrus.ckite.rpc.ReadCommand
 
 class CKite(cluster: Cluster) {
 
-  val thrift = ThriftServer(cluster)
-  val http = HttpServer(cluster)
+  private val thrift = ThriftServer(cluster)
+  private val http = HttpServer(cluster)
   
   def start() = {
     
@@ -42,6 +42,10 @@ class CKite(cluster: Cluster) {
   
   def addMember(memberBinding: String) = {
     cluster.addMember(memberBinding)
+  }
+  
+  def decomission() = {
+    cluster.removeMember(cluster.local.id)
   }
   
   def removeMember(memberBinding: String) = {
