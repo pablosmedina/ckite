@@ -28,14 +28,12 @@ class KVStore extends StateMachine {
   val map = new ConcurrentHashMap[String, String]()
 
   //called when a consensus has been reached for a WriteCommand or when a ReadCommand was received
-  override def apply(command: Command): Any = {
-    command match {
+  override def apply(command: Command): Any = command match {
       case Put(key: String, value: String) => { 
         map.put(key, value)
         value
       }
       case Get(key: String) => map.get(key)
-    }
   }
 
   //called during Log replay on startup and upon installSnapshot requests
@@ -51,10 +49,10 @@ class KVStore extends StateMachine {
 }
 
 //WriteCommands are replicated under Raft rules
-case class Put[Key,Value](key: Key, value: Value) extends WriteCommand
+case class Put(key: String, value: String) extends WriteCommand
 
 //ReadCommands are not replicated but forwarded to the Leader
-case class Get[Key](key: Key) extends ReadCommand
+case class Get(key: String) extends ReadCommand
 ```
 
 #### 2) Create a CKite instance using the builder
