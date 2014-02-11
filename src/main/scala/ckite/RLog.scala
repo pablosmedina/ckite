@@ -31,10 +31,10 @@ import com.twitter.util.Future
 import ckite.exception.NoMajorityReachedException
 import ckite.rpc.CompactedEntry
 
-class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Logging {
+class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
-  val entries = db.getTreeMap[Int, LogEntry]("entries")
-  val commitIndex = db.getAtomicInteger("commitIndex")
+  val entries = cluster.db.getTreeMap[Int, LogEntry]("entries")
+  val commitIndex = cluster.db.getAtomicInteger("commitIndex")
 
   val lastLog = new AtomicInteger(0)
 
@@ -42,14 +42,14 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
 
-  val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, db)
+  val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, cluster.db)
 
   val asyncApplierExecutor = new ThreadPoolExecutor(0, 2,
 												    10L, TimeUnit.SECONDS,
 												    new SynchronousQueue[Runnable](),
 												    new NamedPoolThreadFactory("AsyncApplierWorker", true))
 
-  replay()
+  initialize()
 
   def tryAppend(appendEntries: AppendEntries) = {
     LOG.trace(s"Try appending $appendEntries")
@@ -84,15 +84,19 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
       if (!containsEntry(logEntry.index, logEntry.term)) {
     	  LOG.info(s"Appending $logEntry")
     	  entries.put(logEntry.index, logEntry)
-    	  logEntry.command match {
-	    	  case c: EnterJointConsensus => cluster.apply(c)
-	    	  case c: LeaveJointConsensus => cluster.apply(c)
-	    	  case _ => Unit
-    	  }
+    	  afterAppend(logEntry)
       } else {
         LOG.warn(s"Discarding append of a duplicate entry $logEntry")
       }
     }
+  }
+  
+  private def afterAppend(logEntry: LogEntry) = {
+    logEntry.command match {
+	    	  case c: EnterJointConsensus => cluster.apply(c)
+	    	  case c: LeaveJointConsensus => cluster.apply(c)
+	    	  case _ => Unit
+    	  }
   }
 
   def commit(logEntry: LogEntry) = shared {
@@ -205,7 +209,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
 
   def installSnapshot(snapshot: Snapshot): Boolean = exclusive {
     LOG.info(s"Installing $snapshot")
-    val snapshots = db.getTreeMap[Long, Array[Byte]]("snapshots")
+    val snapshots = cluster.db.getTreeMap[Long, Array[Byte]]("snapshots")
     snapshots.put(System.currentTimeMillis(), snapshot.serialize)
     stateMachine.deserialize(snapshot.stateMachineState)
     commitIndex.set(snapshot.lastLogEntryIndex)
@@ -214,38 +218,45 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine, db: DB) extends Log
     true
   }
 
-  private def replay() = {
-    val lastSnapshot = getSnapshot()
-    var startIndex = 1
-    if (lastSnapshot.isDefined) {
-      val snapshot = lastSnapshot.get
-      LOG.info(s"Installing $snapshot")
-      startIndex = snapshot.lastLogEntryIndex + 1
-      stateMachine.deserialize(snapshot.stateMachineState)
-      snapshot.membership.recoverIn(cluster)
-      LOG.info(s"Finished install $snapshot")
-    }
+  private def initialize() = {
+	val nextIndexAfterSnapshot = reloadSnapshot()
     val currentCommitIndex = commitIndex.get()
-    if (currentCommitIndex > 0 && startIndex <= currentCommitIndex) {
-      LOG.info(s"Start log replay from index #$startIndex to #$commitIndex")
-      startIndex to currentCommitIndex foreach { index =>
-        LOG.info(s"Replaying index #$index")
-        val logEntry = entries.get(index)
-        logEntry.command match {
-    	  case c: EnterJointConsensus => cluster.apply(c)
-    	  case c: LeaveJointConsensus => cluster.apply(c)
-    	  case _ => Unit
-    	  }
-        execute(logEntry.command)
-      }
-      LOG.info(s"Finished log replay")
+    if (nextIndexAfterSnapshot <= currentCommitIndex) {
+     replay(nextIndexAfterSnapshot, currentCommitIndex)
     } else {
       LOG.info(s"No entries to be replayed")
     }
   }
+  
+  private def reloadSnapshot(): Int = {
+    val lastSnapshot = getSnapshot()
+    if (lastSnapshot.isDefined) {
+      val snapshot = lastSnapshot.get
+      LOG.info(s"Installing $snapshot")
+      stateMachine.deserialize(snapshot.stateMachineState)
+      snapshot.membership.recoverIn(cluster)
+      LOG.info(s"Finished install $snapshot")
+      snapshot.lastLogEntryIndex + 1
+    } else {
+      1 //no snapshot to reload. start from index #1
+    }
+  }
+  
+  private def replay(from: Int, to: Int) = {
+     LOG.info(s"Start log replay from index #$from to #$to")
+     from to to foreach { index => replayIndex(index) }
+     LOG.info(s"Finished log replay")
+  }
+
+  private def replayIndex(index: Int) = {
+    LOG.info(s"Replaying index #$index")
+    val logEntry = entries.get(index)
+    afterAppend(logEntry)
+    execute(logEntry.command)
+  }
 
   def getSnapshot(): Option[Snapshot] = {
-    val snapshots = db.getTreeMap[Long, Array[Byte]]("snapshots")
+    val snapshots = cluster.db.getTreeMap[Long, Array[Byte]]("snapshots")
     val lastSnapshot = snapshots.lastEntry()
     if (lastSnapshot != null) Some(Snapshot.deserialize(lastSnapshot.getValue())) else None
   }

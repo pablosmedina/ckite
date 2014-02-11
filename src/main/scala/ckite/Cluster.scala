@@ -46,10 +46,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
   
-  val local = new LocalMember(this, configuration.localBinding, db)
+  val local = new LocalMember(this, configuration.localBinding)
   val InitialTerm = local.term
   val consensusMembership = new AtomicReference[Membership](new SimpleMembership(None,Seq()))
-  val rlog = new RLog(this, stateMachine, db)
+  val rlog = new RLog(this, stateMachine)
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
   
   val heartbeaterExecutor = new ThreadPoolExecutor(0, configuration.heartbeatsWorkers,
@@ -141,15 +141,15 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def broadcastHeartbeats(term: Int) = {
     if (term == local.term) {
-    	val remoteMembers = membership.remoteMembers
-    			LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
-    			remoteMembers.foreach { member =>
-	    			heartbeaterExecutor.execute(() => {
-	    				inContext {
-	    					member.sendHeartbeat(term)
-	    				}
-	    			})
-    	}
+      val remoteMembers = membership.remoteMembers
+      LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
+      remoteMembers.foreach { member =>
+        heartbeaterExecutor.execute(() => {
+          inContext {
+            member.sendHeartbeat(term)
+          }
+        })
+      }
     }
   }
   
@@ -162,11 +162,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     val execution = Executions.newExecution().withExecutor(electionExecutor)
     membership.remoteMembers.foreach { remoteMember =>
       execution.withTask(() => {
-          updateContextInfo
+        inContext {
           (remoteMember, remoteMember requestVote)
-        })
+        }
+      })
     }
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
+    //TODO: refactor
     val membersVotes = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
       .withExpectedResults(1, new ReachMajorities(this)).execute[(Member, Boolean)]()
     val votesGrantedMembers = membersVotes.asScala.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
@@ -206,7 +208,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   def removeMember(memberBinding: String) = {
-    val newMemberBindings = membership.allBindings diff memberBinding
+    val newMemberBindings = membership.allBindings diff Seq(memberBinding)
     on(EnterJointConsensus(newMemberBindings.toList))
   }
   
@@ -260,12 +262,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   def getMembers(): Seq[String] = withLeader { leader =>
-     if (leader == local)  {
-       membership.allBindings
-     }
-     else  {
-       leader.asInstanceOf[RemoteMember].getMembers().members
-     }
+     if (leader == local) membership.allBindings else leader.asInstanceOf[RemoteMember].getMembers().members
   }
   
   def isActiveMember(memberId: String): Boolean = membership.allBindings.contains(memberId)

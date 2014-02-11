@@ -36,11 +36,6 @@ class CKiteBuilder {
     this
   }
 
-//  def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
-//    configuration.withMembersBindings(membersBindings)
-//    this
-//  }
-  
   def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
     configuration.withMembersBindings(membersBindings)
     this

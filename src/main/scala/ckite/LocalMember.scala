@@ -16,11 +16,11 @@ import ckite.states.Starter
 import ckite.states.Stopped
 import java.util.concurrent.locks.ReentrantLock
 
-class LocalMember(cluster: Cluster, binding: String, db: DB) extends Member(binding) {
+class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val state = new AtomicReference[State](Starter)
-  val currentTerm = db.getAtomicInteger("term")
-  val votedFor = db.getAtomicString("votedFor")
+  val currentTerm = cluster.db.getAtomicInteger("term")
+  val votedFor = cluster.db.getAtomicString("votedFor")
 
   val lock = new ReentrantLock()
   
