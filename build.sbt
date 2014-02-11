@@ -1,10 +1,8 @@
 name := "ckite"
 
+organization := "ckite.io"
+
 scalaVersion := "2.10.2"
-
-resolvers += "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
-
-resolvers += "Typesafe Repository" at "http://repo.typesafe.com/typesafe/releases/"
 
 resolvers += "twitter-repo" at "http://maven.twttr.com"
 
