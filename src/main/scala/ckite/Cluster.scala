@@ -144,11 +144,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     	val remoteMembers = membership.remoteMembers
     			LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
     			remoteMembers.foreach { member =>
-    			heartbeaterExecutor.execute {
-    				inContext {
-    					member.sendHeartbeat(term)
-    				}
-    			}
+	    			heartbeaterExecutor.execute(() => {
+	    				inContext {
+	    					member.sendHeartbeat(term)
+	    				}
+	    			})
     	}
     }
   }
@@ -161,10 +161,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     if (!hasRemoteMembers) return Seq()
     val execution = Executions.newExecution().withExecutor(electionExecutor)
     membership.remoteMembers.foreach { remoteMember =>
-      execution.withTask  {
+      execution.withTask(() => {
           updateContextInfo
           (remoteMember, remoteMember requestVote)
-        }
+        })
     }
     //when in JointConsensus we need quorum on both cluster memberships (old and new)
     val membersVotes = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)

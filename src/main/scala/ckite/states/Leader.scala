@@ -83,10 +83,10 @@ class Leader(cluster: Cluster) extends State {
   }
   
   private def async(block: => Unit) = {
-    cluster.replicatorExecutor.execute { cluster.inContext {
+    cluster.replicatorExecutor.execute(() => { cluster.inContext {
     		block
     	}
-      }
+      })
   }
   
   private def noOp(): LogEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, NoOp())
@@ -234,9 +234,9 @@ class Replicator(cluster: Cluster) extends Logging {
   def replicate(logEntry: LogEntry): Seq[Member] = {
     val execution = Executions.newExecution().withExecutor(cluster.replicatorExecutor)
     cluster.membership.remoteMembers.foreach { member =>
-      execution.withTask {
+      execution.withTask(() => {
         (member, member replicate logEntry)
-      }
+      })
     }
     LOG.debug(s"Waiting for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
     replicationsInProgress.put(logEntry.index, execution)
