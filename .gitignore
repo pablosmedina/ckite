@@ -3,6 +3,3 @@ bin
 .classpath
 .project
 target
-src/main/scala/ckite/rpc/thrift/CKiteService$FinagleClient.scala
-src/main/scala/ckite/rpc/thrift/CKiteService$FinagleService.scala
-src/main/scala/ckite/rpc/thrift/CKiteService.scala
