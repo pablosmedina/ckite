@@ -211,18 +211,18 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   }
   
   private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
-     //member1 has default election timeout (150ms - 300ms). It is intended to be the first to start an election and raise as the leader.
+     //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
      val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-//    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //higher election timeout
+    		 					.withMinElectionTimeout(1250).withMaxElectionTimeout(1500) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
      val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-//    		 					.withMinElectionTimeout(1500).withMaxElectionTimeout(2000) //higher election timeout
+    		 					.withMinElectionTimeout(1750).withMaxElectionTimeout(2000) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     val members = Seq(member1, member2, member3)
