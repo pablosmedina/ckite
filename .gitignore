@@ -1,5 +1,9 @@
-.cache
 bin
+target
+.cache
 .classpath
 .project
-target
+.idea
+*.iml
+*.ipr
+*.iws

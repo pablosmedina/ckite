@@ -237,3 +237,8 @@ Feel free to contribute to CKite!. Any kind of help will be very welcome. We are
   * Improve REST admin console
   * Other things...
 
+## Importing the project into IntelliJ IDEA
+
+To generate the necessary IDE config files first run the following command and then open the project as usual:
+
+        sbt gen-idea
