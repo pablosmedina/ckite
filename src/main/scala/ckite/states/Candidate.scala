@@ -37,7 +37,7 @@ class Candidate(cluster: Cluster) extends State {
     val inTerm = cluster.local.incrementTerm
     cluster.setNoLeader
     
-    LOG.info(s"Start election")
+    LOG.debug(s"Start election")
     election.start(inTerm)
   }
   
@@ -98,7 +98,7 @@ class Election(cluster: Cluster) extends Logging {
   }
   
   def abort = {
-    LOG.info("Abort Election")
+    LOG.debug("Abort Election")
     val future = electionFutureTask.get()
     if (future != null) future.cancel(true)
   }

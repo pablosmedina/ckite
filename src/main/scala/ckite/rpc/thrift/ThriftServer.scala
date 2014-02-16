@@ -28,7 +28,8 @@ class ThriftServer(cluster: Cluster) {
                                       new NamedPoolThreadFactory("ThriftWorker", true)))
   
   def start() = {
-    finagleServer = Thrift.serve(cluster.local.id, ckiteService)
+    val localPort = cluster.local.id.split(":")(1)
+    finagleServer = Thrift.serve(s":$localPort", ckiteService)
   }
 
   def ckiteService = {

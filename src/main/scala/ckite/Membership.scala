@@ -75,6 +75,8 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
 
 }
 
+object EmptyMembership extends SimpleMembership(None,Seq())
+
 class JointConsensusMembership(oldMembership: Membership, newMembership: Membership) extends Membership {
 
   def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq

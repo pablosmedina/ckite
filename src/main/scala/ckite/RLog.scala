@@ -82,7 +82,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   private def appendWithLockAcquired(logEntries: List[LogEntry]) = {
     logEntries.foreach { logEntry =>
       if (!containsEntry(logEntry.index, logEntry.term)) {
-    	  LOG.info(s"Appending $logEntry")
+    	  LOG.debug(s"Appending $logEntry")
     	  entries.put(logEntry.index, logEntry)
     	  afterAppend(logEntry)
       } else {
@@ -123,17 +123,17 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
       if (entryIndex > commitIndex.intValue()) {
-        LOG.info(s"Committing $entry")
+        LOG.debug(s"Committing $entry")
         commitIndex.set(entry.index)
         execute(entry.command)
       } else {
-        LOG.info(s"Already committed entry $entry")
+        LOG.debug(s"Already committed entry $entry")
       }
     }
   }
 
   def execute(command: Command) = {
-    LOG.info(s"Executing $command")
+    LOG.debug(s"Executing $command")
     shared {
       command match {
         case c: EnterJointConsensus => {
@@ -208,7 +208,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   def size() = entries.size
 
   def installSnapshot(snapshot: Snapshot): Boolean = exclusive {
-    LOG.info(s"Installing $snapshot")
+    LOG.debug(s"Installing $snapshot")
     val snapshots = cluster.db.getTreeMap[Long, Array[Byte]]("snapshots")
     snapshots.put(System.currentTimeMillis(), snapshot.serialize)
     stateMachine.deserialize(snapshot.stateMachineState)
@@ -224,7 +224,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     if (nextIndexAfterSnapshot <= currentCommitIndex) {
      replay(nextIndexAfterSnapshot, currentCommitIndex)
     } else {
-      LOG.info(s"No entries to be replayed")
+      LOG.debug(s"No entries to be replayed")
     }
   }
   
@@ -232,10 +232,10 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     val lastSnapshot = getSnapshot()
     if (lastSnapshot.isDefined) {
       val snapshot = lastSnapshot.get
-      LOG.info(s"Installing $snapshot")
+      LOG.debug(s"Installing $snapshot")
       stateMachine.deserialize(snapshot.stateMachineState)
       snapshot.membership.recoverIn(cluster)
-      LOG.info(s"Finished install $snapshot")
+      LOG.debug(s"Finished install $snapshot")
       snapshot.lastLogEntryIndex + 1
     } else {
       1 //no snapshot to reload. start from index #1
@@ -243,13 +243,13 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   }
   
   private def replay(from: Int, to: Int) = {
-     LOG.info(s"Start log replay from index #$from to #$to")
+     LOG.debug(s"Start log replay from index #$from to #$to")
      from to to foreach { index => replayIndex(index) }
-     LOG.info(s"Finished log replay")
+     LOG.debug(s"Finished log replay")
   }
 
   private def replayIndex(index: Int) = {
-    LOG.info(s"Replaying index #$index")
+    LOG.debug(s"Replaying index #$index")
     val logEntry = entries.get(index)
     afterAppend(logEntry)
     execute(logEntry.command)

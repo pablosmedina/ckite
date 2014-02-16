@@ -17,7 +17,7 @@ pomIncludeRepository := { x => false }
 resolvers += "twitter-repo" at "http://maven.twttr.com"
 
 libraryDependencies ++= Seq(
-	"ch.qos.logback" % "logback-classic" % "1.0.0",
+	"ch.qos.logback" % "logback-classic" % "1.1.1",
 	"com.twitter" %% "scrooge-core" % "3.9.0" % "compile",
 	"org.apache.thrift" % "libthrift" % "0.9.1",
 	"com.twitter" %% "finagle-thrift" % "6.6.2",
@@ -35,6 +35,12 @@ unmanagedSourceDirectories in Compile <++= baseDirectory { base =>
   Seq(
     base / "src/main/resources",
    	base / "src/main/thrift"
+  )
+}
+
+unmanagedSourceDirectories in Test <++= baseDirectory { base =>
+  Seq(
+    base / "src/test/resources"
   )
 }
 

@@ -14,7 +14,7 @@ class FixedLogSizeCompactionPolicy(logSize: Long, db: DB) extends CompactionPoli
     if (rlog.size >= logSize) {
       val wasCompacting = compacting.getAndSet(true)
       if (!wasCompacting) {
-    	  LOG.info(s"Log compaction is required")
+    	  LOG.debug(s"Log compaction is required")
     	  logCompactor.compact(rlog, db)
           compacting.set(false)
       }

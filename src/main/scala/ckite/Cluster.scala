@@ -47,9 +47,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding)
-  val InitialTerm = local.term
-  val consensusMembership = new AtomicReference[Membership](new SimpleMembership(None,Seq()))
   val rlog = new RLog(this, stateMachine)
+  val consensusMembership = new AtomicReference[Membership](EmptyMembership)
+  
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
   
   val heartbeaterExecutor = new ThreadPoolExecutor(0, configuration.heartbeatsWorkers,
@@ -83,7 +83,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     if (currentMembership.allMembers.isEmpty) {
     	consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
     }
-    local becomeFollower InitialTerm
+    local becomeFollower
   }
 
   //Members are seeds to discover the Leader and hence the Cluster
@@ -91,7 +91,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     val dynaMembership = createSimpleConsensusMembership(Seq(local.id))
     consensusMembership.set(dynaMembership)
     breakable {
-      local becomeFollower InitialTerm
+      local becomeFollower
+      
       for (remoteMemberBinding <- configuration.membersBindings) {
         consensusMembership.set(createSimpleConsensusMembership(Seq(local.id, remoteMemberBinding)))
         val remoteMember = obtainRemoteMember(remoteMemberBinding).get
@@ -99,12 +100,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         if (response.success) {
           consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
           if (response.members.contains(local.id)) {
-            LOG.info("I'm already part of the Cluster")
+            LOG.debug("I'm already part of the Cluster")
             break
           }
           val joinResponse = remoteMember.join(local.id)
           if (joinResponse.success) {
-            LOG.info("Join request was succesful. Waiting for confirmation to be part of the Cluster.")
             break
           }
         }
@@ -121,19 +121,20 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def on(requestVote: RequestVote):RequestVoteResponse = inContext {
     LOG.debug(s"RequestVote received: $requestVote")
-    if (obtainRemoteMember(requestVote.memberId).isEmpty) {
+    obtainRemoteMember(requestVote.memberId).map { remoteMember => 
+      local on requestVote
+    }.getOrElse {
       LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
-      return RequestVoteResponse(local term, false)
+      RequestVoteResponse(local term, false)
     }
-    local on requestVote
   }
 
   def on(appendEntries: AppendEntries) = inContext {
     local on appendEntries
   }
 
-  def on[T](command: Command): T = havingLeader {
-    inContext {
+  def on[T](command: Command): T = inContext {
+    havingLeader {
       LOG.debug(s"Command received: $command")
       local.on[T](command)
     }
@@ -153,9 +154,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
   
-  def onLocal(readCommand: ReadCommand) = {
-    rlog execute readCommand
-  }
+  def onLocal(readCommand: ReadCommand) = rlog execute readCommand
 
   def collectVotes: Seq[Member] = {
     if (!hasRemoteMembers) return Seq()
@@ -175,30 +174,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     votesGrantedMembers.toSeq
   }
 
-  def forwardToLeader[T](command: Command): T = withLeader { leader => 
-    inContext {
-    	LOG.debug(s"Forward command $command")
-    	leader.forwardCommand[T](command)
-    }
-  }
-
-  def updateLeader(memberId: String): Boolean = leaderPromise.synchronized {
-    inContext {
-      val newLeader = obtainMember(memberId)
-      val promise = leaderPromise.get()
-      if (!promise.isCompleted || promise.future.value.get.get != newLeader.get) {
-        leaderPromise.get().success(newLeader.get) //complete current promise for operations waiting for it
-        leaderPromise.set(Promise.successful(newLeader.get)) //kept promise for subsequent leader 
-        true
-      } else false
-    }
-  }
-
-  def setNoLeader = leaderPromise.synchronized {
-    inContext {
-      if (leaderPromise.get().isCompleted) {
-        leaderPromise.set(Promise[Member]())
-      }
+  def forwardToLeader[T](command: Command): T = inContext {
+    withLeader { leader =>
+      LOG.debug(s"Forward command $command")
+      leader.forwardCommand[T](command)
     }
   }
 
@@ -243,6 +222,27 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def hasRemoteMembers = !membership.remoteMembers.isEmpty
 
+  def updateLeader(leaderId: String): Boolean = leaderPromise.synchronized {
+    inContext {
+      val newLeader = obtainMember(leaderId)
+      val promise = leaderPromise.get()
+      val isNew = !promise.isCompleted || promise.future.value.get.get != newLeader.get
+      if (isNew) {
+        leaderPromise.get().success(newLeader.get) //complete current promise for operations waiting for it
+        leaderPromise.set(Promise.successful(newLeader.get)) //kept promise for subsequent leader 
+      }
+      isNew
+    }
+  }
+
+  def setNoLeader = leaderPromise.synchronized {
+    inContext {
+      if (leaderPromise.get().isCompleted) {
+        leaderPromise.set(Promise[Member]())
+      }
+    }
+  }
+  
   def awaitLeader: Member = {
     try {
       Await.result(leaderPromise.get().future, waitForLeaderTimeout)

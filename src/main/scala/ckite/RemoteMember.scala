@@ -33,7 +33,7 @@ import ckite.rpc.LogEntry
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
-  LOG.info(s"Creating RemoteMember $binding")
+  LOG.debug(s"Creating RemoteMember $binding")
   
   val nextLogIndex = new AtomicInteger(1)
   val connector: Connector = new ThriftConnector(id)
@@ -79,14 +79,14 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def replicate(logEntry: LogEntry): Boolean = synchronized {
     if (!isReplicationEnabled) {
-      LOG.info(s"Replication is not enabled. Could not replicate $logEntry")
+      LOG.debug(s"Replication is not enabled. Could not replicate $logEntry")
       return false
     }
     if (logEntry.index < nextLogIndex.intValue()) {
-      LOG.info(s"LogEntry $logEntry was already replicated to $id")
+      LOG.debug(s"LogEntry $logEntry was already replicated to $id")
       return true
     }
-    LOG.info(s"Replicating to $id")
+    LOG.debug(s"Replicating to $id")
     val appendEntries = createAppendEntries(cluster.local.term)
       connector.send(appendEntries).map { replicationResponse =>
         LOG.debug(s"Got replication response $replicationResponse from $id")
@@ -135,18 +135,18 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def enableReplications() = {
     val wasEnabled = replicationsEnabled.getAndSet(true)
-    if (!wasEnabled) LOG.info(s"Enabling replications to $id")
+    if (!wasEnabled) LOG.debug(s"Enabling replications to $id")
     wasEnabled
   }
 
   def disableReplications() = {
     val wasEnabled = replicationsEnabled.getAndSet(false)
-    if (wasEnabled) LOG.info(s"Disabling replications to $id")
+    if (wasEnabled) LOG.debug(s"Disabling replications to $id")
     wasEnabled
   }
   
   def join(joiningMemberId: String): JoinResponse = {
-    LOG.info(s"Joining with $id")
+    LOG.debug(s"Joining with $id")
     connector.send(JoinRequest(joiningMemberId)).recover {
       case ChannelWriteException(e: ConnectException) =>
         LOG.debug(s"Can't connect to member $id")

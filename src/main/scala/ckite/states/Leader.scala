@@ -76,7 +76,7 @@ class Leader(cluster: Cluster) extends State {
       resetNextIndexes
       resetFollowerInfo
       heartbeater start term
-      LOG.info("Replicate a NoOp as part of Leader initialization")
+      LOG.debug("Replicate a NoOp as part of Leader initialization")
       on[Unit](NoOp())
       LOG.info(s"Start being Leader")
     }
@@ -99,7 +99,7 @@ class Leader(cluster: Cluster) extends State {
   }
 
   override def stop = {
-    LOG.info("Stop being Leader")
+    LOG.debug("Stop being Leader")
     heartbeater stop
     
     replicator stop
@@ -118,7 +118,7 @@ class Leader(cluster: Cluster) extends State {
   private def onWriteCommand[T](command: WriteCommand): T = cluster.local.locked {
     val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
     cluster.rlog.append(List(logEntry))
-    LOG.info(s"Replicating log entry $logEntry")
+    LOG.debug(s"Replicating log entry $logEntry")
     val replicationAcks = replicate(logEntry)
     if (cluster.reachMajority(replicationAcks :+ cluster.local)) {
       (cluster.rlog commit logEntry).asInstanceOf[T]
@@ -131,10 +131,10 @@ class Leader(cluster: Cluster) extends State {
   private def replicate(logEntry: LogEntry): Seq[Member] = {
     if (cluster.hasRemoteMembers) {
       val acks = replicator.replicate(logEntry)
-      LOG.info(s"Got replication acks from $acks")
+      LOG.debug(s"Got replication acks from $acks")
       acks
     } else {
-      LOG.info(s"No member to replicate")
+      LOG.debug(s"No member to replicate")
       Seq()
     }
   }
@@ -162,7 +162,7 @@ class Leader(cluster: Cluster) extends State {
   }
 
   override def on(jointConsensusCommited: MajorityJointConsensus) = {
-    LOG.info(s"Sending LeaveJointConsensus")
+    LOG.debug(s"Sending LeaveJointConsensus")
     cluster.on[Boolean](LeaveJointConsensus(jointConsensusCommited.newBindings))
   }
   
@@ -193,7 +193,7 @@ class Leader(cluster: Cluster) extends State {
        if (isLogEntryInSnapshot(nextIndex) || isLogEntryInSnapshot(nextIndexPrevious)) {
           val wasEnabled = member.disableReplications()
           if (wasEnabled) { 
-        	LOG.info(s"Next LogIndex #$nextIndex (or its previous #$nextIndexPrevious) to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
+        	LOG.debug(s"Next LogIndex #$nextIndex (or its previous #$nextIndexPrevious) to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
             sendSnapshotAsync(member)
           }
       }
@@ -218,7 +218,7 @@ class Leader(cluster: Cluster) extends State {
   
   def sendSnapshotAsync(member: RemoteMember) = {
 	 val snapshot = cluster.rlog.getSnapshot().get
-     LOG.info(s"Sending InstallSnapshot to ${member} containing $snapshot")
+     LOG.debug(s"Sending InstallSnapshot to ${member} containing $snapshot")
      com.twitter.util.Future {
 		 member.sendSnapshot(snapshot)
 	 }
