@@ -135,8 +135,10 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     		  val value = execute(entry.command)
     		  commitIndex.set(entry.index)
     		  val promise = commitPromises.get(entryIndex)
-    		  promise.success(value)
-    		  commitPromises.remove(entryIndex)
+    		  if (promise != null) {
+    			  promise.success(value)
+    			  commitPromises.remove(entryIndex)
+    		  }
     	  } else {
     		  LOG.debug(s"Already committed entry $entry")
     	  }
