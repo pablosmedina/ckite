@@ -38,7 +38,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   LOG.debug(s"Creating RemoteMember $binding")
   
   val nextLogIndex = new AtomicInteger(1)
-  val matchIndex = new AtomicInteger(0)
+  val matchIndex = cluster.db.getAtomicInteger("matchIndex")
   val connector: Connector = new ThriftConnector(id)
   val replicationsEnabled = new AtomicBoolean(true)
   val replicationsInProgress = new ConcurrentHashMap[Int,Boolean]()
