@@ -71,7 +71,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     promise
   }
 
-  def append(logEntries: List[LogEntry]) = {
+  private def append(logEntries: List[LogEntry]) = {
     shared {
       appendWithLockAcquired(logEntries)
     }
@@ -91,7 +91,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     	  entries.put(logEntry.index, logEntry)
     	  afterAppend(logEntry)
       } else {
-        LOG.warn(s"Discarding append of a duplicate entry $logEntry")
+        LOG.debug(s"Discarding append of a duplicate entry $logEntry")
       }
     }
   }
@@ -100,7 +100,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     logEntry.command match {
 	    	  case c: EnterJointConsensus => cluster.apply(c)
 	    	  case c: LeaveJointConsensus => cluster.apply(c)
-	    	  case _ => Unit
+	    	  case _ => ;
     	  }
   }
   
@@ -129,7 +129,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     val logEntryOption = getLogEntry(entryIndex)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
-      synchronized {
+      entry.synchronized {
     	  if (entryIndex > commitIndex.intValue()) {
     		  LOG.debug(s"Committing $entry")
     		  val value = execute(entry.command)
@@ -159,7 +159,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
           true
         }
         case c: LeaveJointConsensus => true
-        case c: NoOp => Unit
+        case c: NoOp => ;
         case _ => stateMachine.apply(command)
       }
     }
@@ -167,11 +167,11 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   def execute(command: ReadCommand) = stateMachine.apply(command)
 
-  def getLogEntry(index: Int): Option[LogEntry] = {
+  def getLogEntry(index: Int, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = entries.get(index)
     if (entry != null) Some(entry) else {
       getSnapshot().map { snapshot => 
-      	if (snapshot.lastLogEntryIndex == index) {
+      	if (snapshot.lastLogEntryIndex == index && allowCompactedEntry) {
       	    Some(compactedEntry(snapshot))
       	} else
       	  None
@@ -189,7 +189,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   }
 
   def getPreviousLogEntry(logEntry: LogEntry): Option[LogEntry] = {
-    getLogEntry(logEntry.index - 1)
+    getLogEntry(logEntry.index - 1, true)
   }
 
   def containsEntry(index: Int, term: Int) = {
@@ -235,7 +235,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     stateMachine.deserialize(snapshot.stateMachineState)
     commitIndex.set(snapshot.lastLogEntryIndex)
     snapshot.membership.recoverIn(cluster)
-    LOG.info(s"Finished installing $snapshot")
+    LOG.debug(s"Finished installing $snapshot")
     true
   }
 

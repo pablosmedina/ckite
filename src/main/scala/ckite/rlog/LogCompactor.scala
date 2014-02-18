@@ -36,7 +36,9 @@ class LogCompactor extends Logging {
     val firstIndex = rlog.entries.firstKey()
     val range = firstIndex to logIndex
     LOG.debug(s"Compacting ${range.size} LogEntries")
-    range foreach { index => rlog.entries.remove(index) }
+    rlog.exclusive {
+    	range foreach { index => rlog.entries.remove(index) }
+    }
     LOG.debug(s"Finished compaction")
   }
 
