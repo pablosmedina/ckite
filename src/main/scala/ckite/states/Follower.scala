@@ -108,7 +108,8 @@ class ElectionTimeout(cluster: Cluster) extends Logging {
           
     }
     val future = cluster.scheduledElectionTimeoutExecutor.schedule(task, electionTimeout, TimeUnit.MILLISECONDS)
-    scheduledFuture.set(future)
+    val previousFuture = scheduledFuture.getAndSet(future)
+    cancel(previousFuture)
   }
 
   private def randomTimeout = {
@@ -119,7 +120,9 @@ class ElectionTimeout(cluster: Cluster) extends Logging {
   
   def stop() = {
     val future = scheduledFuture.get()
-    if (future != null) future.cancel(false)
+    cancel(future)
   }
+  
+  private def cancel(future: Future[_]) = if (future != null) future.cancel(false)
   
 }

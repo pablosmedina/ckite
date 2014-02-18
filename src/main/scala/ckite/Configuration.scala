@@ -10,16 +10,15 @@ class Configuration(var config: Config) {
   val MaxElectionTimeout = "ckite.election.maxTimeout"
   val CollectVotesTimeout = "ckite.election.votingTimeout"
 
-  val ReplicationTimeout = "ckite.replication.timeout"
-  val HeartbeatsInterval = "ckite.heartbeats.period"
+  val AppendEntriesTimeout = "ckite.appendEntries.timeout"
+  val HeartbeatsInterval = "ckite.appendEntries.period"
 
   val MembersBindings = "ckite.cluster.membersBindings"
   val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"
   val WaitForLeaderTimeout = "ckite.cluster.waitForLeaderTimeout"
 
-  val HeartbeatsWorkers = "ckite.heartbeats.workers"
+  val AppendEntriesWorkers = "ckite.appendEntries.workers"
   val ElectionWorkers = "ckite.election.workers"
-  val ReplicationWorkers = "ckite.replication.workers"
   val ThriftWorkers = "ckite.thrift.workers"
 
   val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"
@@ -102,22 +101,18 @@ class Configuration(var config: Config) {
     config.getLong(FixedLogSizeCompaction)
   }
 
-  def replicationTimeout: Long = {
-    config.getMilliseconds(ReplicationTimeout)
+  def appendEntriesTimeout: Long = {
+    config.getMilliseconds(AppendEntriesTimeout)
   }
 
-  def heartbeatsWorkers: Int = {
-    config.getInt(HeartbeatsWorkers)
+  def appendEntriesWorkers: Int = {
+    config.getInt(AppendEntriesWorkers)
   }
 
   def electionWorkers: Int = {
     config.getInt(ElectionWorkers)
   }
 
-  def replicationWorkers: Int = {
-    config.getInt(ReplicationWorkers)
-  }
-  
   def thriftWorkers: Int = {
     config.getInt(ThriftWorkers)
   }

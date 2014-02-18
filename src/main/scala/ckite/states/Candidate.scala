@@ -82,9 +82,9 @@ class Election(cluster: Cluster) extends Logging {
   
   def start(inTerm: Int) = {
     val task: Runnable = () => {
-	        cluster.local voteForMyself
+	     cluster.local voteForMyself
 	    
-	     val votes = (cluster collectVotes) :+ cluster.local
+	     val votes = cluster collectVotes
 	    
 	    LOG.debug(s"Got ${votes.size} votes in a majority of ${cluster.majority}")
 	    if (cluster.reachMajority(votes)) {

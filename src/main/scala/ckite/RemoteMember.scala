@@ -30,15 +30,18 @@ import ckite.rpc.JoinRequest
 import ckite.rpc.GetMembersResponse
 import ckite.rpc.GetMembersRequest
 import ckite.rpc.LogEntry
+import ckite.rpc.AppendEntries
+import java.util.concurrent.ConcurrentHashMap
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   LOG.debug(s"Creating RemoteMember $binding")
   
   val nextLogIndex = new AtomicInteger(1)
+  val matchIndex = new AtomicInteger(0)
   val connector: Connector = new ThriftConnector(id)
   val replicationsEnabled = new AtomicBoolean(true)
-  
+  val replicationsInProgress = new ConcurrentHashMap[Int,Boolean]()
   private def localMember = cluster.local
   private def rlog = cluster.rlog
 
@@ -47,8 +50,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     connector.send[T](command)
   }
 
-  def sendHeartbeat(term: Int) = synchronized {
-    LOG.trace(s"Sending heartbeat to $id in term $term")
+  def sendAppendEntries(term: Int) = {
     val appendEntries = createAppendEntries(term)
     connector.send(appendEntries).map {
       appendEntriesResponse =>
@@ -59,10 +61,17 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
           localMember.onAppendEntriesResponse(this, appendEntries, appendEntriesResponse)
         }
     }
+    if (!appendEntries.entries.isEmpty) replicationsInProgress.remove(appendEntries.entries.last.index)
   }
 
   private def createAppendEntries(termToSent: Int): AppendEntries = {
-    val entryToPiggyBack = if (isReplicationEnabled) rlog.getLogEntry(nextLogIndex.intValue()) else None
+    val index = nextLogIndex.intValue()
+    val entryToPiggyBack = if (isReplicationEnabled) { 
+      rlog.getLogEntry(index) map { entry => 
+      	val inProgress = replicationsInProgress.put(index, true)
+        if ((inProgress == null || !inProgress)) Some(entry) else None
+      } getOrElse(None)
+    } else None
     entryToPiggyBack match {
       case None => AppendEntries(termToSent, localMember.id, rlog.getCommitIndex)
       case Some(entry) => {
@@ -76,39 +85,32 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
       }
     }
   }
-
-  def replicate(logEntry: LogEntry): Boolean = synchronized {
-    if (!isReplicationEnabled) {
-      LOG.debug(s"Replication is not enabled. Could not replicate $logEntry")
-      return false
-    }
-    if (logEntry.index < nextLogIndex.intValue()) {
-      LOG.debug(s"LogEntry $logEntry was already replicated to $id")
-      return true
-    }
-    LOG.debug(s"Replicating to $id")
-    val appendEntries = createAppendEntries(cluster.local.term)
-      connector.send(appendEntries).map { replicationResponse =>
-        LOG.debug(s"Got replication response $replicationResponse from $id")
-        localMember.onAppendEntriesResponse(this, appendEntries, replicationResponse)
-        replicationResponse.success
-      }.recover {
-        case ChannelWriteException(e: ConnectException) =>
-          LOG.debug(s"Can't connect to member $id")
-          false
-        case e: Exception =>
-          LOG.error(s"Error replicating to $id: ${e.getMessage()}", e)
-          false
-      } get
+  
+  def ackLogEntry(logEntryIndex: Int) = {
+    updateMatchIndex(logEntryIndex)
+    updateNextLogIndex
+    replicationsInProgress.remove(logEntryIndex)
+  }
+  
+  private def updateMatchIndex(logEntryIndex: Int) = {
+    var currentMatchIndex = matchIndex.intValue()
+	while(currentMatchIndex <= logEntryIndex && !matchIndex.compareAndSet(currentMatchIndex, logEntryIndex)) {
+	     currentMatchIndex = matchIndex.intValue()
+	}
+  }
+  
+  private def updateNextLogIndex = {
+    nextLogIndex.set(matchIndex.intValue() + 1)
   }
 
-  def sendSnapshot(snapshot: Snapshot) = synchronized {
-    cluster.inContext {
-      val future = connector.send(snapshot)
-      future.get
-      setNextLogIndex(snapshot.lastLogEntryIndex + 1)
-      enableReplications()
-    }
+  def decrementNextLogIndex() = {
+    val currentIndex = nextLogIndex.decrementAndGet()
+    if (currentIndex == 0) nextLogIndex.set(1)
+    replicationsInProgress.remove(nextLogIndex.intValue())
+  }
+
+  def sendSnapshot(snapshot: Snapshot) = {
+      connector.send(snapshot)
   }
 
   def setNextLogIndex(index: Int) = nextLogIndex.set(index)

@@ -23,7 +23,6 @@ import ckite.exception.WaitForLeaderTimedOutException
 import scala.util.Success
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.Callable
-import ckite.executions.Executions
 import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
 import ckite.util.CKiteConversions._
@@ -39,7 +38,11 @@ import ckite.rpc.EnterJointConsensus
 import ckite.rlog.Snapshot
 import scala.util.control.Breaks._
 import java.util.concurrent.locks.ReentrantLock
-import ckite.states.ReachMajorities
+import scala.concurrent._
+import scala.collection.mutable.ArrayBuffer
+import java.util.concurrent.ConcurrentHashMap
+import scala.concurrent.duration._
+import scala.util.Try
 
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
@@ -51,25 +54,18 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
   
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
-  
-  val heartbeaterExecutor = new ThreadPoolExecutor(0, configuration.heartbeatsWorkers,
-                                      10L, TimeUnit.SECONDS,
-                                      new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("HeartbeaterWorker", true))
-  
-  val electionExecutor = new ThreadPoolExecutor(0, configuration.electionWorkers,
-                                      15L, TimeUnit.SECONDS,
-                                      new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("ElectionWorker", true))
+
+  val appendEntriesExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntriesWorker", true)))
+
+  val electionExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.electionWorkers,
+    15L, TimeUnit.SECONDS,
+    new SynchronousQueue[Runnable](),
+    new NamedPoolThreadFactory("ElectionWorker", true)))
   
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
   
-  val replicatorExecutor = new ThreadPoolExecutor(0, configuration.replicationWorkers,
-                                      60L, TimeUnit.SECONDS,
-                                      new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("ReplicatorWorker", true))
-
-  val waitForLeaderTimeout = Duration(configuration.waitForLeaderTimeout, TimeUnit.MILLISECONDS)
+  val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
   
   
   def start = inContext {
@@ -140,38 +136,45 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  def broadcastHeartbeats(term: Int) = {
+  def broadcastAppendEntries(term: Int)(implicit context: ExecutionContext = appendEntriesExecutionContext) = {
     if (term == local.term) {
       val remoteMembers = membership.remoteMembers
       LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
-      remoteMembers.foreach { member =>
-        heartbeaterExecutor.execute(() => {
+      remoteMembers foreach { member =>
+        future {
           inContext {
-            member.sendHeartbeat(term)
+            member sendAppendEntries term
           }
-        })
+        }
       }
     }
   }
   
   def onLocal(readCommand: ReadCommand) = rlog execute readCommand
 
-  def collectVotes: Seq[Member] = {
-    if (!hasRemoteMembers) return Seq()
-    val execution = Executions.newExecution().withExecutor(electionExecutor)
+  def collectVotes(implicit context: ExecutionContext = electionExecutionContext): Seq[Member] = {
+    if (!hasRemoteMembers) return Seq(local)
+    val promise = Promise[Seq[Member]]()
+    val votes = new ConcurrentHashMap[Member, Boolean]()
+    votes.put(local, true)
     membership.remoteMembers.foreach { remoteMember =>
-      execution.withTask(() => {
-        inContext {
-          (remoteMember, remoteMember requestVote)
-        }
-      })
+      future {
+    	  inContext {
+    		  (remoteMember, remoteMember requestVote)
+    	  }
+      } onSuccess { case (member, vote) =>
+        votes.put(member, vote)
+        val grantedVotes = votes.asScala.filter{ tuple =>  tuple._2 }.keySet.toSeq
+        val rejectedVotes = votes.asScala.filterNot{ tuple =>  tuple._2 }.keySet.toSeq
+        if (membership.reachMajority(grantedVotes) || 
+            membership.reachAnyMajority(rejectedVotes) || 
+            membership.allMembers.size == votes.size()) 
+        	promise.trySuccess(grantedVotes)
+      }
     }
-    //when in JointConsensus we need quorum on both cluster memberships (old and new)
-    //TODO: refactor
-    val membersVotes = execution.withTimeout(configuration.collectVotesTimeout, TimeUnit.MILLISECONDS)
-      .withExpectedResults(1, new ReachMajorities(this)).execute[(Member, Boolean)]()
-    val votesGrantedMembers = membersVotes.asScala.filter { memberVote => memberVote._2 }.map { voteGranted => voteGranted._1 }
-    votesGrantedMembers.toSeq
+    Try {
+    	Await.result(promise.future, configuration.collectVotesTimeout millis)
+    } getOrElse(votes.asScala.filter{ tuple =>  tuple._2 }.keySet.toSeq)
   }
 
   def forwardToLeader[T](command: Command): T = inContext {
@@ -247,7 +250,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     try {
       Await.result(leaderPromise.get().future, waitForLeaderTimeout)
     } catch {
-      case e: TimeoutException => throw new WaitForLeaderTimedOutException(e)
+      case e: TimeoutException => {
+        LOG.warn(s"Wait for Leader timed out after $waitForLeaderTimeout")
+        throw new WaitForLeaderTimedOutException(e)
+      }
     }
   }
 

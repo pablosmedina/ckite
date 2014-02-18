@@ -6,4 +6,4 @@ case class LeaderInfo(leaderUptime: String, followers: Map[String, FollowerInfo]
 
 case class NonLeaderInfo(following: String) extends StateInfo
 
-case class FollowerInfo(lastHeartbeatACK: String, nextIndex: Int)
+case class FollowerInfo(lastHeartbeatACK: String, matchIndex: Int, nextIndex: Int)

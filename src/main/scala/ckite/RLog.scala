@@ -30,6 +30,9 @@ import ckite.rpc.NoOp
 import com.twitter.util.Future
 import ckite.exception.NoMajorityReachedException
 import ckite.rpc.CompactedEntry
+import scala.concurrent.Promise
+import java.util.concurrent.ConcurrentHashMap
+import scala.concurrent._
 
 class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
@@ -43,12 +46,11 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   val sharedLock = lock.readLock()
 
   val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, cluster.db)
-
-  val asyncApplierExecutor = new ThreadPoolExecutor(0, 2,
-												    10L, TimeUnit.SECONDS,
-												    new SynchronousQueue[Runnable](),
-												    new NamedPoolThreadFactory("AsyncApplierWorker", true))
-
+  val commitPromises = new ConcurrentHashMap[Int, Promise[Any]]()
+  
+  val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AsyncWorker", true)))
+  
   initialize()
 
   def tryAppend(appendEntries: AppendEntries) = {
@@ -58,22 +60,25 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     	if (canAppend) appendWithLockAcquired(appendEntries.entries)
     	commitEntriesUntil(appendEntries.commitIndex)
     }
-    applyLogCompactionPolicyAsync
+    applyLogCompactionPolicy
     canAppend
+  }
+  
+  def append(logEntry: LogEntry): Promise[Any] = {
+	val promise = Promise[Any]()
+	commitPromises.put(logEntry.index, promise)
+    append(List(logEntry))
+    promise
   }
 
   def append(logEntries: List[LogEntry]) = {
     shared {
       appendWithLockAcquired(logEntries)
     }
-    applyLogCompactionPolicyAsync
+    applyLogCompactionPolicy
   }
 
-  private def applyLogCompactionPolicyAsync = asyncApplierExecutor.execute(() => {
-    cluster.inContext {
-      compactionPolicy.apply(this)
-    }
-  })
+  private def applyLogCompactionPolicy = compactionPolicy.apply(this)
 
   private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
@@ -98,19 +103,21 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 	    	  case _ => Unit
     	  }
   }
-
-  def commit(logEntry: LogEntry) = shared {
-    val logEntryOption = getLogEntry(logEntry.index)
+  
+  def commit(logEntryIndex: Int):Unit = shared {
+    val logEntryOption = getLogEntry(logEntryIndex)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
       if (entry.term == cluster.local.term) {
-        commitEntriesUntil(logEntry.index, true) //logEntry.index excluded
-        safeCommit(logEntry.index)
+        commitEntriesUntil(logEntryIndex, true) //logEntry.index excluded
+        safeCommit(logEntryIndex)
       } else {
         LOG.warn(s"Unsafe to commit an old term entry: $entry")
       }
-    } else raiseMissingLogEntryException(logEntry.index)
+    } else raiseMissingLogEntryException(logEntryIndex)
   }
+
+  def commit(logEntry: LogEntry):Unit = commit(logEntry.index)
 
   private def commitEntriesUntil(entryIndex: Int, exclusive: Boolean = false) = {
     val start = commitIndex.intValue() + 1
@@ -122,28 +129,33 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     val logEntryOption = getLogEntry(entryIndex)
     if (logEntryOption.isDefined) {
       val entry = logEntryOption.get
-      if (entryIndex > commitIndex.intValue()) {
-        LOG.debug(s"Committing $entry")
-        commitIndex.set(entry.index)
-        execute(entry.command)
-      } else {
-        LOG.debug(s"Already committed entry $entry")
+      synchronized {
+    	  if (entryIndex > commitIndex.intValue()) {
+    		  LOG.debug(s"Committing $entry")
+    		  val value = execute(entry.command)
+    		  commitIndex.set(entry.index)
+    		  val promise = commitPromises.get(entryIndex)
+    		  promise.success(value)
+    		  commitPromises.remove(entryIndex)
+    	  } else {
+    		  LOG.debug(s"Already committed entry $entry")
+    	  }
       }
     }
   }
 
-  def execute(command: Command) = {
+  def execute(command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
     LOG.debug(s"Executing $command")
     shared {
       command match {
         case c: EnterJointConsensus => {
-          asyncApplierExecutor.execute(() => {
+          future {
             try  {
             	cluster.on(MajorityJointConsensus(c.newBindings))
             } catch {
               case e:NoMajorityReachedException => LOG.warn(s"Could not commit LeaveJointConsensus")
             }
-          })
+          }
           true
         }
         case c: LeaveJointConsensus => true
@@ -157,14 +169,21 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   def getLogEntry(index: Int): Option[LogEntry] = {
     val entry = entries.get(index)
-    if (entry != null) Some(entry) else None
+    if (entry != null) Some(entry) else {
+      getSnapshot().map { snapshot => 
+      	if (snapshot.lastLogEntryIndex == index) {
+      	    Some(compactedEntry(snapshot))
+      	} else
+      	  None
+      }.getOrElse(None)
+    }
   }
 
   def getLastLogEntry(): Option[LogEntry] = {
     val lastLogIndex = findLastLogIndex
     if (isInSnapshot(lastLogIndex)) return {
       val snapshot = getSnapshot().get
-      return Some(LogEntry(snapshot.lastLogEntryTerm, snapshot.lastLogEntryIndex, CompactedEntry()))
+      return Some(compactedEntry(snapshot))
     }
     getLogEntry(lastLogIndex)
   }
@@ -177,6 +196,8 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     val logEntryOption = getLogEntry(index)
     if (logEntryOption.isDefined) logEntryOption.get.term == term else (isZeroEntry(index, term) || isInSnapshot(index, term))
   }
+  
+  private def compactedEntry(snapshot: Snapshot) = LogEntry(snapshot.lastLogEntryTerm, snapshot.lastLogEntryIndex, CompactedEntry())
 
   private def isZeroEntry(index: Int, term: Int): Boolean = index == -1 && term == -1
 
