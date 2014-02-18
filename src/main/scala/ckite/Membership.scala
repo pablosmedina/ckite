@@ -35,7 +35,7 @@ class SimpleMembershipState(bindings: List[String]) extends MembershipState {
       val localOption = if (bindings.contains(cluster.local.id)) Some(cluster.local) else None
       val remoteMembers = (bindings diff Seq(cluster.local.id)).map { 
     	  				binding => cluster.obtainRemoteMember(binding).getOrElse(new RemoteMember(cluster, binding))}.toSeq
-      new SimpleMembership(localOption, remoteMembers)
+      new SimpleConsensus(localOption, remoteMembers)
    }
 }
  
@@ -46,11 +46,11 @@ class JointMembershipState(oldBindings: MembershipState, newBindings: Membership
   def getMembershipFor(cluster: Cluster): Membership = {
     val oldMembership = oldBindings.getMembershipFor(cluster)
     val newMembership = newBindings.getMembershipFor(cluster)
-    new JointConsensusMembership(oldMembership, newMembership)
+    new JointConsensus(oldMembership, newMembership)
   }
 }
 
-class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) extends Membership {
+class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember]) extends Membership {
 
   val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toList
   val quorum = (resultingMembers.size  / 2) + 1
@@ -75,9 +75,13 @@ class SimpleMembership(local: Option[LocalMember], members: Seq[RemoteMember]) e
 
 }
 
-object EmptyMembership extends SimpleMembership(None,Seq())
+object SimpleConsensus {
+   def apply(local: Option[LocalMember], members: Seq[RemoteMember]) = new SimpleConsensus(local, members)
+}
 
-class JointConsensusMembership(oldMembership: Membership, newMembership: Membership) extends Membership {
+object EmptyMembership extends SimpleConsensus(None,Seq())
+
+class JointConsensus(oldMembership: Membership, newMembership: Membership) extends Membership {
 
   def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
 
@@ -98,4 +102,8 @@ class JointConsensusMembership(oldMembership: Membership, newMembership: Members
   override def toString(): String = {
     s"[Cold=(${oldMembership}), Cnew=(${newMembership})]"
   }
+}
+
+object JointConsensus {
+  def apply(oldMembership: Membership, newMembership: Membership) = new JointConsensus(oldMembership, newMembership)  
 }

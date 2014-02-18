@@ -50,8 +50,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding)
-  val rlog = new RLog(this, stateMachine)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
+  val rlog = new RLog(this, stateMachine)
   
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
 
@@ -59,9 +59,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntriesWorker", true)))
 
   val electionExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.electionWorkers,
-    15L, TimeUnit.SECONDS,
-    new SynchronousQueue[Runnable](),
-    new NamedPoolThreadFactory("ElectionWorker", true)))
+    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("ElectionWorker", true)))
   
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
   
@@ -77,24 +75,24 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   private def startStatic = {
     val currentMembership = consensusMembership.get()
     if (currentMembership.allMembers.isEmpty) {
-    	consensusMembership.set(new SimpleMembership(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
+    	consensusMembership.set(new SimpleConsensus(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
     }
     local becomeFollower
   }
 
   //Members are seeds to discover the Leader and hence the Cluster
   private def startDynamic = {
-    val dynaMembership = createSimpleConsensusMembership(Seq(local.id))
+    val dynaMembership = simpleConsensus(Seq(local.id))
     consensusMembership.set(dynaMembership)
     breakable {
       local becomeFollower
       
       for (remoteMemberBinding <- configuration.membersBindings) {
-        consensusMembership.set(createSimpleConsensusMembership(Seq(local.id, remoteMemberBinding)))
+        consensusMembership.set(simpleConsensus(Seq(local.id, remoteMemberBinding)))
         val remoteMember = obtainRemoteMember(remoteMemberBinding).get
         val response = remoteMember.getMembers()
         if (response.success) {
-          consensusMembership.set(createSimpleConsensusMembership(response.members :+ local.id))
+          consensusMembership.set(simpleConsensus(response.members :+ local.id))
           if (response.members.contains(local.id)) {
             LOG.debug("I'm already part of the Cluster")
             break
@@ -138,9 +136,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def broadcastAppendEntries(term: Int)(implicit context: ExecutionContext = appendEntriesExecutionContext) = {
     if (term == local.term) {
-      val remoteMembers = membership.remoteMembers
-      LOG.trace(s"Broadcasting heartbeats to $remoteMembers")
-      remoteMembers foreach { member =>
+      membership.remoteMembers foreach { member =>
         future {
           inContext {
             member sendAppendEntries term
@@ -174,7 +170,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
     Try {
     	Await.result(promise.future, configuration.collectVotesTimeout millis)
-    } getOrElse(votes.asScala.filter{ tuple =>  tuple._2 }.keySet.toSeq)
+    } getOrElse {
+      votes.asScala.filter{ tuple =>  tuple._2 }.keySet.toSeq
+    }
   }
 
   def forwardToLeader[T](command: Command): T = inContext {
@@ -198,7 +196,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def apply(enterJointConsensus: EnterJointConsensus) = {
     LOG.info(s"Entering in JointConsensus")
     val currentMembership = consensusMembership.get()
-    consensusMembership.set(new JointConsensusMembership(currentMembership, createSimpleConsensusMembership(enterJointConsensus.newBindings)))
+    consensusMembership.set(JointConsensus(currentMembership, simpleConsensus(enterJointConsensus.newBindings)))
     LOG.info(s"Membership ${consensusMembership.get()}")
   }
   
@@ -210,15 +208,15 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   //LeaveJointConsensus received. A new membership has been set. Switch to SimpleConsensus or shutdown If no longer part of the cluster.
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
     LOG.info(s"Leaving JointConsensus")
-	consensusMembership.set(createSimpleConsensusMembership(leaveJointConsensus.bindings))
+	consensusMembership.set(simpleConsensus(leaveJointConsensus.bindings))
 	LOG.info(s"Membership ${consensusMembership.get()}")
   }
 
-  private def createSimpleConsensusMembership(bindings: Seq[String]): SimpleMembership = {
+  private def simpleConsensus(bindings: Seq[String]): SimpleConsensus = {
     val localOption = if (bindings.contains(local.id)) Some(local) else None
-    val bindingsWithoutLocal = bindings diff Seq(local.id) toSet
+    val bindingsWithoutLocal = bindings diff Seq(local.id).toSet.toSeq
     
-    new SimpleMembership(localOption, bindingsWithoutLocal.toSeq.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
+    SimpleConsensus(localOption, bindingsWithoutLocal.map { binding => obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))})
   }
 
   def membership = consensusMembership.get()
@@ -263,7 +261,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   def installSnapshot(snapshot: Snapshot): Boolean = inContext {
-    LOG.info("InstallSnapshot received")
+    LOG.debug("InstallSnapshot received")
     rlog.installSnapshot(snapshot)
   }
   
