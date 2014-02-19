@@ -2,7 +2,7 @@ name := "ckite"
 
 organization := "io.ckite"
 
-version := "0.1.1-SNAPSHOT"
+version := "0.1.2-SNAPSHOT"
 
 scalaVersion := "2.10.2"
 
@@ -17,7 +17,7 @@ pomIncludeRepository := { x => false }
 resolvers += "twitter-repo" at "http://maven.twttr.com"
 
 libraryDependencies ++= Seq(
-	"ch.qos.logback" % "logback-classic" % "1.1.1",
+	"ch.qos.logback" % "logback-classic" % "1.0.0",
 	"com.twitter" %% "scrooge-core" % "3.9.0" % "compile",
 	"org.apache.thrift" % "libthrift" % "0.9.1",
 	"com.twitter" %% "finagle-thrift" % "6.6.2",
@@ -35,12 +35,6 @@ unmanagedSourceDirectories in Compile <++= baseDirectory { base =>
   Seq(
     base / "src/main/resources",
    	base / "src/main/thrift"
-  )
-}
-
-unmanagedSourceDirectories in Test <++= baseDirectory { base =>
-  Seq(
-    base / "src/test/resources"
   )
 }
 
@@ -63,6 +57,7 @@ pomExtra := {
     <license>
       <name>Apache 2</name>
       <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
     </license>
   </licenses>
   <scm>
