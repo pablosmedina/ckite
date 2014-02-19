@@ -7,7 +7,9 @@ A JVM implementation of the [Raft distributed consensus algorithm](http://raftco
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. It is a work in constant progress. For development & testing purposes it contains an embedded key-value store app demonstrating the algorithm functioning trough simple puts and gets. It will be extracted soon from the CKite library as an example of use. Performance tests will be included soon.
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. The first release is comming soon. Checkout the latest published snapshot (0.1.2-SNAPSHOT) from Sonatype following the instructions detailed below. 
+For development & testing purposes it contains an embedded key-value store app demonstrating the algorithm functioning trough simple puts and gets. It will be extracted soon from the CKite library as an example of use. Performance tests will be included soon.
+
 
 ## Features
 
@@ -17,6 +19,66 @@ CKite covers all the major topics of Raft including leader election, log replica
 * Log Compaction
 * Finagle based RPC between members
 * REST admin console
+
+
+## Getting started (Scala)
+
+#### SBT settings
+
+The latest snapshot 0.1.2-SNAPSHOT is in Sonatype repo. 
+
+```scala
+"Sonatype OSS" at "http://oss.sonatype.org/content/repositories/snapshots"
+"Twitter repo" at "http://maven.twttr.com"
+```
+
+Add the following sbt dependency to your project settings:
+
+```scala
+libraryDependencies += "io.ckite" % "ckite" % "0.1.2-SNAPSHOT"
+```
+
+## Getting started (Java)
+
+#### Maven settings
+
+Add the following repos to your settings:
+
+```xml
+<repository>
+	<id>sonatype.oss.snapshots</id>
+	<name>Sonatype OSS Snapshot Repository</name>
+	<url>http://oss.sonatype.org/content/repositories/snapshots</url>
+	<releases>
+		<enabled>false</enabled>
+	</releases>
+	<snapshots>
+		<enabled>true</enabled>
+	</snapshots>
+</repository>
+<repository>
+	<id>twitter.com</id>
+	<name>Twitter Maven Repo</name>
+	<url>http://maven.twttr.com</url>
+	<releases>
+		<enabled>true</enabled>
+	</releases>
+	<snapshots>
+		<enabled>true</enabled>
+	</snapshots>
+</repository> 
+```
+
+Add the following maven dependency to your pom.xml:
+
+```xml
+<dependency>
+	<groupId>io.ckite</groupId>
+	<artifactId>ckite</artifactId>
+	<version>0.1.2-SNAPSHOT</version>
+</dependency>
+```
+
 
 ## Example
 
