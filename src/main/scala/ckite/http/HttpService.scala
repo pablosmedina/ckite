@@ -21,14 +21,12 @@ import com.twitter.util.FuturePool
 import java.util.concurrent.Executors
 import ckite.example.Get
 import ckite.example.Put
-import com.twitter.server.TwitterServer
 import com.twitter.finagle.http.HttpMuxer
-import com.twitter.server.util.JsonConverter
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 
-class HttpService(cluster: Cluster) extends Service[Request, Response] with TwitterServer {
+class HttpService(cluster: Cluster) extends Service[Request, Response] {
 
   val futurePool = FuturePool(Executors.newFixedThreadPool(8))
   val mapper = new ObjectMapper

@@ -7,13 +7,11 @@ import com.twitter.finagle.http.Request
 import com.twitter.finagle.http.Http
 import java.net.InetSocketAddress
 import com.twitter.util.Closable
-import com.twitter.finagle.http.HttpMuxer
 
 class HttpServer(cluster: Cluster) {
   
   var closed = false
   var server: Closable = _
-  var adminServer: Closable = _
   
   def start() = {
     val restServerPort = cluster.local.id.split(":")(1).toInt + 1000
@@ -23,13 +21,11 @@ class HttpServer(cluster: Cluster) {
       .bindTo(new InetSocketAddress(restServerPort))
       .name("HttpServer")
       .build(new HttpService(cluster))
-     adminServer = com.twitter.finagle.Http.serve(s":$adminServerPort", HttpMuxer)
   }
   
   def stop() = synchronized {
     if (!closed) {
     	server.close()
-    	adminServer.close()
     	closed = true
     }
   }
