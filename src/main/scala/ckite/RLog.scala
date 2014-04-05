@@ -18,7 +18,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import org.mapdb.DBMaker
 import java.io.File
 import org.mapdb.DB
-import ckite.rlog.FixedLogSizeCompactionPolicy
 import ckite.rlog.Snapshot
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -33,10 +32,14 @@ import ckite.rpc.CompactedEntry
 import scala.concurrent.Promise
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent._
+import ckite.rlog.MapDBPersistentLog
+import ckite.rlog.LogCompactor
+import java.util.concurrent.atomic.AtomicBoolean
+import ckite.rlog.FixedSizeLogCompactionPolicy
 
 class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
-  val entries = cluster.db.getTreeMap[Int, LogEntry]("entries")
+  val persistentLog = new MapDBPersistentLog(cluster.db)
   val commitIndex = cluster.db.getAtomicInteger("commitIndex")
 
   val lastLog = new AtomicInteger(0)
@@ -45,11 +48,13 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
 
-  val compactionPolicy = new FixedLogSizeCompactionPolicy(cluster.configuration.fixedLogSizeCompaction, cluster.db)
   val commitPromises = new ConcurrentHashMap[Int, Promise[Any]]()
   
   val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AsyncWorker", true)))
+
+  val logCompactionPolicy = new FixedSizeLogCompactionPolicy(cluster.configuration.fixedLogSizeCompaction)
+  val logCompactor = new LogCompactor(this)
   
   initialize()
 
@@ -78,7 +83,11 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     applyLogCompactionPolicy
   }
 
-  private def applyLogCompactionPolicy = compactionPolicy.apply(this)
+  private def applyLogCompactionPolicy = {
+    if (logCompactionPolicy.applies(persistentLog, stateMachine)) {
+      logCompactor.asyncCompact
+    }
+  }
 
   private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
@@ -88,7 +97,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     logEntries.foreach { logEntry =>
       if (!containsEntry(logEntry.index, logEntry.term)) {
     	  LOG.debug(s"Appending $logEntry")
-    	  entries.put(logEntry.index, logEntry)
+    	  persistentLog.append(logEntry)
     	  afterAppend(logEntry)
       } else {
         LOG.debug(s"Discarding append of a duplicate entry $logEntry")
@@ -170,7 +179,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   def execute(command: ReadCommand) = stateMachine.apply(command)
 
   def getLogEntry(index: Int, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
-    val entry = entries.get(index)
+    val entry = persistentLog.getEntry(index)
     if (entry != null) Some(entry) else {
       getSnapshot().map { snapshot => 
       	if (snapshot.lastLogEntryIndex == index && allowCompactedEntry) {
@@ -216,8 +225,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   def resetLastLog() = lastLog.set(findLastLogIndex)
 
   def findLastLogIndex(): Int = {
-    if (entries.isEmpty) return 0
-    entries.keySet.last()
+    persistentLog.getLastIndex
   }
 
   def getCommitIndex(): Int = {
@@ -228,7 +236,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     lastLog.incrementAndGet()
   }
 
-  def size() = entries.size
+  def size() = persistentLog.size
 
   def installSnapshot(snapshot: Snapshot): Boolean = exclusive {
     LOG.debug(s"Installing $snapshot")
@@ -273,7 +281,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   private def replayIndex(index: Int) = {
     LOG.debug(s"Replaying index #$index")
-    val logEntry = entries.get(index)
+    val logEntry = persistentLog.getEntry(index)
     afterAppend(logEntry)
     execute(logEntry.command)
   }
