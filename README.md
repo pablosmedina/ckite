@@ -7,7 +7,7 @@ A __JVM__ implementation of the [Raft distributed consensus algorithm](http://ra
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.3__ from Sonatype following the instructions detailed below to start playing with it. 
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.3__ following the instructions detailed below to start playing with it. 
 Performance tests will be included soon.
 
 
@@ -25,13 +25,7 @@ Performance tests will be included soon.
 
 #### SBT settings
 
-The latest release 0.1.3 is in Sonatype repo. 
-
-```scala
-"Sonatype OSS" at "https://oss.sonatype.org/content/repositories/releases/"
-```
-
-Add the following sbt dependency to your project settings:
+The latest release 0.1.3 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
 libraryDependencies += "io.ckite" % "ckite" % "0.1.3"
@@ -40,22 +34,6 @@ libraryDependencies += "io.ckite" % "ckite" % "0.1.3"
 ## Getting started (Java)
 
 #### Maven settings
-
-Add the following repos to your settings:
-
-```xml
-<repository>
-	<id>sonatype.oss.releases</id>
-	<name>Sonatype OSS Releases Repository</name>
-	<url>https://oss.sonatype.org/content/repositories/releases/</url>
-	<releases>
-		<enabled>true</enabled>
-	</releases>
-	<snapshots>
-		<enabled>false</enabled>
-	</snapshots>
-</repository>
-```
 
 Add the following maven dependency to your pom.xml:
 
