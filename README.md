@@ -3,7 +3,7 @@ CKite [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https:
 
 ## Overview
 
-A JVM implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a library to be used by distributed applications needing consensus agreement. 
+A JVM implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a library with an easy to use api for both Java and Scala to be used by distributed applications needing consensus agreement. 
 
 ## Status
 
@@ -29,7 +29,6 @@ The latest snapshot 0.1.2-SNAPSHOT is in Sonatype repo.
 
 ```scala
 "Sonatype OSS" at "http://oss.sonatype.org/content/repositories/snapshots"
-"Twitter repo" at "http://maven.twttr.com"
 ```
 
 Add the following sbt dependency to your project settings:
@@ -56,17 +55,6 @@ Add the following repos to your settings:
 		<enabled>true</enabled>
 	</snapshots>
 </repository>
-<repository>
-	<id>twitter.com</id>
-	<name>Twitter Maven Repo</name>
-	<url>http://maven.twttr.com</url>
-	<releases>
-		<enabled>true</enabled>
-	</releases>
-	<snapshots>
-		<enabled>true</enabled>
-	</snapshots>
-</repository> 
 ```
 
 Add the following maven dependency to your pom.xml:
