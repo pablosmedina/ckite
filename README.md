@@ -7,7 +7,7 @@ A JVM implementation of the [Raft distributed consensus algorithm](http://raftco
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. The first release is comming soon. Checkout the latest published snapshot (0.1.2-SNAPSHOT) from Sonatype following the instructions detailed below to start playing with it. 
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest release 0.1.3 from Sonatype following the instructions detailed below to start playing with it. 
 Performance tests will be included soon.
 
 
@@ -25,16 +25,16 @@ Performance tests will be included soon.
 
 #### SBT settings
 
-The latest snapshot 0.1.2-SNAPSHOT is in Sonatype repo. 
+The latest release 0.1.3 is in Sonatype repo. 
 
 ```scala
-"Sonatype OSS" at "http://oss.sonatype.org/content/repositories/snapshots"
+"Sonatype OSS" at "https://oss.sonatype.org/content/repositories/releases/"
 ```
 
 Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" % "ckite" % "0.1.2-SNAPSHOT"
+libraryDependencies += "io.ckite" % "ckite" % "0.1.3"
 ```
 
 ## Getting started (Java)
@@ -45,14 +45,14 @@ Add the following repos to your settings:
 
 ```xml
 <repository>
-	<id>sonatype.oss.snapshots</id>
-	<name>Sonatype OSS Snapshot Repository</name>
-	<url>http://oss.sonatype.org/content/repositories/snapshots</url>
+	<id>sonatype.oss.releases</id>
+	<name>Sonatype OSS Releases Repository</name>
+	<url>https://oss.sonatype.org/content/repositories/releases/</url>
 	<releases>
-		<enabled>false</enabled>
+		<enabled>true</enabled>
 	</releases>
 	<snapshots>
-		<enabled>true</enabled>
+		<enabled>false</enabled>
 	</snapshots>
 </repository>
 ```
@@ -63,7 +63,7 @@ Add the following maven dependency to your pom.xml:
 <dependency>
 	<groupId>io.ckite</groupId>
 	<artifactId>ckite</artifactId>
-	<version>0.1.2-SNAPSHOT</version>
+	<version>0.1.3</version>
 </dependency>
 ```
 
