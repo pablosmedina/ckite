@@ -273,22 +273,17 @@ sbt run -Dport=9094 -Dmembers=localhost:9092,localhost:9091,localhost:9093 -Ddat
 
 ## Contributions
 
-Feel free to contribute to CKite!. Any kind of help will be very welcome. We are happy to receive pull requests, issues, discuss implementation details, analyze the raft algorithm and whatever it makes CKite a better library. The following is a list of known pendings to be solved in CKite. You can start from there!
+Feel free to contribute to CKite!. Any kind of help will be very welcome. We are happy to receive pull requests, issues, discuss implementation details, analyze the raft algorithm and whatever it makes CKite a better library. Checkout the issues. You can start from there!
 
-## Pendings/WorkToDo 
-
-  * ~~Leader election~~
-  * ~~Log replication~~
-  * ~~Cluster Membership changes~~
-  * ~~Log persistence & compaction~~
-  * Extract the key value store app from CKite
-  * Metrics / monitoring
-  * Akka
-  * Improve REST admin console
-  * Other things...
 
 ## Importing the project into IntelliJ IDEA
 
 To generate the necessary IDE config files first run the following command and then open the project as usual:
 
         sbt gen-idea
+        
+## Importing the project into Eclipse
+
+To generate the necessary IDE config files first run the following command and then open the project as usual:
+
+        sbt eclipse
