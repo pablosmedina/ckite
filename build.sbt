@@ -2,7 +2,7 @@ name := "ckite"
 
 organization := "io.ckite"
 
-version := "0.1.2-SNAPSHOT"
+version := "0.1.3-SNAPSHOT"
 
 scalaVersion := "2.10.2"
 
@@ -20,14 +20,14 @@ libraryDependencies ++= Seq(
 	"org.slf4j" % "slf4j-api" % "1.6.4",
 	"com.twitter" %% "scrooge-core" % "3.9.0" exclude("org.scala-lang", "scala-library"),
 	"org.apache.thrift" % "libthrift" % "0.9.1" exclude("org.apache.httpcomponents", "httpclient") exclude("org.apache.httpcomponents", "httpcore") exclude("org.slf4j", "slf4j-api") exclude("org.apache.commons", "commons-lang3"),
-  "com.twitter" %% "finagle-core" % "6.6.2" exclude("com.twitter", "util-logging_2.10") exclude("com.twitter", "util-app_2.10"),
+    "com.twitter" %% "finagle-core" % "6.6.2" exclude("com.twitter", "util-logging_2.10") exclude("com.twitter", "util-app_2.10"),
 	"com.twitter" %% "finagle-thrift" % "6.6.2" exclude("org.scala-lang", "scala-library") exclude("org.apache.thrift", "libthrift"),
 	"com.twitter" %% "finagle-http" % "6.6.2" exclude("org.scala-lang", "scala-library"),
-  "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.1.3" exclude("org.scala-lang", "scala-library") exclude("com.google.guava", "guava"),
+    "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.1.3" exclude("org.scala-lang", "scala-library") exclude("com.google.guava", "guava"),
 	"com.typesafe" % "config" % "1.0.2",
 	"org.mapdb" % "mapdb" % "0.9.8",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
-  "ch.qos.logback" % "logback-classic" % "1.0.0" % "test",
+    "ch.qos.logback" % "logback-classic" % "1.0.0" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
 )
 
