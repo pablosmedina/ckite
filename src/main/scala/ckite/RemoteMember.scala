@@ -60,6 +60,8 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
         } else {
           localMember.onAppendEntriesResponse(this, appendEntries, appendEntriesResponse)
         }
+    }.recover {
+      case e => LOG.warn("Error sending AppendEntries",e)
     }
     if (!appendEntries.entries.isEmpty) replicationsInProgress.remove(appendEntries.entries.last.index)
   }
