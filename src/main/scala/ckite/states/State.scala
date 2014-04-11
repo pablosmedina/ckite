@@ -19,7 +19,7 @@ import ckite.RemoteMember
 trait State extends Logging {
 
   def begin(term: Int) = {}
-
+  
   def stop = {}
 
   def on(requestVote: RequestVote): RequestVoteResponse
@@ -40,18 +40,11 @@ trait State extends Logging {
     LOG.debug(s"Step down from being $this")
     val cluster = getCluster
 	cluster.local.updateTermIfNeeded(term)
-    if (leaderId.isDefined) {
-//    	cluster.updateLeader(leaderId.get)
-    }
-    else {
-      cluster.setNoLeader
-    }
+    if (!leaderId.isDefined) cluster.setNoLeader
     cluster.local becomeFollower term
   }
 
-  def info(): StateInfo = {
-    NonLeaderInfo(getCluster.leader.toString())
-  }
+  def info(): StateInfo = NonLeaderInfo(getCluster.leader.toString())
   
   protected def getCluster: Cluster
   
