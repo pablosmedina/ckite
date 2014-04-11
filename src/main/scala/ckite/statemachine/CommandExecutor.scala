@@ -4,6 +4,7 @@ import ckite.rpc.Command
 import com.esotericsoftware.reflectasm.MethodAccess
 
 class CommandExecutor(stateMachine: StateMachine) {
+  
   val methodAccess = MethodAccess.get(stateMachine.getClass())
   val commandMethodsMap = buildCommandMethodsMap
 
@@ -14,13 +15,17 @@ class CommandExecutor(stateMachine: StateMachine) {
   }
 
   def apply(command: Command): Any = {
-    if (command.isInstanceOf[Product]) {
-      val fields = command.asInstanceOf[Product].productIterator.toArray.asInstanceOf[Array[Object]]
-      val commandName = command.getClass().getSimpleName()
-      commandMethodsMap.get(commandName) map { methodIndex =>
-        methodAccess.invoke(stateMachine, methodIndex, fields: _*)
-      } get
-    } else throw new UnsupportedOperationException("No command handler in StateMachine")
+	val commandName = command.getClass().getSimpleName()
+	commandMethodsMap.get(commandName) map { methodIndex =>
+	     if (command.isInstanceOf[Product]) {
+	        val fields = command.asInstanceOf[Product].productIterator.toArray.asInstanceOf[Array[Object]]
+	        methodAccess.invoke(stateMachine, methodIndex, fields: _*)
+	     } else {
+	        methodAccess.invoke(stateMachine, methodIndex, command)
+	     }
+      } getOrElse {
+        throw new UnsupportedOperationException("No command handler in StateMachine")
+      }
   }
 
 }
