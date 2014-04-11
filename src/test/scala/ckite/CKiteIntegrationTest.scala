@@ -7,7 +7,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest._
 import ckite.example.Get
 import ckite.example.Put
-import ckite.exception.NoMajorityReachedException
+import ckite.exception.WriteTimeoutException
 import ckite.util.Logging
 
 @RunWith(classOf[JUnitRunner])
@@ -113,7 +113,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     
     //leader no longer have quorum. this write is going to be rejected
-    intercept[NoMajorityReachedException] {
+    intercept[WriteTimeoutException] {
     	leader.write(Put(Key1, Value1))
     }
   } 

@@ -6,6 +6,6 @@ import ckite.rpc.Command
 
 trait StateMachine extends Snapshoteable {
 
-  def apply(command: Command): Any
+//  def apply(command: Command): Any
   
 }

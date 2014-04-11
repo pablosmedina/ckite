@@ -27,7 +27,7 @@ import java.util.concurrent.SynchronousQueue
 import ckite.util.CKiteConversions._
 import ckite.rpc.NoOp
 import com.twitter.util.Future
-import ckite.exception.NoMajorityReachedException
+import ckite.exception.WriteTimeoutException
 import ckite.rpc.CompactedEntry
 import scala.concurrent.Promise
 import java.util.concurrent.ConcurrentHashMap
@@ -36,6 +36,7 @@ import ckite.rlog.MapDBPersistentLog
 import ckite.rlog.LogCompactor
 import java.util.concurrent.atomic.AtomicBoolean
 import ckite.rlog.FixedSizeLogCompactionPolicy
+import ckite.statemachine.CommandExecutor
 
 class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
@@ -55,6 +56,8 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(cluster.configuration.fixedLogSizeCompaction)
   val logCompactor = new LogCompactor(this)
+  
+  val commandExecutor = new CommandExecutor(stateMachine)
   
   initialize()
 
@@ -164,19 +167,21 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
             try  {
             	cluster.on(MajorityJointConsensus(c.newBindings))
             } catch {
-              case e:NoMajorityReachedException => LOG.warn(s"Could not commit LeaveJointConsensus")
+              case e:WriteTimeoutException => LOG.warn(s"Could not commit LeaveJointConsensus")
             }
           }
           true
         }
         case c: LeaveJointConsensus => true
         case c: NoOp => ;
-        case _ => stateMachine.apply(command)
+        case _ => applyCommand(command)
       }
     }
   }
+  
+  private def applyCommand(command: Command) = commandExecutor.apply(command)
 
-  def execute(command: ReadCommand) = stateMachine.apply(command)
+  def execute(command: ReadCommand) = applyCommand(command)
 
   def getLogEntry(index: Int, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)

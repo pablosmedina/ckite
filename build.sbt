@@ -25,6 +25,7 @@ libraryDependencies ++= Seq(
 	"com.twitter" %% "finagle-http" % "6.6.2" exclude("org.scala-lang", "scala-library"),
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.1.3" exclude("org.scala-lang", "scala-library") exclude("com.google.guava", "guava"),
 	"com.typesafe" % "config" % "1.0.2",
+	"com.esotericsoftware.reflectasm" % "reflectasm" % "1.09",
 	"org.mapdb" % "mapdb" % "0.9.8",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
     "ch.qos.logback" % "logback-classic" % "1.1.1" % "test",

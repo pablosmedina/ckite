@@ -21,7 +21,7 @@ import ckite.Member
 import ckite.rpc.EnterJointConsensus
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.LeaveJointConsensus
-import ckite.exception.NoMajorityReachedException
+import ckite.exception.WriteTimeoutException
 import ckite.util.CKiteConversions._
 import ckite.rpc.ReadCommand
 import ckite.rpc.Command
@@ -64,19 +64,21 @@ class Leader(cluster: Cluster) extends State {
   
   val heartbeater = new Heartbeater(cluster)
   val followersInfo = new ConcurrentHashMap[String, Long]()
-
+  
+  val appendEntriesTimeout = cluster.configuration.appendEntriesTimeout millis
+  
   override def begin(term: Int) = {
     if (term < cluster.local.term) {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
       cluster.local.becomeFollower(cluster.local.term)
     } else {
-      cluster.updateLeader(cluster.local.id)
       resetLastLog
       resetNextIndexes
       resetFollowerInfo
       heartbeater start term
       LOG.debug("Append a NoOp as part of Leader initialization")
       on[Unit](NoOp())
+      cluster.updateLeader(cluster.local.id)
       LOG.info(s"Start being Leader")
     }
   }
@@ -110,10 +112,14 @@ class Leader(cluster: Cluster) extends State {
     LOG.debug(s"Will wait for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
     val promise = cluster.rlog.append(logEntry).asInstanceOf[Promise[T]]
     replicate(logEntry)
+    await(promise, logEntry)
+  }
+  
+  private def await[T](promise: Promise[T], logEntry: LogEntry) = {
     try {
-      Await.result(promise.future, cluster.configuration.appendEntriesTimeout millis)
+      Await.result(promise.future, appendEntriesTimeout)
     } catch {
-      case e: TimeoutException => throw new NoMajorityReachedException(logEntry)
+      case e: TimeoutException => throw new WriteTimeoutException(logEntry)
     }
   }
   

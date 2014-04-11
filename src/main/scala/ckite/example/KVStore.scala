@@ -1,23 +1,23 @@
 package ckite.example
 
 import java.util.concurrent.ConcurrentHashMap
-
 import ckite.rpc.Command
 import ckite.statemachine.StateMachine
 import ckite.util.Serializer
+import java.util.concurrent.atomic.AtomicLong
 
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
-
-  override def apply(command: Command): Any = command match {
-      case Put(key: String, value: String) => { 
+  val count = new AtomicLong(0)
+  
+  def onGet(key: String) = map.get(key)
+  
+  def onPut(key: String, value: String) = {
         map.put(key, value)
         value
-      }
-      case Get(key: String) => map.get(key)
   }
-
+  
   def deserialize(snapshotBytes: Array[Byte]) = {
 	  val deserializedMap:ConcurrentHashMap[String, String] = Serializer.deserialize[ConcurrentHashMap[String, String]](snapshotBytes)
 	  map.clear()
