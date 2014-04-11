@@ -27,7 +27,7 @@ libraryDependencies ++= Seq(
 	"com.typesafe" % "config" % "1.0.2",
 	"org.mapdb" % "mapdb" % "0.9.8",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
-    "ch.qos.logback" % "logback-classic" % "1.0.0" % "test",
+    "ch.qos.logback" % "logback-classic" % "1.1.1" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
 )
 
