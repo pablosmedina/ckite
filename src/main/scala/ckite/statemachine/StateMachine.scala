@@ -1,11 +1,9 @@
 package ckite.statemachine
 
-import ckite.rpc.WriteCommand
-import ckite.rpc.ReadCommand
-import ckite.rpc.Command
+trait StateMachine {
 
-trait StateMachine extends Snapshoteable {
-
-//  def apply(command: Command): Any
+  def deserialize(snapshotBytes: Array[Byte])
+  
+  def serialize(): Array[Byte]
   
 }

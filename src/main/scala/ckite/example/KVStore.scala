@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicLong
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
-  val count = new AtomicLong(0)
   
   def onGet(key: String) = map.get(key)
   
