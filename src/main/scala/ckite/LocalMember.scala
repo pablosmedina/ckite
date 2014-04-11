@@ -65,8 +65,9 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
         currentState stop
 
         changeState(newState)
+        
+        newState begin term
 
-        currentState begin term
       } else {
         LOG.warn(s"No longer part of the Cluster. Shutdown!")
         cluster.stop
