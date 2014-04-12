@@ -14,8 +14,6 @@ crossPaths := false
 
 pomIncludeRepository := { x => false }
 
-resolvers += "twitter-repo" at "http://maven.twttr.com"
-
 libraryDependencies ++= Seq(
 	"org.slf4j" % "slf4j-api" % "1.6.4",
 	"com.twitter" %% "scrooge-core" % "3.9.0" exclude("org.scala-lang", "scala-library"),
