@@ -19,7 +19,7 @@ import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
-import ckite.exception.WaitForLeaderTimedOutException
+import ckite.exception.LeaderTimeoutException
 import scala.util.Success
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.Callable
@@ -68,6 +68,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   def start = inContext {
     LOG.info("Start CKite Cluster")
+   
+    local becomeStarter
+    
     if (configuration.dynamicBootstrap) startDynamic else startStatic
   }
 
@@ -250,7 +253,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     } catch {
       case e: TimeoutException => {
         LOG.warn(s"Wait for Leader timed out after $waitForLeaderTimeout")
-        throw new WaitForLeaderTimedOutException(e)
+        throw new LeaderTimeoutException(e)
       }
     }
   }

@@ -8,6 +8,7 @@ trait PersistentLog {
   def rollLog(upToIndex: Int)
   def getEntry(index: Int): LogEntry
   def getLastIndex: Int
+  def remove(index: Int)
   def size: Int
   
 }

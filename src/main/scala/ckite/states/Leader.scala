@@ -83,8 +83,6 @@ class Leader(cluster: Cluster) extends State {
     }
   }
   
-  private def noOp(): LogEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, NoOp())
-
   private def resetLastLog = cluster.rlog.resetLastLog()
 
   private def resetNextIndexes = {
@@ -107,10 +105,9 @@ class Leader(cluster: Cluster) extends State {
 
   }
 
-  private def onWriteCommand[T](command: WriteCommand): T = {
-    val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, command)
+  private def onWriteCommand[T](write: WriteCommand): T = {
     LOG.debug(s"Will wait for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
-    val promise = cluster.rlog.append(logEntry).asInstanceOf[Promise[T]]
+    val (logEntry,promise) = cluster.rlog.append(write).asInstanceOf[(LogEntry,Promise[T])]
     replicate(logEntry)
     await(promise, logEntry)
   }
@@ -119,7 +116,10 @@ class Leader(cluster: Cluster) extends State {
     try {
       Await.result(promise.future, appendEntriesTimeout)
     } catch {
-      case e: TimeoutException => throw new WriteTimeoutException(logEntry)
+      case e: TimeoutException => {
+        LOG.warn(s"WriteTimeout - $logEntry")
+        throw new WriteTimeoutException(logEntry)
+      }
     }
   }
   
@@ -141,7 +141,7 @@ class Leader(cluster: Cluster) extends State {
     if (appendEntries.term < cluster.local.term) {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
-      stepDown(Some(appendEntries.leaderId), appendEntries.term)
+      stepDown(appendEntries.term, Some(appendEntries.leaderId))
       cluster.local on appendEntries
     }
   }
@@ -150,7 +150,7 @@ class Leader(cluster: Cluster) extends State {
     if (requestVote.term <= cluster.local.term) {
       RequestVoteResponse(cluster.local.term, false)
     } else {
-      stepDown(None, requestVote.term)
+      stepDown(requestVote.term, None)
       cluster.local on requestVote
     }
   }
@@ -213,11 +213,16 @@ class Leader(cluster: Cluster) extends State {
   private def tryToCommitEntries(lastEntrySent: Int) = {
      val currentCommitIndex = cluster.rlog.commitIndex.intValue()
       (currentCommitIndex + 1) to lastEntrySent foreach { index =>
-        val members = cluster.membership.remoteMembers.filter { remoteMember => remoteMember.matchIndex.intValue() >= index }
-        if (cluster.membership.reachMajority(members :+ cluster.local)) {
+        if (reachMajority(index)) {
           cluster.rlog commit index
         }
     }
+  }
+
+  private def reachMajority(index: Int) = cluster.membership.reachMajority(membersHavingAtLeast(index) :+ cluster.local)
+  
+  private def membersHavingAtLeast(index: Int): Seq[RemoteMember] = {
+    cluster.membership.remoteMembers.filter { remoteMember => remoteMember.matchIndex.intValue() >= index }
   }
   
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {

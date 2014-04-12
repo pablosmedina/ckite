@@ -32,6 +32,7 @@ import ckite.rpc.GetMembersRequest
 import ckite.rpc.LogEntry
 import ckite.rpc.AppendEntries
 import java.util.concurrent.ConcurrentHashMap
+import ckite.rpc.LogEntry
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
@@ -51,42 +52,61 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   }
 
   def sendAppendEntries(term: Int) = {
-    val appendEntries = createAppendEntries(term)
-    connector.send(appendEntries).map {
-      appendEntriesResponse =>
-        if (appendEntriesResponse.term > term) {
-          LOG.debug(s"Detected a term ${appendEntriesResponse.term} higher than current term ${term}. Step down")
-          localMember.stepDown(None, term)
-        } else {
-          localMember.onAppendEntriesResponse(this, appendEntries, appendEntriesResponse)
-        }
-    }.recover {
-      case e => LOG.warn("Error sending AppendEntries",e)
+    val request = createAppendEntries(term)
+    connector.send(request).map { response =>
+      LOG.trace(s"AppendEntries response $response")
+      if (response.term > term) {
+    	 receivedHigherTerm(response.term, term)
+      } else {
+        localMember.onAppendEntriesResponse(this, request, response)
+      }
+    }.recover { case e:Exception =>
+      LOG.trace("Error sending appendEntries",e)
     }
-    if (!appendEntries.entries.isEmpty) replicationsInProgress.remove(appendEntries.entries.last.index)
+    request.entries foreach { entry => replicationsInProgress.remove(entry.index) }
   }
 
-  private def createAppendEntries(termToSent: Int): AppendEntries = {
-    val index = nextLogIndex.intValue()
-    val entryToPiggyBack = if (isReplicationEnabled) { 
-      rlog.getLogEntry(index) map { entry => 
-      	val inProgress = replicationsInProgress.put(index, true)
-        if ((inProgress == null || !inProgress)) Some(entry) else None
-      } getOrElse(None)
-    } else None
-    entryToPiggyBack match {
-      case None => AppendEntries(termToSent, localMember.id, rlog.getCommitIndex)
-      case Some(entry) => {
-        val entriesToPiggyBack = List(entry)
-        val appendEntriesMessage = rlog.getPreviousLogEntry(entriesToPiggyBack(0)) match {
-          case None => AppendEntries(termToSent, localMember.id, rlog.getCommitIndex, entries = entriesToPiggyBack)
-          case Some(previousEntry) => AppendEntries(termToSent, localMember.id, rlog.getCommitIndex, previousEntry.index, previousEntry.term, entriesToPiggyBack)
-        }
-        LOG.trace(s"Piggybacking entry $entry to $id. Message is $appendEntriesMessage")
-        appendEntriesMessage
-      }
+  private def receivedHigherTerm(higherTerm: Int, oldTerm: Int) = {
+    val currentTerm = localMember.term
+    if (higherTerm > currentTerm) {
+    	LOG.debug(s"Detected a term ${higherTerm} higher than current term ${currentTerm}. Step down")
+    	localMember.stepDown(higherTerm)
     }
   }
+
+  private def createAppendEntries(term: Int) = toReplicateEntries match {
+    case head :: list => replication(term, head, list)
+    case Nil => heartbeat(term)
+  }
+
+  private def replication(term: Int, head: LogEntry, list: List[LogEntry]) = {
+    val toReplicate = head :: list
+    LOG.trace(s"Replicating ${toReplicate.size} entries to $id")
+    rlog.getPreviousLogEntry(head) match {
+      case Some(previous) => normalReplication(term, previous, toReplicate)
+      case None => firstReplication(term, toReplicate)
+    }
+  }
+  
+  private def normalReplication(term: Int, previous: LogEntry, entries: List[LogEntry]) = {
+    AppendEntries(term, localMember.id, rlog.getCommitIndex, previous.index, previous.term, entries)
+  }
+  
+  private def firstReplication(term: Int, toReplicate: List[LogEntry]) = {
+    AppendEntries(term, localMember.id, rlog.getCommitIndex, entries = toReplicate)
+  }
+  
+  private def heartbeat(term: Int) = AppendEntries(term, localMember.id, rlog.getCommitIndex)
+  
+  private def toReplicateEntries: List[LogEntry] = {
+    val index = nextLogIndex.intValue()
+    val entries = for (
+      entry <- rlog.logEntry(index) if (isReplicationEnabled && !isBeingReplicated(index))
+    ) yield entry
+    List(entries).flatten
+  }	
+  
+  private def isBeingReplicated(index: Int) = replicationsInProgress.put(index, true)
   
   def ackLogEntry(logEntryIndex: Int) = {
     updateMatchIndex(logEntryIndex)

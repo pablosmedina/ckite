@@ -22,7 +22,7 @@ case object Starter extends State {
 
   override def on(requestVote: RequestVote): RequestVoteResponse = RequestVoteResponse(requestVote.term,false)
   
-  override def stepDown(leaderId: Option[String], term: Int) = { }
+  override def stepDown(term: Int, leaderId: Option[String]) = { }
 
   override def info(): StateInfo = NonLeaderInfo("")
   

@@ -44,6 +44,7 @@ class Follower(cluster: Cluster) extends State with Logging {
       AppendEntriesResponse(cluster.local.term, false)
     } else {
       electionTimeout.restart
+      
       cluster.local.updateTermIfNeeded(appendEntries.term)
       
       if (cluster.updateLeader(appendEntries.leaderId)) LOG.info(s"Following ${cluster.leader}")

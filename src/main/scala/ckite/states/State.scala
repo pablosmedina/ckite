@@ -36,7 +36,7 @@ trait State extends Logging {
    * Step down from being either Candidate or Leader and start following the given Leader
    * on the given Term
    */
-  def stepDown(leaderId: Option[String], term: Int) = {
+  def stepDown(term: Int, leaderId: Option[String]) = {
     LOG.debug(s"Step down from being $this")
     val cluster = getCluster
 	cluster.local.updateTermIfNeeded(term)

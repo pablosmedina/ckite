@@ -66,7 +66,7 @@ class LogCompactor(rlog: RLog) extends Logging {
     // During compaction the following actions must be blocked: 1. add log entries  2. execute commands in the state machine
     val commitIndex = rlog.commitIndex.get()
     val membershipState = rlog.cluster.membership.captureState
-    val latestEntry = rlog.getLogEntry(commitIndex).get
+    val latestEntry = rlog.logEntry(commitIndex).get
     val bytes = rlog.serializeStateMachine
     (commitIndex, latestEntry, bytes, membershipState)
   }

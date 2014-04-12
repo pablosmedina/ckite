@@ -58,6 +58,8 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
   
   def becomeFollower:Unit = becomeFollower(term())
   
+  def becomeStarter = changeState(Starter)
+  
   private def become(newState: State, term: Int): Unit = locked {
     if (currentState.canTransition) {
       if (cluster.isActiveMember(id)) {
@@ -83,7 +85,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   override def forwardCommand[T](command: Command): T = on(command)
   
-  def stepDown(leaderId: Option[String], term: Int) = currentState.stepDown(leaderId, term)
+  def stepDown(term: Int, leaderId: Option[String] = None) = currentState.stepDown(term, leaderId)
   
   def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
     currentState.onAppendEntriesResponse(member, request, response)

@@ -47,7 +47,7 @@ class Candidate(cluster: Cluster) extends State {
     }
     else {
       election.abort
-      stepDown(Some(appendEntries.leaderId), appendEntries.term)
+      stepDown(appendEntries.term, Some(appendEntries.leaderId))
       cluster.local on appendEntries 
     }
   }
@@ -57,7 +57,7 @@ class Candidate(cluster: Cluster) extends State {
       RequestVoteResponse(cluster.local.term, false)
     } else {
       election.abort
-      stepDown(None, requestVote.term)
+      stepDown(requestVote.term, None)
       cluster.local on requestVote
     }
   }

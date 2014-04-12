@@ -21,7 +21,7 @@ case object Stopped extends State {
   
   override def canTransition: Boolean = false
   
-  override def stepDown(leaderId: Option[String], term: Int) = { }
+  override def stepDown(term: Int, leaderId: Option[String]) = { }
 
   override def info(): StateInfo = NonLeaderInfo("")
   

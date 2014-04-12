@@ -120,18 +120,17 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
    
    
   it should "replicate missing commands on restarted member" in {
-    		 				   
-         val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
-    		 					.withDataDir(someTmpDir)
-    		 				     .withStateMachine(new KVStore()).build
-    		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
-    		 					.withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
-    		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
-    		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
+
+    val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092", "localhost:9093"))
+      .withDataDir(someTmpDir).withStateMachine(new KVStore()).build
+
+    val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091", "localhost:9093"))
+      .withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
+      .withStateMachine(new KVStore()).build
+
+    val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092", "localhost:9091"))
+      .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
+      .withStateMachine(new KVStore()).build
     
     val members = Seq(member1, member2, member3)
     
@@ -192,7 +191,47 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      localValue should be (replicatedValue)
 		 				   
      member4.stop
-  } 
+  }
+
+  it should "overwrite uncommitted entries on an old Leader" in withThreeMemberCluster { members =>
+
+    val leader = members leader
+
+    val followers = (members followers)
+
+    //stop the followers
+    followers foreach { _.stop }
+
+    //this two writes will timeout since no majority can be reached 
+    for (i <- (1 to 2)) {
+      intercept[WriteTimeoutException] {
+        leader.write(Put(Key1, Value1))
+      }
+    }
+    //at this point the leader has two uncommitted entries
+    
+    //leader stops
+    leader.stop
+
+    //followers came back
+    followers foreach { _.start }
+    val livemembers = followers
+
+    waitSomeTimeForElection
+
+    //a new leader is elected
+    val newleader = livemembers leader
+
+    //old leader came back
+    val oldleader = leader
+    oldleader.start
+
+    waitSomeTimeForAppendEntries
+
+    //those two uncommitted entries of the oldleader must be overridden and removed by the new Leader as part of appendEntries
+    newleader.read[String](Get(Key1)) should be(null)
+
+  }
   
   implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
       new CKiteSequence(members)

@@ -29,8 +29,9 @@ class MapDBPersistentLog(db: DB) extends PersistentLog with Logging {
 
   def size() = entries.size
   
+  def remove(index: Int) = entries.remove(index)
+  
   private def firstIndex: Int = entries.firstKey()
 
-  private def remove(index: Int) = entries.remove(index)
 
 }
