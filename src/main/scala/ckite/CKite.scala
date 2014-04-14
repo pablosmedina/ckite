@@ -10,17 +10,15 @@ class CKite(cluster: Cluster) {
   private val thrift = ThriftServer(cluster)
   private val http = HttpServer(cluster)
   
-  def start() = {
-    
+  def start = {
     http start
     
     thrift start
     
     cluster start
-    
   }
   
-  def stop() =  {
+  def stop =  {
     thrift stop
     
     http stop
@@ -28,31 +26,18 @@ class CKite(cluster: Cluster) {
     cluster stop
   }
   
-  def write[T](writeCommand: WriteCommand): T = {
-    cluster.on[T](writeCommand)
-  }
+  def write[T](writeCommand: WriteCommand): T = cluster.on[T](writeCommand)
   
-  def read[T](readCommand: ReadCommand): T = {
-    cluster.on[T](readCommand)
-  }
+  def read[T](readCommand: ReadCommand): T = cluster.on[T](readCommand)
   
-  def readLocal[T](readCommand: ReadCommand): T = {
-    cluster.onLocal(readCommand).asInstanceOf[T]
-  }
+  def readLocal[T](readCommand: ReadCommand): T = cluster.onLocal(readCommand).asInstanceOf[T]
   
-  def addMember(memberBinding: String) = {
-    cluster.addMember(memberBinding)
-  }
+  def addMember(memberBinding: String) = cluster.addMember(memberBinding)
   
-  def decomission() = {
-    cluster.removeMember(cluster.local.id)
-  }
+  def leaveCluster() = cluster.removeMember(cluster.local.id)
   
-  def removeMember(memberBinding: String) = {
-    cluster.removeMember(memberBinding)
-  }
+  def removeMember(memberBinding: String) = cluster.removeMember(memberBinding)
   
   def isLeader: Boolean = cluster.awaitLeader == cluster.local
-  
   
 }

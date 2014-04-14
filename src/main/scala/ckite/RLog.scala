@@ -37,8 +37,10 @@ import ckite.rlog.LogCompactor
 import java.util.concurrent.atomic.AtomicBoolean
 import ckite.rlog.FixedSizeLogCompactionPolicy
 import ckite.statemachine.CommandExecutor
+import java.nio.ByteBuffer
+import ckite.rlog.SnapshotManager
 
-class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
+class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging {
 
   val persistentLog = new MapDBPersistentLog(cluster.db)
   val commitIndex = cluster.db.getAtomicInteger("commitIndex")
@@ -54,10 +56,10 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
   val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AsyncWorker", true)))
 
-  val logCompactionPolicy = new FixedSizeLogCompactionPolicy(cluster.configuration.fixedLogSizeCompaction)
-  val logCompactor = new LogCompactor(this)
-
   val commandExecutor = new CommandExecutor(stateMachine)
+  
+  val snapshotManager = new SnapshotManager(this, cluster.configuration)
+  
 
   initialize()
 
@@ -92,11 +94,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     applyLogCompactionPolicy
   }
 
-  private def applyLogCompactionPolicy = {
-    if (logCompactionPolicy.applies(persistentLog, stateMachine)) {
-      logCompactor.asyncCompact
-    }
-  }
+  private def applyLogCompactionPolicy = snapshotManager.applyLogCompactionPolicy
 
   private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
@@ -199,47 +197,30 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   def logEntry(index: Int, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)
-    if (entry != null) Some(entry) else {
-      getSnapshot().map { snapshot =>
-        if (snapshot.lastLogEntryIndex == index && allowCompactedEntry) {
-          Some(compactedEntry(snapshot))
-        } else
-          None
-      }.getOrElse(None)
-    }
+    if (entry != null) Some(entry) else 
+      if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
+      else None
   }
 
   private def withLogEntry[T](index: Int)(block: LogEntry => T) = logEntry(index) foreach block
 
   def getLastLogEntry(): Option[LogEntry] = {
     val lastLogIndex = findLastLogIndex
-    if (isInSnapshot(lastLogIndex)) return {
-      val snapshot = getSnapshot().get
-      return Some(compactedEntry(snapshot))
+    if (snapshotManager.isInSnapshot(lastLogIndex)) {
+      Some(snapshotManager.compactedEntry) 
+    } else {
+      logEntry(lastLogIndex)
     }
-    logEntry(lastLogIndex)
   }
 
   def getPreviousLogEntry(entry: LogEntry): Option[LogEntry] = logEntry(entry.index - 1, true)
 
   def containsEntry(index: Int, term: Int) = {
     val logEntryOption = logEntry(index)
-    if (logEntryOption.isDefined) logEntryOption.get.term == term else (isZeroEntry(index, term) || isInSnapshot(index, term))
+    if (logEntryOption.isDefined) logEntryOption.get.term == term else (isZeroEntry(index, term) || snapshotManager.isInSnapshot(index, term))
   }
-
-  private def compactedEntry(snapshot: Snapshot) = LogEntry(snapshot.lastLogEntryTerm, snapshot.lastLogEntryIndex, CompactedEntry())
 
   private def isZeroEntry(index: Int, term: Int): Boolean = index == -1 && term == -1
-
-  private def isInSnapshot(index: Int, term: Int): Boolean = shared {
-    getSnapshot().map { snapshot => snapshot.lastLogEntryTerm >= term && snapshot.lastLogEntryIndex >= index }
-      .getOrElse(false)
-  }
-
-  private def isInSnapshot(index: Int): Boolean = shared {
-    getSnapshot().map { snapshot => snapshot.lastLogEntryIndex >= index }
-      .getOrElse(false)
-  }
 
   def resetLastLog() = lastLog.set(findLastLogIndex)
 
@@ -251,42 +232,7 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
 
   def size() = persistentLog.size
 
-  def installSnapshot(snapshot: Snapshot): Boolean = exclusive {
-    LOG.debug(s"Installing $snapshot")
-    val snapshots = cluster.db.getTreeMap[Long, Array[Byte]]("snapshots")
-    snapshots.put(System.currentTimeMillis(), snapshot.serialize)
-    stateMachine.deserialize(snapshot.stateMachineState)
-    commitIndex.set(snapshot.lastLogEntryIndex)
-    snapshot.membership.recoverIn(cluster)
-    LOG.debug(s"Finished installing $snapshot")
-    true
-  }
-
-  private def initialize() = {
-    val nextIndexAfterSnapshot = reloadSnapshot()
-    val currentCommitIndex = commitIndex.get()
-    if (nextIndexAfterSnapshot <= currentCommitIndex) {
-      replay(nextIndexAfterSnapshot, currentCommitIndex)
-    } else {
-      LOG.debug(s"No entries to be replayed")
-    }
-  }
-
-  private def reloadSnapshot(): Int = {
-    val lastSnapshot = getSnapshot()
-    if (lastSnapshot.isDefined) {
-      val snapshot = lastSnapshot.get
-      LOG.debug(s"Installing $snapshot")
-      stateMachine.deserialize(snapshot.stateMachineState)
-      snapshot.membership.recoverIn(cluster)
-      LOG.debug(s"Finished install $snapshot")
-      snapshot.lastLogEntryIndex + 1
-    } else {
-      1 //no snapshot to reload. start from index #1
-    }
-  }
-
-  private def replay(from: Int, to: Int) = {
+  def replay(from: Int, to: Int) = {
     LOG.debug(s"Start log replay from index #$from to #$to")
     from to to foreach { index => replayIndex(index) }
     LOG.debug(s"Finished log replay")
@@ -299,13 +245,17 @@ class RLog(val cluster: Cluster, stateMachine: StateMachine) extends Logging {
     execute(logEntry.command)
   }
 
-  def getSnapshot(): Option[Snapshot] = {
-    val snapshots = cluster.db.getTreeMap[Long, Array[Byte]]("snapshots")
-    val lastSnapshot = snapshots.lastEntry()
-    if (lastSnapshot != null) Some(Snapshot.deserialize(lastSnapshot.getValue())) else None
+  def serializeStateMachine = stateMachine.serialize().array()
+  
+  private def initialize() = {
+    val nextIndexAfterSnapshot = snapshotManager.reloadSnapshot
+    val currentCommitIndex = commitIndex.get()
+    if (nextIndexAfterSnapshot <= currentCommitIndex) {
+      replay(nextIndexAfterSnapshot, currentCommitIndex)
+    } else {
+      LOG.debug(s"No entries to be replayed")
+    }
   }
-
-  def serializeStateMachine = stateMachine.serialize()
 
   private def raiseMissingLogEntryException(entryIndex: Int) = {
     val e = new IllegalStateException(s"Tried to commit a missing LogEntry with index $entryIndex. A Hole?")

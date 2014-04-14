@@ -1,4 +1,4 @@
-package ckite.statemachine
+package ckite.statemachine.j
 
 import java.nio.ByteBuffer
 import ckite.rpc.Command
@@ -9,6 +9,6 @@ trait StateMachine {
   
   def serialize(): ByteBuffer
   
-  def apply: PartialFunction[Command,Any]
+  def apply(command: Command):Any
   
 }

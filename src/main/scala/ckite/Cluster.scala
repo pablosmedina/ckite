@@ -265,7 +265,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   def installSnapshot(snapshot: Snapshot): Boolean = inContext {
     LOG.debug("InstallSnapshot received")
-    rlog.installSnapshot(snapshot)
+    rlog.snapshotManager.installSnapshot(snapshot)
   }
   
   def getMembers(): Seq[String] = withLeader { leader =>

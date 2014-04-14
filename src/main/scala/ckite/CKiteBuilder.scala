@@ -5,6 +5,7 @@ import com.typesafe.config.ConfigFactory
 import com.typesafe.config.Config
 import com.typesafe.config.impl.ConfigInt
 import com.typesafe.config.ConfigValueFactory
+import ckite.statemachine.j.StateMachineWrapper
 
 class CKiteBuilder {
 
@@ -46,6 +47,11 @@ class CKiteBuilder {
     this
   }
   
+  def withLogCompactionThreshold(threshold: Int): CKiteBuilder = {
+    configuration.withLogCompactionThreshold(threshold)
+    this
+  }
+  
   def withSeeds(): CKiteBuilder = {
     configuration.withSeeds
     this
@@ -53,6 +59,11 @@ class CKiteBuilder {
   
   def withStateMachine(stateMachine: StateMachine): CKiteBuilder = {
     this.stateMachine = stateMachine
+    this
+  }
+  
+  def withStateMachine(stateMachine: ckite.statemachine.j.StateMachine): CKiteBuilder = {
+    this.stateMachine = new StateMachineWrapper(stateMachine)
     this
   }
 

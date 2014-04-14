@@ -27,7 +27,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      ckite stop
   }
   
-  
   it should "read committed writes" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
@@ -41,6 +40,25 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      readValue should be (Value1)
      
      ckite stop
+  }
+  
+  "A single member cluster" should "compact a log" in {
+     val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
+    		 				   .withDataDir(someTmpDir)
+    		 				   .withLogCompactionThreshold(5)
+    		 				   .withStateMachine(new KVStore()).build
+     ckite start
+     
+     ckite.write(Put("key1",Value1))
+     ckite.write(Put("key2",Value1))
+     ckite.write(Put("key3",Value1))
+     ckite.write(Put("key4",Value1))
+     ckite.write(Put("key5",Value1))
+     ckite.write(Put("key6",Value1))
+     
+     ckite stop
+     
+     
   }
   
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
@@ -141,13 +159,13 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     		 .withStateMachine(new KVStore()).build
      try {
      //member3 goes down
-     member3.stop()
+     member3.stop
      
      //still having a quorum. This write is committed.
      member1.write(Put(Key1,Value1))
      
      //member3 is back
-     restartedMember3.start()
+     restartedMember3.start
      
      //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
      waitSomeTimeForAppendEntries
@@ -157,9 +175,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      
      readValue should be (Value1)
      } finally {
-    	 member1.stop()
-    	 member2.stop()
-    	 restartedMember3.stop()
+    	 member1.stop
+    	 member2.stop
+    	 restartedMember3.stop
      }
   } 
   

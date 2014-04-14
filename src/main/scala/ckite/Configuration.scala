@@ -21,7 +21,7 @@ class Configuration(var config: Config) {
   val ElectionWorkers = "ckite.election.workers"
   val ThriftWorkers = "ckite.thrift.workers"
 
-  val FixedLogSizeCompaction = "ckite.log.compaction.fixedLogSize"
+  val LogCompactionThreshold = "ckite.log.compaction.threshold"
   val LocalBinding = "localBinding"
   val DataDir = "ckite.data.dir"
 
@@ -68,6 +68,10 @@ class Configuration(var config: Config) {
   def withMembersBindings(membersBindings: Seq[String]) = {
     config = config.withValue(MembersBindings, ConfigValueFactory.fromIterable(membersBindings.asJava))
   }
+  
+  def withLogCompactionThreshold(threshold: Int) = {
+    config = config.withValue(LogCompactionThreshold, ConfigValueFactory.fromAnyRef(threshold))
+  }
 
   def withWaitForLeaderTimeout(waitForLeaderTimeout: Int) = {
     config = config.withValue(WaitForLeaderTimeout, ConfigValueFactory.fromAnyRef(waitForLeaderTimeout))
@@ -97,8 +101,8 @@ class Configuration(var config: Config) {
     config.getMilliseconds(CollectVotesTimeout)
   }
 
-  def fixedLogSizeCompaction: Long = {
-    config.getLong(FixedLogSizeCompaction)
+  def logCompactionThreshold: Long = {
+    config.getLong(LogCompactionThreshold)
   }
 
   def appendEntriesTimeout: Long = {

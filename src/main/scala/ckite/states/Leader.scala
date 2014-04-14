@@ -226,25 +226,25 @@ class Leader(cluster: Cluster) extends State {
   }
   
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
-    val some = cluster.rlog.getSnapshot().map {snapshot => logIndex <= snapshot.lastLogEntryIndex }
-    some.getOrElse(false).asInstanceOf[Boolean]
+    cluster.rlog.snapshotManager.isInSnapshot(logIndex)
   }
 
   def sendSnapshot(member: RemoteMember) = {
-    val snapshot = cluster.rlog.getSnapshot().get
-    LOG.debug(s"Sending InstallSnapshot to ${member} containing $snapshot")
-    val future = member.sendSnapshot(snapshot)
-    future.map { success =>
-      cluster.inContext {
-        if (success){
-        	LOG.debug("Succesful InstallSnapshot")
-        	member.ackLogEntry(snapshot.lastLogEntryIndex)
-        	tryToCommitEntries(snapshot.lastLogEntryIndex)
-        } else {
-          LOG.debug("Failed InstallSnapshot")
+    cluster.rlog.snapshotManager.latestSnapshot map { snapshot =>
+      LOG.debug(s"Sending InstallSnapshot to ${member} containing $snapshot")
+      member.sendSnapshot(snapshot).map { success =>
+        cluster.inContext {
+          if (success) {
+            LOG.debug("Succesful InstallSnapshot")
+            member.ackLogEntry(snapshot.lastLogEntryIndex)
+            tryToCommitEntries(snapshot.lastLogEntryIndex)
+          } else {
+            LOG.debug("Failed InstallSnapshot")
+          }
+          member.enableReplications()
         }
-        member.enableReplications()
       }
+
     }
   }
 }
