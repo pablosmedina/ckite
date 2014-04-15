@@ -14,7 +14,10 @@ class MapDBPersistentLog(db: DB) extends PersistentLog with Logging {
 
   val entries = db.getTreeMap[Int, LogEntry]("logEntries")
 
-  def append(logEntry: LogEntry) = entries.put(logEntry.index, logEntry)
+  def append(logEntry: LogEntry) = {
+    entries.put(logEntry.index, logEntry)
+    db.commit()
+  }
 
   def getEntry(index: Int): LogEntry = entries.get(index)
   

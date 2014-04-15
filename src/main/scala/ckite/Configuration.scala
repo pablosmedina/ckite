@@ -13,16 +13,16 @@ class Configuration(var config: Config) {
   val AppendEntriesTimeout = "ckite.appendEntries.timeout"
   val HeartbeatsInterval = "ckite.appendEntries.period"
 
-  val MembersBindings = "ckite.cluster.membersBindings"
+  val LocalBinding = "ckite.cluster.localBinding"
+  val MemberBindings = "ckite.cluster.memberBindings"
   val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"
-  val WaitForLeaderTimeout = "ckite.cluster.waitForLeaderTimeout"
+  val WaitForLeaderTimeout = "ckite.cluster.leaderTimeout"
 
   val AppendEntriesWorkers = "ckite.appendEntries.workers"
   val ElectionWorkers = "ckite.election.workers"
   val ThriftWorkers = "ckite.thrift.workers"
 
   val LogCompactionThreshold = "ckite.log.compaction.threshold"
-  val LocalBinding = "localBinding"
   val DataDir = "ckite.data.dir"
 
   def withMinElectionTimeout(minElectionTimeout: Int) = {
@@ -65,8 +65,8 @@ class Configuration(var config: Config) {
     config.getString(LocalBinding)
   }
 
-  def withMembersBindings(membersBindings: Seq[String]) = {
-    config = config.withValue(MembersBindings, ConfigValueFactory.fromIterable(membersBindings.asJava))
+  def withMemberBindings(membersBindings: Seq[String]) = {
+    config = config.withValue(MemberBindings, ConfigValueFactory.fromIterable(membersBindings.asJava))
   }
   
   def withLogCompactionThreshold(threshold: Int) = {
@@ -85,8 +85,8 @@ class Configuration(var config: Config) {
     config.getMilliseconds(WaitForLeaderTimeout)
   }
 
-  def membersBindings: Seq[String] = {
-    config.getStringList(MembersBindings).asScala
+  def memberBindings: Seq[String] = {
+    config.getStringList(MemberBindings).asScala
   }
 
   def dynamicBootstrap: Boolean = {

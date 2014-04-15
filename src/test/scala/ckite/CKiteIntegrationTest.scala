@@ -57,8 +57,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      ckite.write(Put("key6",Value1))
      
      ckite stop
-     
-     
   }
   
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
@@ -139,14 +137,14 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
    
   it should "replicate missing commands on restarted member" in {
 
-    val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092", "localhost:9093"))
+    val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMemberBindings(Seq("localhost:9092", "localhost:9093"))
       .withDataDir(someTmpDir).withStateMachine(new KVStore()).build
 
-    val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091", "localhost:9093"))
+    val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMemberBindings(Seq("localhost:9091", "localhost:9093"))
       .withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
       .withStateMachine(new KVStore()).build
 
-    val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092", "localhost:9091"))
+    val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMemberBindings(Seq("localhost:9092", "localhost:9091"))
       .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
       .withStateMachine(new KVStore()).build
     
@@ -154,7 +152,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     
     members foreach {_ start}
     		 				   
-     val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
+     val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMemberBindings(Seq("localhost:9092","localhost:9091"))
     		 .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
     		 .withStateMachine(new KVStore()).build
      try {
@@ -190,7 +188,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      //add member4 to the cluster
      leader.addMember("localhost:9094")
      
-	 val member4 = CKiteBuilder().withLocalBinding("localhost:9094").withMembersBindings(Seq("localhost:9092","localhost:9091","localhost:9093"))
+	 val member4 = CKiteBuilder().withLocalBinding("localhost:9094").withMemberBindings(Seq("localhost:9092","localhost:9091","localhost:9093"))
 		 					.withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
 		 				   .withStateMachine(new KVStore()).build
 	 //start member4
@@ -269,16 +267,16 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   
   private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
      //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMembersBindings(Seq("localhost:9092","localhost:9093"))
+     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMemberBindings(Seq("localhost:9092","localhost:9093"))
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMembersBindings(Seq("localhost:9091","localhost:9093"))
+     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMemberBindings(Seq("localhost:9091","localhost:9093"))
     		 					.withMinElectionTimeout(1250).withMaxElectionTimeout(1500) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
-     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMembersBindings(Seq("localhost:9092","localhost:9091"))
+     val member3 = CKiteBuilder().withLocalBinding("localhost:9093").withMemberBindings(Seq("localhost:9092","localhost:9091"))
     		 					.withMinElectionTimeout(1750).withMaxElectionTimeout(2000) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build

@@ -47,7 +47,7 @@ import scala.util.Try
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
-  val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().transactionDisable().closeOnJvmShutdown().make()
+  val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
@@ -78,7 +78,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   private def startStatic = {
     val currentMembership = consensusMembership.get()
     if (currentMembership.allMembers.isEmpty) {
-    	consensusMembership.set(new SimpleConsensus(Some(local), configuration.membersBindings.map(binding => new RemoteMember(this, binding))))
+    	consensusMembership.set(new SimpleConsensus(Some(local), configuration.memberBindings.map(binding => new RemoteMember(this, binding))))
     }
     local becomeFollower
   }
@@ -90,7 +90,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     breakable {
       local becomeFollower
       
-      for (remoteMemberBinding <- configuration.membersBindings) {
+      for (remoteMemberBinding <- configuration.memberBindings) {
         consensusMembership.set(simpleConsensus(Seq(local.id, remoteMemberBinding)))
         val remoteMember = obtainRemoteMember(remoteMemberBinding).get
         val response = remoteMember.getMembers()

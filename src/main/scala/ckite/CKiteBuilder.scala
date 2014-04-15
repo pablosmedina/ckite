@@ -9,7 +9,7 @@ import ckite.statemachine.j.StateMachineWrapper
 
 class CKiteBuilder {
 
-  private val configuration = new Configuration(ConfigFactory.load("ckite-defaults.conf"))
+  private val configuration = new Configuration(ConfigFactory.load())
   private var stateMachine: StateMachine = _
 
   def withMinElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
@@ -37,23 +37,18 @@ class CKiteBuilder {
     this
   }
 
-  def withMembersBindings(membersBindings: Seq[String]): CKiteBuilder = {
-    configuration.withMembersBindings(membersBindings)
+  def withMemberBindings(memberBindings: Seq[String]): CKiteBuilder = {
+    configuration.withMemberBindings(memberBindings)
     this
   }
   
-  def withMembersBindings(membersBindings: String): CKiteBuilder = {
-    configuration.withMembersBindings(membersBindings.split(","))
+  def withMemberBindings(memberBindings: String): CKiteBuilder = {
+    configuration.withMemberBindings(memberBindings.split(","))
     this
   }
   
   def withLogCompactionThreshold(threshold: Int): CKiteBuilder = {
     configuration.withLogCompactionThreshold(threshold)
-    this
-  }
-  
-  def withSeeds(): CKiteBuilder = {
-    configuration.withSeeds
     this
   }
   
@@ -70,7 +65,7 @@ class CKiteBuilder {
   def build(): CKite = {
     new CKite(new Cluster(stateMachine, configuration))
   }
-
+  
 }
 
 object CKiteBuilder {

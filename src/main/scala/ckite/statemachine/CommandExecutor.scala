@@ -1,7 +1,6 @@
 package ckite.statemachine
 
 import ckite.rpc.Command
-import com.esotericsoftware.reflectasm.MethodAccess
 
 class CommandExecutor(stateMachine: StateMachine) {
   
