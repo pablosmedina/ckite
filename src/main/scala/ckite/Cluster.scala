@@ -47,7 +47,7 @@ import scala.util.Try
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
-  val db = DBMaker.newFileDB(file(configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
+  val db = DBMaker.newFileDB(file(configuration.dataDir)).transactionDisable().mmapFileEnable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
