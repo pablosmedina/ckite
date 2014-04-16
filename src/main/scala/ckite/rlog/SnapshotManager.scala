@@ -97,6 +97,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
       LOG.debug(s"Reloading $snapshot")
       stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
       snapshot.membership.recoverIn(cluster)
+      latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
       LOG.debug(s"Finished reloading $snapshot")
       snapshot.lastLogEntryIndex + 1
     } getOrElse {
@@ -110,10 +111,12 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     }
   }
   
+  def latestSnapthotIndex = latestSnapshotCoordinates.get()._1
+  
   private def latestSnapshotFile: Option[File] = { 
     val snapshotDir = Option(new File(s"${configuration.dataDir}/snapshots"))
     snapshotDir.filter(dir => dir.exists()).map {dir => dir.list().toList.filter( fileName => fileName.startsWith("snapshot"))
-      .sorted.headOption.map( fileName => new File(fileName)) }.flatten
+      .sorted.headOption.map( fileName => new File(s"${configuration.dataDir}/snapshots/$fileName")) }.flatten
   }
 
   def isInSnapshot(index: Int, term: Int): Boolean = {
