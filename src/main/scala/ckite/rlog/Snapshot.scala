@@ -6,18 +6,20 @@ import java.io.OutputStream
 import java.io.FileOutputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.DataOutputStream
+import java.io.DataInputStream
 
 class Snapshot(val stateMachineBytes: Array[Byte], val lastLogEntryIndex: Int, val lastLogEntryTerm: Int, val membership: MembershipState) extends Serializable {
 
   def write(dataDir: String) = {
-    val outputStream = new FileOutputStream(snapshotFile(dataDir))
+    val outputStream = new DataOutputStream(new FileOutputStream(snapshotFile(dataDir)))
     
-    outputStream.write(lastLogEntryIndex)
-    outputStream.write(lastLogEntryTerm)
+    outputStream.writeInt(lastLogEntryIndex)
+    outputStream.writeInt(lastLogEntryTerm)
     val membershipBytes = Serializer.serialize(membership)
-    outputStream.write(membershipBytes.length)
+    outputStream.writeInt(membershipBytes.length)
     outputStream.write(membershipBytes)
-    outputStream.write(stateMachineBytes.length)
+    outputStream.writeInt(stateMachineBytes.length)
     outputStream.write(stateMachineBytes)
     
     outputStream.flush()
@@ -38,16 +40,16 @@ class Snapshot(val stateMachineBytes: Array[Byte], val lastLogEntryIndex: Int, v
 object Snapshot {
   
     def read(snapshotFile: File): Snapshot =   {
-      val inputStream = new FileInputStream(snapshotFile)
+      val inputStream = new DataInputStream(new FileInputStream(snapshotFile))
        
-      val lastLogEntryIndex = inputStream.read()
-      val lastLogEntryTerm = inputStream.read()
-      val membershipBytes = inputStream.read()
+      val lastLogEntryIndex = inputStream.readInt()
+      val lastLogEntryTerm = inputStream.readInt()
+      val membershipBytes = inputStream.readInt()
       val membership = new Array[Byte](membershipBytes)
-      inputStream.read(membership)
-      val stateMachineBytes = inputStream.read()
+      inputStream.read(membership,0,membershipBytes)
+      val stateMachineBytes = inputStream.readInt()
       val stateMachine = new Array[Byte](stateMachineBytes)
-      
+      inputStream.read(stateMachine,0,stateMachineBytes)
       inputStream.close()
       
       new Snapshot(stateMachine, lastLogEntryIndex, lastLogEntryTerm, Serializer.deserialize(membership))
