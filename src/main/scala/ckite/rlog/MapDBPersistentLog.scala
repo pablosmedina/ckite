@@ -9,13 +9,16 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.SynchronousQueue
 import ckite.util.Logging
 import org.mapdb.DB
+import java.util.concurrent.atomic.AtomicLong
 
 class MapDBPersistentLog(db: DB) extends PersistentLog with Logging {
 
   val entries = db.getTreeMap[Int, LogEntry]("logEntries")
-
+  val cachedSize = new AtomicLong(entries.size())
+  
   def append(logEntry: LogEntry) = {
     entries.put(logEntry.index, logEntry)
+    cachedSize.incrementAndGet()
     db.commit()
   }
 
@@ -30,9 +33,12 @@ class MapDBPersistentLog(db: DB) extends PersistentLog with Logging {
 
   def getLastIndex(): Int = if (entries.isEmpty) 0 else entries.keySet.last()
 
-  def size() = entries.size
+  def size() = cachedSize.intValue()
   
-  def remove(index: Int) = entries.remove(index)
+  def remove(index: Int) = {
+    entries.remove(index)
+    cachedSize.decrementAndGet()
+  }
   
   private def firstIndex: Int = entries.firstKey()
 
