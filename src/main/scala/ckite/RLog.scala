@@ -223,7 +223,10 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def resetLastLog() = lastLog.set(findLastLogIndex)
 
-  def findLastLogIndex(): Int = persistentLog.getLastIndex
+  def findLastLogIndex(): Int = {
+    val lastIndex = persistentLog.getLastIndex
+    if (lastIndex > 0) lastIndex else snapshotManager.latestSnapthotIndex
+  }
 
   def getCommitIndex(): Int = commitIndex.intValue()
 
