@@ -33,7 +33,6 @@ import scala.concurrent.Promise
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent._
 import ckite.rlog.MapDBPersistentLog
-import ckite.rlog.LogCompactor
 import java.util.concurrent.atomic.AtomicBoolean
 import ckite.rlog.FixedSizeLogCompactionPolicy
 import ckite.statemachine.CommandExecutor
