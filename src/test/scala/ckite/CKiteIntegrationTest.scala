@@ -42,21 +42,40 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      ckite stop
   }
   
-  "A single member cluster" should "compact a log" in {
+  "A single member cluster" should "compact a log & reload snapshot" in {
+     val dir = someTmpDir
+    
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
-    		 				   .withDataDir(someTmpDir)
-    		 				   .withLogCompactionThreshold(5)
+    		 				   .withDataDir(dir)
+    		 				   .withLogCompactionThreshold(5 + 1) //5 writes + 1 NoOp
     		 				   .withStateMachine(new KVStore()).build
      ckite start
      
-     ckite.write(Put("key1",Value1))
-     ckite.write(Put("key2",Value1))
-     ckite.write(Put("key3",Value1))
-     ckite.write(Put("key4",Value1))
-     ckite.write(Put("key5",Value1))
-     ckite.write(Put("key6",Value1))
+     ckite.write(Put("key1","value1"))
+     ckite.write(Put("key2","value2"))
+     ckite.write(Put("key3","value3"))
+     ckite.write(Put("key4","value4"))
+     ckite.write(Put("key5","value5"))
+
+     //log should be compacted
+     
+     ckite.write(Put("key6","value6"))
+     
+     waitSomeTimeForElection
      
      ckite stop
+     
+     val ckiteRestarted = rebuild(ckite)
+     
+    ckiteRestarted.start
+    
+    ckiteRestarted.read[String](Get("key1")) should be ("value1")
+    ckiteRestarted.read[String](Get("key2")) should be ("value2")
+    ckiteRestarted.read[String](Get("key3")) should be ("value3")
+    ckiteRestarted.read[String](Get("key4")) should be ("value4")
+    ckiteRestarted.read[String](Get("key5")) should be ("value5")
+    
+    ckiteRestarted.stop
   }
   
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
@@ -152,9 +171,6 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     
     members foreach {_ start}
     		 				   
-     val restartedMember3 = CKiteBuilder().withLocalBinding("localhost:9093").withMemberBindings(Seq("localhost:9092","localhost:9091"))
-    		 .withMinElectionTimeout(2000).withMaxElectionTimeout(2000).withDataDir(someTmpDir)
-    		 .withStateMachine(new KVStore()).build
      try {
      //member3 goes down
      member3.stop
@@ -163,6 +179,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      member1.write(Put(Key1,Value1))
      
      //member3 is back
+     val restartedMember3 = rebuild(member3)
      restartedMember3.start
      
      //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
@@ -172,10 +189,10 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      val readValue = restartedMember3.readLocal[String](Get(Key1))
      
      readValue should be (Value1)
+     restartedMember3.stop
      } finally {
     	 member1.stop
     	 member2.stop
-    	 restartedMember3.stop
      }
   } 
   
@@ -230,8 +247,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     leader.stop
 
     //followers came back
-    followers foreach { _.start }
-    val livemembers = followers
+    val rebuiltFollowers = followers map { rebuild(_)}
+    rebuiltFollowers foreach { _.start }
+    val livemembers = rebuiltFollowers
 
     waitSomeTimeForElection
 
@@ -239,13 +257,16 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val newleader = livemembers leader
 
     //old leader came back
-    val oldleader = leader
+    val oldleader = rebuild(leader)
     oldleader.start
 
     waitSomeTimeForAppendEntries
 
     //those two uncommitted entries of the oldleader must be overridden and removed by the new Leader as part of appendEntries
     newleader.read[String](Get(Key1)) should be(null)
+    
+    oldleader.stop
+    rebuiltFollowers foreach { _.stop }
 
   }
   
@@ -292,6 +313,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
        members foreach {_ stop}
      }
   }
+  
+  private def rebuild(ckite: CKite) = ckite.builder.withStateMachine(new KVStore())build
   
   private def waitSomeTimeForElection = Thread.sleep(2000)
 

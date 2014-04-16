@@ -63,7 +63,7 @@ class CKiteBuilder {
   }
 
   def build(): CKite = {
-    new CKite(new Cluster(stateMachine, configuration))
+    new CKite(new Cluster(stateMachine, configuration), this)
   }
   
 }
