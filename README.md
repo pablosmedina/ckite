@@ -56,21 +56,18 @@ class KVStore extends StateMachine {
   val map = new ConcurrentHashMap[String, String]()
 
   //called when a consensus has been reached for a WriteCommand or when a ReadCommand was received
-  override def apply(command: Command): Any = command match {
-      case Put(key: String, value: String) => { 
-        map.put(key, value)
-        value
-      }
-      case Get(key: String) => map.get(key)
+  def apply = {
+    case Get(key) => map.get(key)
+    case Put(key:String,value:String) => map.put(key,value); value
   }
 
   //called during Log replay on startup and upon installSnapshot requests
-  override def deserialize(snapshotBytes: Array[Byte]) = {
+  def deserialize(snapshotBytes: ByteBuffer) = {
 	//some deserialization mechanism
   }
  
   //called when Log compaction is required
-  override def serialize(): Array[Byte] = {
+  def serialize: ByteBuffer = {
 	//some serialization mechanism
   }
 
@@ -103,7 +100,7 @@ ckite.write(Put("key1","value1"))
 #### 4) Send a consistent read command
 ```scala
 //consistent read commands are forwarded to the Leader
-val value = ckite.read[String](Get("key1")) 
+val value = ckite.read(Get("key1")) 
 ```
 #### 5) Add a new Member
 ```scala
@@ -120,7 +117,7 @@ ckite.removeMember("someHost:9094")
 #### 7) Send a local read command
 ```scala
 //alternatively you can read from its local state machine allowing possible stale values
-val value = ckite.readLocal[String](Get("key1")) 
+val value = ckite.readLocal(Get("key1")) 
 ```
 
 #### 8) Check leadership
