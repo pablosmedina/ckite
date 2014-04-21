@@ -28,7 +28,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   val stateMachine = rlog.stateMachine
 
   //index - term
-  val latestSnapshotCoordinates = new AtomicReference[(Int, Int)]((0, 0))
+  val latestSnapshotCoordinates = new AtomicReference[(Long, Int)]((0, 0))
 
   def applyLogCompactionPolicy = {
     if (logCompactionPolicy.applies(rlog.persistentLog, rlog.stateMachine)) {
@@ -65,7 +65,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   }
 
   //rolls the current log up to the given logIndex
-  private def rollLog(logIndex: Int) = rlog.exclusive {
+  private def rollLog(logIndex: Long) = rlog.exclusive {
     rlog.persistentLog.rollLog(logIndex)
   }
 
@@ -92,7 +92,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     true //?
   }
 
-  def reloadSnapshot: Int = {
+  def reloadSnapshot: Long = {
     latestSnapshot map { snapshot => 
       LOG.debug(s"Reloading $snapshot")
       stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
@@ -119,12 +119,12 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
       .sorted.headOption.map( fileName => new File(s"${configuration.dataDir}/snapshots/$fileName")) }.flatten
   }
 
-  def isInSnapshot(index: Int, term: Int): Boolean = {
+  def isInSnapshot(index: Long, term: Int): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._2 >= term && coordinates._1 >= index
   }
 
-  def isInSnapshot(index: Int): Boolean = {
+  def isInSnapshot(index: Long): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._1 >= index
   }

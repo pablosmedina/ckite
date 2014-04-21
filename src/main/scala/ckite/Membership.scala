@@ -55,6 +55,8 @@ class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember]) ex
   val resultingMembers  = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toList
   val quorum = (resultingMembers.size  / 2) + 1
   
+  val innerMajoritiesMap: Map[Seq[Member], Int] = Map(resultingMembers -> quorum)
+  
   def allMembers =  resultingMembers
   
   def allBindings = resultingMembers map { member => member.id}
@@ -67,7 +69,7 @@ class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember]) ex
 
   def majority: String = s"$quorum"
 
-  def majoritiesMap: Map[Seq[Member], Int] = Map(resultingMembers -> quorum)
+  def majoritiesMap: Map[Seq[Member], Int] = innerMajoritiesMap
   
   def captureState = new SimpleMembershipState(allMembers.map{ _.id})
   

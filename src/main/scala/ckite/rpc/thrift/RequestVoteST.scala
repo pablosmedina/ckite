@@ -24,8 +24,8 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
   val MemberIdFieldManifest = implicitly[Manifest[String]]
   val TermField = new TField("term", TType.I32, 2)
   val TermFieldManifest = implicitly[Manifest[Int]]
-  val LastLogIndexField = new TField("lastLogIndex", TType.I32, 3)
-  val LastLogIndexFieldManifest = implicitly[Manifest[Int]]
+  val LastLogIndexField = new TField("lastLogIndex", TType.I64, 3)
+  val LastLogIndexFieldManifest = implicitly[Manifest[Long]]
   val LastLogTermField = new TField("lastLogTerm", TType.I32, 4)
   val LastLogTermFieldManifest = implicitly[Manifest[Int]]
 
@@ -42,7 +42,7 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
   def apply(
     memberId: String,
     term: Int,
-    lastLogIndex: Int = -1,
+    lastLogIndex: Long = -1,
     lastLogTerm: Int = -1
   ): RequestVoteST = new Immutable(
     memberId,
@@ -51,7 +51,7 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
     lastLogTerm
   )
 
-  def unapply(_item: RequestVoteST): Option[Product4[String, Int, Int, Int]] = Some(_item)
+  def unapply(_item: RequestVoteST): Option[Product4[String, Int, Long, Int]] = Some(_item)
 
   object Immutable extends ThriftStructCodec3[RequestVoteST] {
     override def encode(_item: RequestVoteST, _oproto: TProtocol) { _item.write(_oproto) }
@@ -60,7 +60,7 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
       var _got_memberId = false
       var term: Int = 0
       var _got_term = false
-      var lastLogIndex: Int = -1
+      var lastLogIndex: Long = -1
       var _got_lastLogIndex = false
       var lastLogTerm: Int = -1
       var _got_lastLogTerm = false
@@ -96,9 +96,9 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
             }
             case 3 => { /* lastLogIndex */
               _field.`type` match {
-                case TType.I32 => {
+                case TType.I64 => {
                   lastLogIndex = {
-                    _iprot.readI32()
+                    _iprot.readI64()
                   }
                   _got_lastLogIndex = true
                 }
@@ -142,7 +142,7 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
   class Immutable(
     val memberId: String,
     val term: Int,
-    val lastLogIndex: Int = -1,
+    val lastLogIndex: Long = -1,
     val lastLogTerm: Int = -1
   ) extends RequestVoteST
 
@@ -155,13 +155,13 @@ object RequestVoteST extends ThriftStructCodec3[RequestVoteST] {
     protected def _underlying_RequestVoteST: RequestVoteST
     override def memberId: String = _underlying_RequestVoteST.memberId
     override def term: Int = _underlying_RequestVoteST.term
-    override def lastLogIndex: Int = _underlying_RequestVoteST.lastLogIndex
+    override def lastLogIndex: Long = _underlying_RequestVoteST.lastLogIndex
     override def lastLogTerm: Int = _underlying_RequestVoteST.lastLogTerm
   }
 }
 
 trait RequestVoteST extends ThriftStruct
-  with Product4[String, Int, Int, Int]
+  with Product4[String, Int, Long, Int]
   with java.io.Serializable
 {
   import RequestVoteST._
@@ -169,7 +169,7 @@ trait RequestVoteST extends ThriftStruct
 
   def memberId: String
   def term: Int
-  def lastLogIndex: Int
+  def lastLogIndex: Long
   def lastLogTerm: Int
 
   def _1 = memberId
@@ -210,7 +210,7 @@ trait RequestVoteST extends ThriftStruct
     if (true) {
       val lastLogIndex_item = lastLogIndex
       _oprot.writeFieldBegin(LastLogIndexField)
-      _oprot.writeI32(lastLogIndex_item)
+      _oprot.writeI64(lastLogIndex_item)
       _oprot.writeFieldEnd()
     }
     if (true) {
@@ -226,7 +226,7 @@ trait RequestVoteST extends ThriftStruct
   def copy(
     memberId: String = this.memberId, 
     term: Int = this.term, 
-    lastLogIndex: Int = this.lastLogIndex, 
+    lastLogIndex: Long = this.lastLogIndex, 
     lastLogTerm: Int = this.lastLogTerm
   ): RequestVoteST =
     new Immutable(

@@ -64,6 +64,7 @@ class ThriftServer(cluster: Cluster) {
 
   def stop() = synchronized {
     if (!closed) {
+    	futurePool.executor.shutdownNow() 
     	finagleServer.close()
     	closed = true
     }

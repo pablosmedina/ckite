@@ -28,8 +28,6 @@ class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKi
     	http stop
     	
     	cluster stop
-    	
-    	cluster.db.close()
     }
   }
 

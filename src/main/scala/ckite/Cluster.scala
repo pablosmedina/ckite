@@ -47,7 +47,7 @@ import scala.util.Try
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
-  val db = DBMaker.newFileDB(file(configuration.dataDir)).transactionDisable().mmapFileEnable().closeOnJvmShutdown().make()
+//  val db = DBMaker.newFileDB(file(configuration.dataDir)).transactionDisable().mmapFileEnable().closeOnJvmShutdown().make()
   
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
@@ -111,9 +111,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
   
-  def stop = inContext {
-    LOG.info("Stop CKite Cluster")
+  def stop = {
+    inContext {
+    	LOG.info("Stop CKite Cluster")
+    }
     local stop
+    
+    rlog stop
   }
 
   def on(requestVote: RequestVote):RequestVoteResponse = inContext {
@@ -133,7 +137,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def on[T](command: Command): T = inContext {
     havingLeader {
       LOG.debug(s"Command received: $command")
-      local.on[T](command)
+//      try {
+    	  local.on[T](command)
+//      } catch {
+//        case e: Exception => LOG.error("error",e); throw new RuntimeException(e)
+//      }
     }
   }
 

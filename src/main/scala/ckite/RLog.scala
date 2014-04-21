@@ -38,19 +38,23 @@ import ckite.rlog.FixedSizeLogCompactionPolicy
 import ckite.statemachine.CommandExecutor
 import java.nio.ByteBuffer
 import ckite.rlog.SnapshotManager
+import java.util.concurrent.atomic.AtomicLong
 
 class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging {
 
-  val persistentLog = new MapDBPersistentLog(cluster.db)
-  val commitIndex = cluster.db.getAtomicInteger("commitIndex")
+  val persistentLog = new MapDBPersistentLog(cluster.configuration.dataDir, this)
+  
+  val db = DBMaker.newFileDB(file(cluster.configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
 
-  val lastLog = new AtomicInteger(0)
+  val commitIndex = db.getAtomicLong("commitIndex")
+  
+  val lastLog = new AtomicLong(0)
 
   val lock = new ReentrantReadWriteLock()
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
 
-  val commitPromises = new ConcurrentHashMap[Int, Promise[Any]]()
+  val commitPromises = new ConcurrentHashMap[Long, Promise[Any]]()
 
   val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AsyncWorker", true)))
@@ -62,6 +66,22 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   initialize()
 
+  //Called when being Leader. appends needs to be serialized to avoid holes
+  def append(write: WriteCommand): (LogEntry, Promise[Any]) = {
+	val promise = Promise[Any]()
+    val logEntry = exclusive { 
+	  val entry = persistentLog.append(cluster.local.term, write)
+	  commitPromises.put(entry.index, promise)
+	  entry
+	}
+	persistentLog.commit
+    LOG.debug(s"Appending $logEntry")
+    afterAppend(write)
+    applyLogCompactionPolicy
+    (logEntry, promise)
+  }
+  
+  //Called when being Follower and receiving appendEntries from the Leader
   def tryAppend(appendEntries: AppendEntries) = {
     LOG.trace(s"Try appending $appendEntries")
     val canAppend = hasPreviousLogEntry(appendEntries)
@@ -73,24 +93,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
       applyLogCompactionPolicy
     }
     canAppend
-  }
-
-  private def append(logEntry: LogEntry): Promise[Any] = {
-    val promise = Promise[Any]()
-    commitPromises.put(logEntry.index, promise)
-    append(List(logEntry))
-    promise
-  }
-
-  //appends needs to be serialized to avoid holes
-  def append(write: WriteCommand): (LogEntry, Promise[Any]) = exclusive {
-    val logEntry = LogEntry(cluster.local.term, cluster.rlog.nextLogIndex, write)
-    (logEntry, append(logEntry))
-  }
-
-  private def append(logEntries: List[LogEntry]) = {
-    appendWithLockAcquired(logEntries)
-    applyLogCompactionPolicy
   }
 
   private def applyLogCompactionPolicy = snapshotManager.applyLogCompactionPolicy
@@ -106,31 +108,31 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
         logEntry(entry.index) foreach { entryToOverride =>
           removeSubsequentEntries(entryToOverride.index)
         }
-        LOG.debug(s"Appending $entry")
-        persistentLog.append(entry)
-        afterAppend(entry)
+        doAppend(entry)
       } else {
         LOG.debug(s"Discarding append of a duplicate entry $entry")
       }
     }
   }
+  
+  private def doAppend(logEntry: LogEntry) = {
+    persistentLog.append(logEntry)
+  }
 
-  private def removeSubsequentEntries(index: Int) = {
+  private def removeSubsequentEntries(index: Long) = {
     (index to persistentLog.size) foreach { indexToRemove =>
       LOG.debug(s"Removing uncommitted index #$indexToRemove due to override by the Leader")
       persistentLog.remove(indexToRemove)
     }
   }
 
-  private def afterAppend(logEntry: LogEntry) = {
-    logEntry.command match {
+  private def afterAppend(command: Command) = command match {
       case c: EnterJointConsensus => cluster.apply(c)
       case c: LeaveJointConsensus => cluster.apply(c)
       case _ => ;
-    }
   }
 
-  def commit(index: Int): Unit = shared {
+  def commit(index: Long): Unit = shared {
     logEntry(index).map { entry =>
       if (entry.term == cluster.local.term) {
         safeCommitEntriesUntil(index)
@@ -144,30 +146,37 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def commit(logEntry: LogEntry): Unit = commit(logEntry.index)
 
-  private def safeCommitEntriesUntil(entryIndex: Int) = {
-    val start = commitIndex.intValue() + 1
+  private def safeCommitEntriesUntil(entryIndex: Long) = {
+    val start = commitIndex.longValue() + 1
     val end = entryIndex
     (start to end) foreach { index => safeCommit(index) }
+    if (commitIndex.longValue() % 1000 == 0) db.commit()
   }
 
-  private def safeCommit(index: Int) = withLogEntry(index) { entry =>
-    entry.synchronized {
-      if (!isCommitted(index)) {
-        LOG.debug(s"Committing $entry")
-        val value = execute(entry.command)
-        commitIndex.set(entry.index)
-        val promise = commitPromises.get(index)
-        if (promise != null) { //Is this possible?
-          promise.success(value)
-          commitPromises.remove(index)
-        }
-      } else {
-        LOG.debug(s"Already committed entry $entry")
-      }
+  private def safeCommit(index: Long) = {
+    if (!isCommitted(index)) {
+    	withLogEntry(index) { entry =>
+    	synchronized {
+    		if (!isCommitted(index)) {
+//        LOG.debug(s"Committing $entry")
+    			val value = execute(entry.command)
+    					commitIndex.set(index)
+    					val promise = commitPromises.get(index)
+    					if (promise != null) { //Is this possible?
+    						promise.success(value)
+    						commitPromises.remove(index)
+    					} else {
+    						LOG.warn(s"Promise for index $index is null")
+    					}
+    		} else {
+    			LOG.debug(s"Already committed entry $entry")
+    		}
+    	}
+    	}
     }
   }
 
-  private def isCommitted(index: Int) = index <= commitIndex.intValue()
+  private def isCommitted(index: Long) = index <= commitIndex.longValue()
 
   def execute(command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
     LOG.debug(s"Executing $command")
@@ -194,14 +203,14 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def execute(command: ReadCommand) = applyCommand(command)
 
-  def logEntry(index: Int, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
+  def logEntry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)
     if (entry != null) Some(entry) else 
       if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
       else None
   }
 
-  private def withLogEntry[T](index: Int)(block: LogEntry => T) = logEntry(index) foreach block
+  private def withLogEntry[T](index: Long)(block: LogEntry => T) = logEntry(index) foreach block
 
   def getLastLogEntry(): Option[LogEntry] = {
     val lastLogIndex = findLastLogIndex
@@ -214,39 +223,44 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def getPreviousLogEntry(entry: LogEntry): Option[LogEntry] = logEntry(entry.index - 1, true)
 
-  def containsEntry(index: Int, term: Int) = {
+  def containsEntry(index: Long, term: Int) = {
     val logEntryOption = logEntry(index)
     if (logEntryOption.isDefined) logEntryOption.get.term == term else (isZeroEntry(index, term) || snapshotManager.isInSnapshot(index, term))
   }
 
-  private def isZeroEntry(index: Int, term: Int): Boolean = index == -1 && term == -1
+  private def isZeroEntry(index: Long, term: Int): Boolean = index == -1 && term == -1
 
   def resetLastLog() = lastLog.set(findLastLogIndex)
 
-  def findLastLogIndex(): Int = {
+  def findLastLogIndex(): Long = {
     val lastIndex = persistentLog.getLastIndex
     if (lastIndex > 0) lastIndex else snapshotManager.latestSnapthotIndex
   }
 
-  def getCommitIndex(): Int = commitIndex.intValue()
+  def getCommitIndex(): Long = commitIndex.intValue()
 
   def nextLogIndex() = lastLog.incrementAndGet()
 
   def size() = persistentLog.size
 
-  def replay(from: Int, to: Int) = {
+  def replay(from: Long, to: Long) = {
     LOG.debug(s"Start log replay from index #$from to #$to")
     from to to foreach { index => replayIndex(index) }
     LOG.debug(s"Finished log replay")
   }
 
-  private def replayIndex(index: Int) = {
+  private def replayIndex(index: Long) = {
     LOG.debug(s"Replaying index #$index")
     val logEntry = persistentLog.getEntry(index)
-    afterAppend(logEntry)
+    afterAppend(logEntry.command)
     execute(logEntry.command)
   }
 
+  def stop = {
+//    db.close()
+    persistentLog.close()
+  }
+  
   def serializeStateMachine = stateMachine.serialize().array()
   
   private def initialize() = {
@@ -259,7 +273,7 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
     }
   }
 
-  private def raiseMissingLogEntryException(entryIndex: Int) = {
+  private def raiseMissingLogEntryException(entryIndex: Long) = {
     val e = new IllegalStateException(s"Tried to commit a missing LogEntry with index $entryIndex. A Hole?")
     LOG.error("Error", e)
     throw e
@@ -281,6 +295,13 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
     } finally {
       exclusiveLock.unlock()
     }
+  }
+  
+  private def file(dataDir: String): File = {
+    val dir = new File(dataDir)
+    dir.mkdirs()
+    val file = new File(dir, "rlog-statemachine")
+    file
   }
 
 }
