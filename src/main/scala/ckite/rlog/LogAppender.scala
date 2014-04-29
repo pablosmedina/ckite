@@ -22,7 +22,7 @@ class LogAppender(rlog: RLog, log: PersistentLog) {
   val syncEnabled = rlog.cluster.configuration.syncEnabled
 
   val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LogAppenderWorker", true)))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LogAppender-worker", true)))
 
   def start = asyncExecutionContext.execute(asyncAppend _)
 

@@ -22,7 +22,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   val logCompactionExecutor = new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS,
     new SynchronousQueue[Runnable](),
-    new NamedPoolThreadFactory("LogCompactionWorker", true))
+    new NamedPoolThreadFactory("LogCompaction-worker", true))
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(configuration.logCompactionThreshold)
 
   val cluster = rlog.cluster

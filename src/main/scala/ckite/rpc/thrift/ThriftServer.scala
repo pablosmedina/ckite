@@ -25,7 +25,7 @@ class ThriftServer(cluster: Cluster) {
   val futurePool = FuturePool(new ThreadPoolExecutor(0, cluster.configuration.thriftWorkers,
                                       15L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("ThriftWorker", true)))
+                                      new NamedPoolThreadFactory("Thrift-worker", true)))
   
   def start() = {
     val localPort = cluster.local.id.split(":")(1)

@@ -30,10 +30,10 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   val commitIndexQueue = new LinkedBlockingQueue[Long]()
 
   val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AsyncWorker", true))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Async-worker", true))
   val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
   val workerPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("CommandApplierWorker", true))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("CommandApplier-worker", true))
   val workerExecutor = ExecutionContext.fromExecutor(workerPool)
 
   @volatile

@@ -55,12 +55,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
 
   val appendEntriesExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntriesWorker", true)))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true)))
 
   val electionExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.electionWorkers,
-    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("ElectionWorker", true)))
+    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Election-worker", true)))
   
-  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
+  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
   
   val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
   

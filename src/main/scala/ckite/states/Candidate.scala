@@ -77,7 +77,7 @@ class Election(cluster: Cluster) extends Logging {
   val executor =  new ThreadPoolExecutor(1, 1,
                                       60L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("CandidateElection", true))
+                                      new NamedPoolThreadFactory("CandidateElection-worker", true))
   val electionFutureTask = new AtomicReference[Future[_]]()
   
   def start(inTerm: Int) = {
