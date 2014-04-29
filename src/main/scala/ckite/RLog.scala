@@ -166,6 +166,8 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def stop = {
 //    db.close()
+    logAppender.stop
+    commandApplier.stop
     persistentLog.close()
   }
   

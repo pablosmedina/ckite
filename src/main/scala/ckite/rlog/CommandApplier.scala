@@ -47,7 +47,8 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   }
   
   def stop = {
-    workerPool.shutdown()
+    workerPool.shutdownNow()
+    asyncPool.shutdown()
   }
   
   def commit(index: Long) = {
@@ -58,14 +59,18 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def asyncApplier = {
     LOG.info(s"Starting applier from index #{}",lastApplied)
-    while (true) {
-      val index = next
-      if (lastApplied < index) {
-        val entry = rlog.logEntry(index)
-        if (isFromCurrentTerm(entry)) {
-          applyUntil(entry.get)
-        }
-      }
+    try {
+    	while (!Thread.currentThread().isInterrupted()) {
+    		val index = next
+    				if (lastApplied < index) {
+    					val entry = rlog.logEntry(index)
+    							if (isFromCurrentTerm(entry)) {
+    								applyUntil(entry.get)
+    							}
+    				}
+    	}
+     } catch {
+      case e: InterruptedException => LOG.info("Shutdown CommandApplier...")
     }
   }
   
