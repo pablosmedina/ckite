@@ -43,12 +43,11 @@ import scala.collection.mutable.ArrayBuffer
 import java.util.concurrent.ConcurrentHashMap
 import scala.concurrent.duration._
 import scala.util.Try
+import scala.util.Success
 
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
-  val db = DBMaker.newFileDB(file(configuration.dataDir)).transactionDisable().mmapFileEnable().closeOnJvmShutdown().make()
-  
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
   val rlog = new RLog(this, stateMachine)
@@ -56,12 +55,12 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
 
   val appendEntriesExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntriesWorker", true)))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true)))
 
   val electionExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.electionWorkers,
-    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("ElectionWorker", true)))
+    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Election-worker", true)))
   
-  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeoutWorker", true))
+  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
   
   val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
   
@@ -111,17 +110,21 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
   
-  def stop = inContext {
-    LOG.info("Stop CKite Cluster")
+  def stop = {
+    inContext {
+    	LOG.info("Stop CKite Cluster")
+    }
     local stop
+    
+    rlog stop
   }
 
   def on(requestVote: RequestVote):RequestVoteResponse = inContext {
-    LOG.debug(s"RequestVote received: $requestVote")
+    LOG.debug("RequestVote received: {}", requestVote)
     obtainRemoteMember(requestVote.memberId).map { remoteMember => 
       local on requestVote
     }.getOrElse {
-      LOG.warn(s"Reject vote to member ${requestVote.memberId} who is not present in the Cluster")
+      LOG.warn("Reject vote to member {} who is not present in the Cluster", requestVote.memberId)
       RequestVoteResponse(local term, false)
     }
   }
@@ -132,7 +135,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def on[T](command: Command): T = inContext {
     havingLeader {
-      LOG.debug(s"Command received: $command")
+      LOG.debug("Command received: {}", command)
       local.on[T](command)
     }
   }
@@ -180,7 +183,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def forwardToLeader[T](command: Command): T = inContext {
     withLeader { leader =>
-      LOG.debug(s"Forward command $command")
+      LOG.debug("Forward command {}",command)
       leader.forwardCommand[T](command)
     }
   }
@@ -197,10 +200,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   //EnterJointConsensus received. Switch membership to JointConsensus
   def apply(enterJointConsensus: EnterJointConsensus) = {
-    LOG.info(s"Entering in JointConsensus")
+    LOG.info("Entering in JointConsensus")
     val currentMembership = consensusMembership.get()
     consensusMembership.set(JointConsensus(currentMembership, simpleConsensus(enterJointConsensus.newBindings)))
-    LOG.info(s"Membership ${consensusMembership.get()}")
+    LOG.info("Membership {}", consensusMembership.get())
   }
   
   //EnterJointConsensus reached quorum. Send LeaveJointConsensus If I'm the Leader to notify the new membership.
@@ -210,9 +213,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   //LeaveJointConsensus received. A new membership has been set. Switch to SimpleConsensus or shutdown If no longer part of the cluster.
   def apply(leaveJointConsensus: LeaveJointConsensus) = {
-    LOG.info(s"Leaving JointConsensus")
+    LOG.info("Leaving JointConsensus")
 	consensusMembership.set(simpleConsensus(leaveJointConsensus.bindings))
-	LOG.info(s"Membership ${consensusMembership.get()}")
+	LOG.info("Membership {}", consensusMembership.get())
   }
 
   private def simpleConsensus(bindings: Seq[String]): SimpleConsensus = {
@@ -252,7 +255,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
       Await.result(leaderPromise.get().future, waitForLeaderTimeout)
     } catch {
       case e: TimeoutException => {
-        LOG.warn(s"Wait for Leader timed out after $waitForLeaderTimeout")
+        LOG.warn("Wait for Leader timed out after {}",waitForLeaderTimeout)
         throw new LeaderTimeoutException(e)
       }
     }
@@ -289,9 +292,9 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   def inContext[T](f: => T): T = {
-    updateContextInfo
+//    updateContextInfo
     val result = f
-    updateContextInfo
+//    updateContextInfo
     result
   }
   
@@ -306,12 +309,5 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
   
   private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
-
-  private def file(dataDir: String): File = {
-    val dir = new File(dataDir)
-    dir.mkdirs()
-    val file = new File(dir, "ckite")
-    file
-  }
 
 }

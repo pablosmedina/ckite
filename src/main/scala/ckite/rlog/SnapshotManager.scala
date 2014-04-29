@@ -14,6 +14,7 @@ import ckite.util.CKiteConversions._
 import ckite.rpc.LogEntry
 import ckite.rpc.CompactedEntry
 import java.io.File
+import ckite.rpc.CompactedEntry
 
 class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging {
 
@@ -21,14 +22,14 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   val logCompactionExecutor = new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS,
     new SynchronousQueue[Runnable](),
-    new NamedPoolThreadFactory("LogCompactionWorker", true))
+    new NamedPoolThreadFactory("LogCompaction-worker", true))
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(configuration.logCompactionThreshold)
 
   val cluster = rlog.cluster
   val stateMachine = rlog.stateMachine
 
   //index - term
-  val latestSnapshotCoordinates = new AtomicReference[(Int, Int)]((0, 0))
+  val latestSnapshotCoordinates = new AtomicReference[(Long, Int)]((0, 0))
 
   def applyLogCompactionPolicy = {
     if (logCompactionPolicy.applies(rlog.persistentLog, rlog.stateMachine)) {
@@ -65,13 +66,13 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   }
 
   //rolls the current log up to the given logIndex
-  private def rollLog(logIndex: Int) = rlog.exclusive {
+  private def rollLog(logIndex: Long) = rlog.exclusive {
     rlog.persistentLog.rollLog(logIndex)
   }
 
   private def takeSnapshot: Snapshot = rlog.exclusive {
     // During compaction the following actions must be blocked: 1. add log entries  2. execute commands in the state machine
-    val commitIndex = rlog.commitIndex.get()
+    val commitIndex = rlog.commitIndex
     val membershipState = rlog.cluster.membership.captureState
     val latestEntry = rlog.logEntry(commitIndex).get
     val stateMachineBytes = rlog.serializeStateMachine
@@ -86,13 +87,11 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
     snapshot.membership.recoverIn(cluster)
 
-    rlog.commitIndex.set(snapshot.lastLogEntryIndex)
-
     LOG.debug(s"Finished installing $snapshot")
     true //?
   }
 
-  def reloadSnapshot: Int = {
+  def reloadSnapshot: Long = {
     latestSnapshot map { snapshot => 
       LOG.debug(s"Reloading $snapshot")
       stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
@@ -119,12 +118,12 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
       .sorted.headOption.map( fileName => new File(s"${configuration.dataDir}/snapshots/$fileName")) }.flatten
   }
 
-  def isInSnapshot(index: Int, term: Int): Boolean = {
+  def isInSnapshot(index: Long, term: Int): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._2 >= term && coordinates._1 >= index
   }
 
-  def isInSnapshot(index: Int): Boolean = {
+  def isInSnapshot(index: Long): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._1 >= index
   }

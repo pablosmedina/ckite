@@ -25,7 +25,7 @@ class ThriftServer(cluster: Cluster) {
   val futurePool = FuturePool(new ThreadPoolExecutor(0, cluster.configuration.thriftWorkers,
                                       15L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
-                                      new NamedPoolThreadFactory("ThriftWorker", true)))
+                                      new NamedPoolThreadFactory("Thrift-worker", true)))
   
   def start() = {
     val localPort = cluster.local.id.split(":")(1)
@@ -52,7 +52,7 @@ class ThriftServer(cluster: Cluster) {
       
       override def join(joinRequest: JoinRequestST) = futurePool {
         val success = cluster.addMember(joinRequest._1)
-        JoinResponseST(success)
+        JoinResponseST(true)
       }
       
       override def getMembers() = futurePool {
@@ -64,6 +64,7 @@ class ThriftServer(cluster: Cluster) {
 
   def stop() = synchronized {
     if (!closed) {
+    	futurePool.executor.shutdownNow() 
     	finagleServer.close()
     	closed = true
     }

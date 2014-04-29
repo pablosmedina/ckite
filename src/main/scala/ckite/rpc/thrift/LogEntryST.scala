@@ -22,8 +22,8 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
   val Struct = new TStruct("LogEntryST")
   val TermField = new TField("term", TType.I32, 1)
   val TermFieldManifest = implicitly[Manifest[Int]]
-  val IndexField = new TField("index", TType.I32, 2)
-  val IndexFieldManifest = implicitly[Manifest[Int]]
+  val IndexField = new TField("index", TType.I64, 2)
+  val IndexFieldManifest = implicitly[Manifest[Long]]
   val CommandField = new TField("command", TType.STRING, 3)
   val CommandFieldManifest = implicitly[Manifest[ByteBuffer]]
 
@@ -39,7 +39,7 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
 
   def apply(
     term: Int,
-    index: Int,
+    index: Long,
     command: ByteBuffer
   ): LogEntryST = new Immutable(
     term,
@@ -47,14 +47,14 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
     command
   )
 
-  def unapply(_item: LogEntryST): Option[Product3[Int, Int, ByteBuffer]] = Some(_item)
+  def unapply(_item: LogEntryST): Option[Product3[Int, Long, ByteBuffer]] = Some(_item)
 
   object Immutable extends ThriftStructCodec3[LogEntryST] {
     override def encode(_item: LogEntryST, _oproto: TProtocol) { _item.write(_oproto) }
     override def decode(_iprot: TProtocol): LogEntryST = {
       var term: Int = 0
       var _got_term = false
-      var index: Int = 0
+      var index: Long = 0L
       var _got_index = false
       var command: ByteBuffer = null
       var _got_command = false
@@ -79,9 +79,9 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
             }
             case 2 => { /* index */
               _field.`type` match {
-                case TType.I32 => {
+                case TType.I64 => {
                   index = {
-                    _iprot.readI32()
+                    _iprot.readI64()
                   }
                   _got_index = true
                 }
@@ -124,7 +124,7 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
    */
   class Immutable(
     val term: Int,
-    val index: Int,
+    val index: Long,
     val command: ByteBuffer
   ) extends LogEntryST
 
@@ -136,20 +136,20 @@ object LogEntryST extends ThriftStructCodec3[LogEntryST] {
   trait Proxy extends LogEntryST {
     protected def _underlying_LogEntryST: LogEntryST
     override def term: Int = _underlying_LogEntryST.term
-    override def index: Int = _underlying_LogEntryST.index
+    override def index: Long = _underlying_LogEntryST.index
     override def command: ByteBuffer = _underlying_LogEntryST.command
   }
 }
 
 trait LogEntryST extends ThriftStruct
-  with Product3[Int, Int, ByteBuffer]
+  with Product3[Int, Long, ByteBuffer]
   with java.io.Serializable
 {
   import LogEntryST._
 
 
   def term: Int
-  def index: Int
+  def index: Long
   def command: ByteBuffer
 
   def _1 = term
@@ -165,7 +165,7 @@ trait LogEntryST extends ThriftStruct
   def unsetField(_fieldId: Short): LogEntryST =
     _fieldId match {
       case 1 => copy(term = 0)
-      case 2 => copy(index = 0)
+      case 2 => copy(index = 0L)
       case 3 => copy(command = null)
       case _ => this
     }
@@ -182,7 +182,7 @@ trait LogEntryST extends ThriftStruct
     if (true) {
       val index_item = index
       _oprot.writeFieldBegin(IndexField)
-      _oprot.writeI32(index_item)
+      _oprot.writeI64(index_item)
       _oprot.writeFieldEnd()
     }
     if (command ne null) {
@@ -197,7 +197,7 @@ trait LogEntryST extends ThriftStruct
 
   def copy(
     term: Int = this.term, 
-    index: Int = this.index, 
+    index: Long = this.index, 
     command: ByteBuffer = this.command
   ): LogEntryST =
     new Immutable(

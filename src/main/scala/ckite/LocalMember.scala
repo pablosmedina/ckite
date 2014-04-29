@@ -15,16 +15,21 @@ import java.util.concurrent.atomic.AtomicReference
 import ckite.states.Starter
 import ckite.states.Stopped
 import java.util.concurrent.locks.ReentrantLock
+import org.mapdb.DBMaker
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val state = new AtomicReference[State](Starter)
-  val currentTerm = cluster.db.getAtomicInteger("term")
-  val votedFor = cluster.db.getAtomicString("votedFor")
+   val db = DBMaker.newFileDB(file(cluster.configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
+  val currentTerm = db.getAtomicInteger("term")
+  val transientTerm = new AtomicInteger(currentTerm.intValue())
+  val votedFor = db.getAtomicString("votedFor")
 
   val lock = new ReentrantLock()
   
-  def term(): Int = currentTerm.intValue()
+  def term(): Int = transientTerm.intValue()
 
   def voteForMyself = votedFor.set(id)
 
@@ -42,12 +47,17 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
     		LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
     		votedFor.set("")
     		currentTerm.set(receivedTerm)
+    		db.commit()
+    		transientTerm.set(currentTerm.intValue())
     	}
     }
   }
 
   def incrementTerm = cluster.inContext {
-    currentTerm.incrementAndGet()
+    val t = currentTerm.incrementAndGet()
+    db.commit()
+    transientTerm.set(t)
+    t
   }
 
   def becomeLeader(term: Int) = become(new Leader(cluster), term)
@@ -97,6 +107,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def stop: Unit = {
     become(Stopped, cluster.local.term)
+    db.close()
   }
   
   def locked[T](f: => T): T = {
@@ -108,4 +119,10 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
        }
   }
   
+    private def file(dataDir: String): File = {
+    val dir = new File(dataDir)
+    dir.mkdirs()
+    val file = new File(dir, "ckite")
+    file
+  }
 }

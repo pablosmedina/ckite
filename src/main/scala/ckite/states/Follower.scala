@@ -47,7 +47,7 @@ class Follower(cluster: Cluster) extends State with Logging {
       
       cluster.local.updateTermIfNeeded(appendEntries.term)
       
-      if (cluster.updateLeader(appendEntries.leaderId)) LOG.info(s"Following ${cluster.leader}")
+      if (cluster.updateLeader(appendEntries.leaderId)) LOG.info("Following {}", cluster.leader)
 
       val success = cluster.rlog.tryAppend(appendEntries)
       

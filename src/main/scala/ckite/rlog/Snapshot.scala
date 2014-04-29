@@ -9,12 +9,12 @@ import java.io.FileInputStream
 import java.io.DataOutputStream
 import java.io.DataInputStream
 
-class Snapshot(val stateMachineBytes: Array[Byte], val lastLogEntryIndex: Int, val lastLogEntryTerm: Int, val membership: MembershipState) extends Serializable {
+class Snapshot(val stateMachineBytes: Array[Byte], val lastLogEntryIndex: Long, val lastLogEntryTerm: Int, val membership: MembershipState) extends Serializable {
 
   def write(dataDir: String) = {
     val outputStream = new DataOutputStream(new FileOutputStream(snapshotFile(dataDir)))
     
-    outputStream.writeInt(lastLogEntryIndex)
+    outputStream.writeLong(lastLogEntryIndex)
     outputStream.writeInt(lastLogEntryTerm)
     val membershipBytes = Serializer.serialize(membership)
     outputStream.writeInt(membershipBytes.length)
@@ -42,7 +42,7 @@ object Snapshot {
     def read(snapshotFile: File): Snapshot =   {
       val inputStream = new DataInputStream(new FileInputStream(snapshotFile))
        
-      val lastLogEntryIndex = inputStream.readInt()
+      val lastLogEntryIndex = inputStream.readLong()
       val lastLogEntryTerm = inputStream.readInt()
       val membershipBytes = inputStream.readInt()
       val membership = new Array[Byte](membershipBytes)

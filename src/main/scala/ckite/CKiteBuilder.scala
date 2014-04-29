@@ -61,6 +61,16 @@ class CKiteBuilder {
     this.stateMachine = new StateMachineWrapper(stateMachine)
     this
   }
+  
+  def withFlushSize(flushSize: Long): CKiteBuilder = {
+    configuration.withFlushSize(flushSize)
+    this
+  }
+  
+  def withSyncEnabled(enabled: Boolean):CKiteBuilder = {
+    configuration.withSyncEnabled(enabled)
+    this
+  }
 
   def build(): CKite = {
     new CKite(new Cluster(stateMachine, configuration), this)

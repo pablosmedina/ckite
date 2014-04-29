@@ -24,10 +24,10 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
   val TermFieldManifest = implicitly[Manifest[Int]]
   val LeaderIdField = new TField("leaderId", TType.STRING, 2)
   val LeaderIdFieldManifest = implicitly[Manifest[String]]
-  val CommitIndexField = new TField("commitIndex", TType.I32, 3)
-  val CommitIndexFieldManifest = implicitly[Manifest[Int]]
-  val PrevLogIndexField = new TField("prevLogIndex", TType.I32, 4)
-  val PrevLogIndexFieldManifest = implicitly[Manifest[Int]]
+  val CommitIndexField = new TField("commitIndex", TType.I64, 3)
+  val CommitIndexFieldManifest = implicitly[Manifest[Long]]
+  val PrevLogIndexField = new TField("prevLogIndex", TType.I64, 4)
+  val PrevLogIndexFieldManifest = implicitly[Manifest[Long]]
   val PrevLogTermField = new TField("prevLogTerm", TType.I32, 5)
   val PrevLogTermFieldManifest = implicitly[Manifest[Int]]
   val EntriesField = new TField("entries", TType.LIST, 6)
@@ -46,8 +46,8 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
   def apply(
     term: Int,
     leaderId: String,
-    commitIndex: Int = -1,
-    prevLogIndex: Int = -1,
+    commitIndex: Long = -1,
+    prevLogIndex: Long = -1,
     prevLogTerm: Int = -1,
     entries: Option[Seq[LogEntryST]] = None
   ): AppendEntriesST = new Immutable(
@@ -59,7 +59,7 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
     entries
   )
 
-  def unapply(_item: AppendEntriesST): Option[Product6[Int, String, Int, Int, Int, Option[Seq[LogEntryST]]]] = Some(_item)
+  def unapply(_item: AppendEntriesST): Option[Product6[Int, String, Long, Long, Int, Option[Seq[LogEntryST]]]] = Some(_item)
 
   object Immutable extends ThriftStructCodec3[AppendEntriesST] {
     override def encode(_item: AppendEntriesST, _oproto: TProtocol) { _item.write(_oproto) }
@@ -68,9 +68,9 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
       var _got_term = false
       var leaderId: String = null
       var _got_leaderId = false
-      var commitIndex: Int = -1
+      var commitIndex: Long = -1
       var _got_commitIndex = false
-      var prevLogIndex: Int = -1
+      var prevLogIndex: Long = -1
       var _got_prevLogIndex = false
       var prevLogTerm: Int = -1
       var _got_prevLogTerm = false
@@ -108,9 +108,9 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
             }
             case 3 => { /* commitIndex */
               _field.`type` match {
-                case TType.I32 => {
+                case TType.I64 => {
                   commitIndex = {
-                    _iprot.readI32()
+                    _iprot.readI64()
                   }
                   _got_commitIndex = true
                 }
@@ -119,9 +119,9 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
             }
             case 4 => { /* prevLogIndex */
               _field.`type` match {
-                case TType.I32 => {
+                case TType.I64 => {
                   prevLogIndex = {
-                    _iprot.readI32()
+                    _iprot.readI64()
                   }
                   _got_prevLogIndex = true
                 }
@@ -194,8 +194,8 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
   class Immutable(
     val term: Int,
     val leaderId: String,
-    val commitIndex: Int = -1,
-    val prevLogIndex: Int = -1,
+    val commitIndex: Long = -1,
+    val prevLogIndex: Long = -1,
     val prevLogTerm: Int = -1,
     val entries: Option[Seq[LogEntryST]] = None
   ) extends AppendEntriesST
@@ -209,15 +209,15 @@ object AppendEntriesST extends ThriftStructCodec3[AppendEntriesST] {
     protected def _underlying_AppendEntriesST: AppendEntriesST
     override def term: Int = _underlying_AppendEntriesST.term
     override def leaderId: String = _underlying_AppendEntriesST.leaderId
-    override def commitIndex: Int = _underlying_AppendEntriesST.commitIndex
-    override def prevLogIndex: Int = _underlying_AppendEntriesST.prevLogIndex
+    override def commitIndex: Long = _underlying_AppendEntriesST.commitIndex
+    override def prevLogIndex: Long = _underlying_AppendEntriesST.prevLogIndex
     override def prevLogTerm: Int = _underlying_AppendEntriesST.prevLogTerm
     override def entries: Option[Seq[LogEntryST]] = _underlying_AppendEntriesST.entries
   }
 }
 
 trait AppendEntriesST extends ThriftStruct
-  with Product6[Int, String, Int, Int, Int, Option[Seq[LogEntryST]]]
+  with Product6[Int, String, Long, Long, Int, Option[Seq[LogEntryST]]]
   with java.io.Serializable
 {
   import AppendEntriesST._
@@ -225,8 +225,8 @@ trait AppendEntriesST extends ThriftStruct
 
   def term: Int
   def leaderId: String
-  def commitIndex: Int
-  def prevLogIndex: Int
+  def commitIndex: Long
+  def prevLogIndex: Long
   def prevLogTerm: Int
   def entries: Option[Seq[LogEntryST]]
 
@@ -272,13 +272,13 @@ trait AppendEntriesST extends ThriftStruct
     if (true) {
       val commitIndex_item = commitIndex
       _oprot.writeFieldBegin(CommitIndexField)
-      _oprot.writeI32(commitIndex_item)
+      _oprot.writeI64(commitIndex_item)
       _oprot.writeFieldEnd()
     }
     if (true) {
       val prevLogIndex_item = prevLogIndex
       _oprot.writeFieldBegin(PrevLogIndexField)
-      _oprot.writeI32(prevLogIndex_item)
+      _oprot.writeI64(prevLogIndex_item)
       _oprot.writeFieldEnd()
     }
     if (true) {
@@ -304,8 +304,8 @@ trait AppendEntriesST extends ThriftStruct
   def copy(
     term: Int = this.term, 
     leaderId: String = this.leaderId, 
-    commitIndex: Int = this.commitIndex, 
-    prevLogIndex: Int = this.prevLogIndex, 
+    commitIndex: Long = this.commitIndex, 
+    prevLogIndex: Long = this.prevLogIndex, 
     prevLogTerm: Int = this.prevLogTerm, 
     entries: Option[Seq[LogEntryST]] = this.entries
   ): AppendEntriesST =

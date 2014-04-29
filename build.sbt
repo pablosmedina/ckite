@@ -2,7 +2,7 @@ name := "ckite"
 
 organization := "io.ckite"
 
-version := "0.1.4-SNAPSHOT"
+version := "0.1.4-LOCAL"
 
 scalaVersion := "2.10.2"
 
@@ -23,7 +23,8 @@ libraryDependencies ++= Seq(
 	"com.twitter" %% "finagle-http" % "6.6.2" exclude("org.scala-lang", "scala-library"),
     "com.fasterxml.jackson.module" %% "jackson-module-scala" % "2.1.3" exclude("org.scala-lang", "scala-library") exclude("com.google.guava", "guava"),
 	"com.typesafe" % "config" % "1.0.2",
-	"org.mapdb" % "mapdb" % "0.9.11",
+	"org.mapdb" % "mapdb" % "0.9.13",
+	"com.esotericsoftware.kryo"   %  "kryo"  % "2.22",
 	"org.scalatest" % "scalatest_2.10" % "2.0.M6" % "test",
     "ch.qos.logback" % "logback-classic" % "1.1.1" % "test",
 	"junit" % "junit" % "4.8.1" % "test"
@@ -46,6 +47,8 @@ publishTo <<= version { v: String =>
   val nexus = "https://oss.sonatype.org/"
   if (v.trim.endsWith("SNAPSHOT")) 
     Some("snapshots" at nexus + "content/repositories/snapshots")
+  if (v.trim.endsWith("LOCAL"))
+  	Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository")))
   else                             
     Some("releases" at nexus + "service/local/staging/deploy/maven2")
 }

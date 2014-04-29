@@ -2,15 +2,15 @@ namespace java ckite.rpc.thrift
 
 struct LogEntryST {
 	1: required i32 term;
-	2: required i32 index;
+	2: required i64 index;
 	3: required binary command;
 }
 
 struct AppendEntriesST {
 	1: required i32 term;
 	2: required string leaderId; 
-	3: optional i32 commitIndex = -1; 
-	4: optional i32 prevLogIndex = -1;
+	3: optional i64 commitIndex = -1; 
+	4: optional i64 prevLogIndex = -1;
 	5: optional i32 prevLogTerm = -1;
 	6: optional list<LogEntryST> entries;
 }
@@ -23,7 +23,7 @@ struct AppendEntriesResponseST {
 struct RequestVoteST {
 	1: required string memberId;
 	2: required i32 term;
-	3: optional i32 lastLogIndex = -1;
+	3: optional i64 lastLogIndex = -1;
 	4: optional i32 lastLogTerm = -1; 
 }
 
@@ -34,7 +34,7 @@ struct RequestVoteResponseST {
 
 struct InstallSnapshotST {
 	1: required binary stateMachineState;
-	2: required i32 lastLogEntryIndex;
+	2: required i64 lastLogEntryIndex;
 	3: required i32 lastLogEntryTerm;
 	4: required binary membershipState;
 }

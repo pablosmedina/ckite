@@ -23,6 +23,8 @@ class Configuration(var config: Config) {
   val ThriftWorkers = "ckite.thrift.workers"
 
   val LogCompactionThreshold = "ckite.log.compaction.threshold"
+  val FlushSize = "ckite.log.flushSize"
+  val SyncEnabled = "ckite.log.syncEnabled"  
   val DataDir = "ckite.data.dir"
 
   def withMinElectionTimeout(minElectionTimeout: Int) = {
@@ -72,6 +74,14 @@ class Configuration(var config: Config) {
   def withLogCompactionThreshold(threshold: Int) = {
     config = config.withValue(LogCompactionThreshold, ConfigValueFactory.fromAnyRef(threshold))
   }
+  
+  def withFlushSize(flushSize: Long) = {
+    config = config.withValue(FlushSize, ConfigValueFactory.fromAnyRef(flushSize))
+  }
+  
+  def withSyncEnabled(syncEnabled: Boolean) = {
+    config = config.withValue(SyncEnabled, ConfigValueFactory.fromAnyRef(syncEnabled))
+  }
 
   def withWaitForLeaderTimeout(waitForLeaderTimeout: Int) = {
     config = config.withValue(WaitForLeaderTimeout, ConfigValueFactory.fromAnyRef(waitForLeaderTimeout))
@@ -120,4 +130,8 @@ class Configuration(var config: Config) {
   def thriftWorkers: Int = {
     config.getInt(ThriftWorkers)
   }
+  
+  def syncEnabled: Boolean = config.getBoolean(SyncEnabled)
+  
+  def flushSize: Long = config.getLong(FlushSize)
 }

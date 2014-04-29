@@ -33,16 +33,17 @@ import ckite.rpc.LogEntry
 import ckite.rpc.AppendEntries
 import java.util.concurrent.ConcurrentHashMap
 import ckite.rpc.LogEntry
+import java.util.concurrent.atomic.AtomicLong
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   LOG.debug(s"Creating RemoteMember $binding")
   
-  val nextLogIndex = new AtomicInteger(1)
-  val matchIndex = cluster.db.getAtomicInteger(s"$binding-matchIndex")
+  val nextLogIndex = new AtomicLong(1)
+  val matchIndex = new AtomicLong(0)
   val connector: Connector = new ThriftConnector(id)
   val replicationsEnabled = new AtomicBoolean(true)
-  val replicationsInProgress = new ConcurrentHashMap[Int,Boolean]()
+  val replicationsInProgress = new ConcurrentHashMap[Long,Boolean]()
   private def localMember = cluster.local
   private def rlog = cluster.rlog
 
@@ -89,35 +90,35 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   }
   
   private def normalReplication(term: Int, previous: LogEntry, entries: List[LogEntry]) = {
-    AppendEntries(term, localMember.id, rlog.getCommitIndex, previous.index, previous.term, entries)
+    AppendEntries(term, localMember.id, rlog.commitIndex, previous.index, previous.term, entries)
   }
   
   private def firstReplication(term: Int, toReplicate: List[LogEntry]) = {
-    AppendEntries(term, localMember.id, rlog.getCommitIndex, entries = toReplicate)
+    AppendEntries(term, localMember.id, rlog.commitIndex, entries = toReplicate)
   }
   
-  private def heartbeat(term: Int) = AppendEntries(term, localMember.id, rlog.getCommitIndex)
+  private def heartbeat(term: Int) = AppendEntries(term, localMember.id, rlog.commitIndex)
   
   private def toReplicateEntries: List[LogEntry] = {
-    val index = nextLogIndex.intValue()
+    val index = nextLogIndex.longValue()
     val entries = for (
       entry <- rlog.logEntry(index) if (isReplicationEnabled && !isBeingReplicated(index))
     ) yield entry
     List(entries).flatten
   }	
   
-  private def isBeingReplicated(index: Int) = replicationsInProgress.put(index, true)
+  private def isBeingReplicated(index: Long) = replicationsInProgress.put(index, true)
   
-  def ackLogEntry(logEntryIndex: Int) = {
+  def ackLogEntry(logEntryIndex: Long) = {
     updateMatchIndex(logEntryIndex)
     updateNextLogIndex
     replicationsInProgress.remove(logEntryIndex)
   }
   
-  private def updateMatchIndex(logEntryIndex: Int) = {
-    var currentMatchIndex = matchIndex.intValue()
+  private def updateMatchIndex(logEntryIndex: Long) = {
+    var currentMatchIndex = matchIndex.longValue()
 	while(currentMatchIndex <= logEntryIndex && !matchIndex.compareAndSet(currentMatchIndex, logEntryIndex)) {
-	     currentMatchIndex = matchIndex.intValue()
+	     currentMatchIndex = matchIndex.longValue()
 	}
   }
   
@@ -136,6 +137,8 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   }
 
   def setNextLogIndex(index: Int) = nextLogIndex.set(index)
+  
+  def resetMatchIndex = matchIndex.set(0)
 
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
   def requestVote: Boolean = {
