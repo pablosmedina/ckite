@@ -13,18 +13,22 @@ import ckite.rpc.LogEntry
 import ckite.RLog
 import ckite.rpc.LogEntry
 import scala.collection.mutable.ArrayBuffer
+import ckite.util.Logging
 
-class LogAppender(rlog: RLog, log: PersistentLog) {
+class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
   val queue = new LinkedBlockingQueue[Append[_]]()
   var pendingFlushes = ArrayBuffer[(LogEntry, Append[_])]()
   val flushSize = rlog.cluster.configuration.flushSize
   val syncEnabled = rlog.cluster.configuration.syncEnabled
 
-  val asyncExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LogAppender-worker", true)))
+  val asyncPool = new ThreadPoolExecutor(0, 1,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LogAppender-worker", true))
+  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
 
   def start = asyncExecutionContext.execute(asyncAppend _)
+  
+  def stop = asyncPool.shutdownNow()
 
   //leader append
   def append(term: Int, write: WriteCommand): Promise[(LogEntry, Promise[Any])] = append(LeaderAppend(term, write))
@@ -39,16 +43,20 @@ class LogAppender(rlog: RLog, log: PersistentLog) {
   }
 
   private def asyncAppend = {
-    while (true) {
-      val append = next
-
-      val logEntry = append.logEntry
-
-      rlog.shared {
-        log.append(logEntry)
-      }
-
-      pendingFlushes = pendingFlushes :+ (logEntry, append)
+    try {
+    	while (!Thread.currentThread().isInterrupted()) {
+    		val append = next
+    				
+    				val logEntry = append.logEntry
+    				
+    				rlog.shared {
+    			log.append(logEntry)
+    		}
+    		
+    		pendingFlushes = pendingFlushes :+ (logEntry, append)
+    	}
+    } catch {
+      case e: InterruptedException => LOG.info("Shutdown LogAppender...")
     }
   }
 

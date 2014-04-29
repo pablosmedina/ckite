@@ -54,11 +54,13 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   
   val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
 
-  val appendEntriesExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true)))
+  val appendEntriesPool = new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true))
+  val appendEntriesExecutionContext = ExecutionContext.fromExecutor(appendEntriesPool)
 
-  val electionExecutionContext = ExecutionContext.fromExecutor(new ThreadPoolExecutor(0, configuration.electionWorkers,
-    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Election-worker", true)))
+  val electionPool = new ThreadPoolExecutor(0, configuration.electionWorkers,
+    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Election-worker", true))
+  val electionExecutionContext = ExecutionContext.fromExecutor(electionPool)
   
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
   
@@ -114,9 +116,17 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     inContext {
     	LOG.info("Stop CKite Cluster")
     }
+    shutdownPools
+    
     local stop
     
     rlog stop
+  }
+  
+  private def shutdownPools = {
+    appendEntriesPool.shutdown()
+    electionPool.shutdown()
+    scheduledElectionTimeoutExecutor.shutdown()
   }
 
   def on(requestVote: RequestVote):RequestVoteResponse = inContext {
