@@ -42,7 +42,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      ckite stop
   }
   
-  "A single member cluster" should "compact a log & reload snapshot" in {
+  it should "compact a log & reload snapshot" in {
      val dir = someTmpDir
     
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")

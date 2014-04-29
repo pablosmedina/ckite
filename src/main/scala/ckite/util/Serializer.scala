@@ -1,60 +1,24 @@
 package ckite.util
 
 import java.io.ByteArrayOutputStream
-import java.io.ObjectInputStream
-import java.io.ByteArrayInputStream
-import java.io.ObjectOutputStream
-
-object Serializer {
-
-	//TODO: make me more efficient
-  def serialize[T](anObject: T): Array[Byte] = {
-    val baos = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(baos)
-    oos.writeObject(anObject)
-    oos.flush()
-    baos.flush()
-    val bytes = baos.toByteArray()
-    oos.close()
-    bytes
-  }
-  
-  //TODO: make me more efficient
-  def deserialize[T](bytes: Array[Byte]): T = {
-    val bais = new ByteArrayInputStream(bytes)
-    val ois = new ObjectInputStream(bais)
-    val deserialized = ois.readObject().asInstanceOf[T]
-    ois.close()
-    deserialized
-  }
-  
-}
-
-/**
-package ckite.util
-
-import java.io.ByteArrayOutputStream
-import java.io.ObjectInputStream
-import java.io.ByteArrayInputStream
-import java.io.ObjectOutputStream
-import java.io.ByteArrayOutputStream
-import java.util.concurrent.ConcurrentLinkedQueue
 import java.io.InputStream
-import com.esotericsoftware.kryo.Kryo
+import java.lang.reflect.Constructor
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.immutable
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.io.Input
+import com.esotericsoftware.kryo.io.Output
 import com.esotericsoftware.kryo.io.UnsafeInput
 import com.esotericsoftware.kryo.io.UnsafeOutput
-import ckite.rpc.LogEntry
-import org.objenesis.strategy.StdInstantiatorStrategy
+import com.esotericsoftware.shaded.org.objenesis.strategy.StdInstantiatorStrategy
 
 object Serializer  {
 
-  val kryoSerializer = new KryoSerializer(List())
+  val kryoSerializer = new KryoSerializer()
   
-	//TODO: make me more efficient
   def serialize[T](anObject: T): Array[Byte] = kryoSerializer.serialize(anObject)
   
-  //TODO: make me more efficient
   def deserialize[T](bytes: Array[Byte]): T = kryoSerializer.deserialize(bytes)
   
 }
@@ -74,20 +38,19 @@ class KryoSerializer(hintedClasses: List[Class[_]] = List.empty) extends Logging
   val pool = new KryoPool(kryoFactory, 10)
 
   def serialize[T](anObject: T): Array[Byte] = {
-    val kryoHolder = pool.take()
+    val kryo = pool.take()
     try {
-      val kryo = kryoHolder
       val outputStream = new ByteArrayOutputStream()
       val output = new UnsafeOutput(outputStream)
       kryo.writeClassAndObject(output, anObject)
       output.flush()
-      val bytes = outputStream.toByteArray()
       output.close()
+      val bytes = outputStream.toByteArray()
       bytes
     } catch {
-      case e: Exception => LOG.trace("error",e); throw e
+      case e: Exception => LOG.trace("serialization error",e); throw e
     }  	finally {
-      pool.release(kryoHolder)
+      pool.release(kryo)
     }
   }
 
@@ -104,7 +67,7 @@ class KryoSerializer(hintedClasses: List[Class[_]] = List.empty) extends Logging
     try {
       kryo.readClassAndObject(input).asInstanceOf[T]
     }catch {
-      case e: Exception => LOG.trace("error",e); throw e
+      case e: Exception => LOG.trace("deserialization error",e); throw e
     }  finally {
       pool.release(kryo)
     }
@@ -118,7 +81,6 @@ trait Factory[T] {
 
 class KryoPool(factory: Factory[Kryo], initInstances: Int)  {
   val instances = new AtomicLong(initInstances)
-//  instances.addAndGet(initInstances)
   val maxInstances = initInstances * 2
   val objects = new ConcurrentLinkedQueue[Kryo]()
 
@@ -147,11 +109,9 @@ class KryoPool(factory: Factory[Kryo], initInstances: Int)  {
 
 }
 
-
 class KryoSerializerFactory {
 
   def create(hintedClasses: List[Class[_]]) = {
      new KryoSerializer(hintedClasses)
   }
 }
-*/

@@ -20,7 +20,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-04-21T20:45:34.651-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-04-28T21:48:12.691-0300")
 trait CKiteService[+MM[_]] extends ThriftService {
   
   def sendRequestVote(requestVote: RequestVoteST): MM[RequestVoteResponseST]

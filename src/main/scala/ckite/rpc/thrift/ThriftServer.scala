@@ -52,7 +52,7 @@ class ThriftServer(cluster: Cluster) {
       
       override def join(joinRequest: JoinRequestST) = futurePool {
         val success = cluster.addMember(joinRequest._1)
-        JoinResponseST(success)
+        JoinResponseST(true)
       }
       
       override def getMembers() = futurePool {

@@ -7,20 +7,10 @@ import com.esotericsoftware.kryo.KryoSerializable
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.kryo.io.Output
 import com.esotericsoftware.kryo.io.Input
+import java.nio.ByteBuffer
+import ckite.util.Serializer
 
-case class LogEntry(var term: Int, var index: Long, var command: Command) extends KryoSerializable {
-
-  def write(kryo: Kryo, output: Output) = {
-    output.writeInt(term)
-    output.writeLong(index)
-    kryo.writeClassAndObject(output, command)
-  }
-  
-  def read(kryo: Kryo, input: Input) = {
-    term = input.readInt()
-    index = input.readLong()
-    command = kryo.readClassAndObject(input).asInstanceOf[Command]
-  }
-  
+case class LogEntry(val term: Int, val index: Long, val command: Command) {
   override def toString = s"LogEntry(term=$term,index=$index,$command)"
 }
+

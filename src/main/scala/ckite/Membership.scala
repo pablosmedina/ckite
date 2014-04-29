@@ -1,5 +1,10 @@
 package ckite
 
+import com.esotericsoftware.kryo.KryoSerializable
+import com.esotericsoftware.kryo.io.Output
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.kryo.io.Input
+
 trait Membership {
 
   def allMembers: Seq[Member]
@@ -20,12 +25,20 @@ trait Membership {
   
 }
 
-trait MembershipState extends Serializable {
+trait MembershipState {
   def recoverIn(cluster: Cluster)
   def getMembershipFor(cluster: Cluster): Membership
 }
 
-class SimpleMembershipState(bindings: List[String]) extends MembershipState {
+class SimpleMembershipState(var bindings: List[String]) extends MembershipState with KryoSerializable  {
+   def write(kryo: Kryo, output: Output) = {
+       output.writeString(bindings.mkString(","))
+   }
+   
+   def read(kryo: Kryo, input: Input) = {
+      bindings = input.readString().split(",").toList
+   }
+  
    def recoverIn(cluster: Cluster) = {
       val membership = getMembershipFor(cluster)
       cluster.consensusMembership.set(membership)
@@ -39,7 +52,16 @@ class SimpleMembershipState(bindings: List[String]) extends MembershipState {
    }
 }
  
-class JointMembershipState(oldBindings: MembershipState, newBindings: MembershipState)  extends MembershipState {
+class JointMembershipState(var oldBindings: MembershipState, var newBindings: MembershipState)  extends MembershipState with KryoSerializable {
+     def write(kryo: Kryo, output: Output) = {
+      kryo.writeClassAndObject(output, oldBindings)
+      kryo.writeClassAndObject(output, newBindings)
+   }
+   
+   def read(kryo: Kryo, input: Input) = {
+      oldBindings = kryo.readClassAndObject(input).asInstanceOf[MembershipState]
+      newBindings = kryo.readClassAndObject(input).asInstanceOf[MembershipState]
+   }
   def recoverIn(cluster: Cluster) = {
     cluster.consensusMembership.set(getMembershipFor(cluster))
   }

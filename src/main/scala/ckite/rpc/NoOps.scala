@@ -2,4 +2,6 @@ package ckite.rpc
 
 case class NoOp extends WriteCommand
 
-case class CompactedEntry extends ReadCommand
+case object Void
+
+case class CompactedEntry() extends ReadCommand

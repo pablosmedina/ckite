@@ -19,25 +19,18 @@ import ckite.util.Serializer
 
 class MapDBPersistentLog(dataDir: String, rlog: RLog) extends PersistentLog with Logging {
 
-  val logDB = DBMaker.newFileDB(file(dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
+  val logDB = DBMaker.newFileDB(file(dataDir)).mmapFileEnable().closeOnJvmShutdown().transactionDisable().cacheDisable().make()
   
   val entries = logDB.getTreeMap[Long, Array[Byte]]("logEntries")
   val cachedSize = new AtomicLong(entries.size())
+  val lastIndex = new AtomicLong(if (entries.isEmpty) 0 else entries.lastKey())
   
-  def append(term: Int, write: WriteCommand): LogEntry = {
-    val logEntry = LogEntry(term, rlog.nextLogIndex, write)
-    entries.put(logEntry.index, Serializer.serialize(logEntry))
-    cachedSize.incrementAndGet()
-    logEntry
-  }
-  
-  def commit = {
-	  if (cachedSize.longValue() % 1000 == 0) logDB.commit()
-  }
+  def commit = logDB.commit()
 
   def append(entry: LogEntry): Unit = {
     entries.put(entry.index, Serializer.serialize(entry))
     cachedSize.incrementAndGet()
+    lastIndex.set(entry.index)
   }
 
   def getEntry(index: Long): LogEntry = { 
@@ -52,21 +45,27 @@ class MapDBPersistentLog(dataDir: String, rlog: RLog) extends PersistentLog with
     LOG.debug(s"Finished compaction")
   }
 
-  def getLastIndex(): Long = if (entries.isEmpty) 0 else entries.keySet.last()
+  def getLastIndex(): Long = lastIndex.longValue()
 
   def size() = cachedSize.longValue()
   
-  def remove(index: Long) = {
+  private def remove(index: Long) = {
     entries.remove(index)
     cachedSize.decrementAndGet()
   }
   
-  def close() = {
-    logDB.close()
+  def discardEntriesFrom(index: Long) = {
+     index to lastIndex.longValue() foreach { i => 
+     	remove(i)
+     }
+     lastIndex.set(index - 1)
   }
   
-  private def firstIndex: Long = entries.firstKey()
-
+  def close() = {
+    logDB.close()
+  } 
+  
+  private def firstIndex: Long = if (!entries.isEmpty) entries.firstKey else 1
 
   private def file(dataDir: String): File = {
     val dir = new File(dataDir)

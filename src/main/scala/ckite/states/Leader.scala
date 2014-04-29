@@ -98,18 +98,14 @@ class Leader(cluster: Cluster) extends State {
   }
 
   override def on[T](command: Command): T = {
-//    try {
-	    command match {
-	      case w: WriteCommand => onWriteCommand[T](w)
-	      case r: ReadCommand => onReadCommand[T](r)
-	    }
-//    } catch {
-//      case e: Exception => LOG.error("error", e); throw new RuntimeException(e)
-//    }
+    command match {
+      case w: WriteCommand => onWriteCommand[T](w)
+      case r: ReadCommand => onReadCommand[T](r)
+    }
   }
 
   private def onWriteCommand[T](write: WriteCommand): T = {
-//    LOG.debug(s"Will wait for a majority consisting of ${cluster.membership.majoritiesMap} until $ReplicationTimeout ms")
+    LOG.debug("Will wait for a majority consisting of {} until {} ms", cluster.membership.majoritiesMap, ReplicationTimeout)
     val (logEntry,promise) = cluster.rlog.append(write).asInstanceOf[(LogEntry,Promise[T])]
     replicate(logEntry)
     await(promise, logEntry)
@@ -118,11 +114,11 @@ class Leader(cluster: Cluster) extends State {
   private def await[T](promise: Promise[T], logEntry: LogEntry) = {
     try {
       val value = Await.result(promise.future, appendEntriesTimeout)
-//      LOG.trace(s"Finish wait for $logEntry and got value $value")
+      LOG.trace("Finish wait for {} and got value {}", logEntry, value)
       value
     } catch {
       case e: TimeoutException => {
-        LOG.warn(s"WriteTimeout - $logEntry")
+        LOG.warn("WriteTimeout - {}",logEntry)
         throw new WriteTimeoutException(logEntry)
       }
     }
@@ -132,7 +128,7 @@ class Leader(cluster: Cluster) extends State {
     if (cluster.hasRemoteMembers) {
       cluster.broadcastAppendEntries(logEntry.term)
     } else {
-//      LOG.debug(s"No member to replicate")
+      LOG.debug("No member to replicate")
       cluster.rlog commit logEntry.index
     }
   }

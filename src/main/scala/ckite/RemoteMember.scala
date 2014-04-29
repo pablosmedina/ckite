@@ -90,14 +90,14 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   }
   
   private def normalReplication(term: Int, previous: LogEntry, entries: List[LogEntry]) = {
-    AppendEntries(term, localMember.id, rlog.getCommitIndex, previous.index, previous.term, entries)
+    AppendEntries(term, localMember.id, rlog.commitIndex, previous.index, previous.term, entries)
   }
   
   private def firstReplication(term: Int, toReplicate: List[LogEntry]) = {
-    AppendEntries(term, localMember.id, rlog.getCommitIndex, entries = toReplicate)
+    AppendEntries(term, localMember.id, rlog.commitIndex, entries = toReplicate)
   }
   
-  private def heartbeat(term: Int) = AppendEntries(term, localMember.id, rlog.getCommitIndex)
+  private def heartbeat(term: Int) = AppendEntries(term, localMember.id, rlog.commitIndex)
   
   private def toReplicateEntries: List[LogEntry] = {
     val index = nextLogIndex.longValue()

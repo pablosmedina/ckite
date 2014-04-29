@@ -47,6 +47,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
     		LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
     		votedFor.set("")
     		currentTerm.set(receivedTerm)
+    		db.commit()
     		transientTerm.set(currentTerm.intValue())
     	}
     }
@@ -54,6 +55,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def incrementTerm = cluster.inContext {
     val t = currentTerm.incrementAndGet()
+    db.commit()
     transientTerm.set(t)
     t
   }
