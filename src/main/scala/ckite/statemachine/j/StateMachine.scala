@@ -2,6 +2,8 @@ package ckite.statemachine.j
 
 import java.nio.ByteBuffer
 import ckite.rpc.Command
+import ckite.rpc.WriteCommand
+import ckite.rpc.ReadCommand
 
 trait StateMachine {
 
@@ -9,6 +11,10 @@ trait StateMachine {
   
   def serialize(): ByteBuffer
   
-  def apply(command: Command):Any
+  def applyWrite(index:Long, write: WriteCommand):Any
+  
+  def applyRead(read: ReadCommand):Any
+  
+  def lastAppliedIndex: Long
   
 }

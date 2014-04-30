@@ -23,10 +23,13 @@ import ckite.rpc.LeaveJointConsensus
 import ckite.rpc.ReadCommand
 import scala.util.Try
 import ckite.rpc.LogEntry
+import ckite.statemachine.CommandExecutor
+import ckite.rpc.WriteCommand
+import ckite.rpc.WriteCommand
 
 class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
-  val applyPartialFunction = stateMachine.apply
+  val commandExecutor = new CommandExecutor(stateMachine)
   val commitIndexQueue = new LinkedBlockingQueue[Long]()
 
   val asyncPool = new ThreadPoolExecutor(0, 1,
@@ -39,37 +42,41 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   @volatile
   var commitIndex: Long = 0
   @volatile
-  var lastApplied: Long = 0
+  var lastApplied: Long = stateMachine.lastAppliedIndex
 
-  def start(index: Long) = {
-    lastApplied = index
+  def start:Unit = {
     workerExecutor.execute(asyncApplier _)
+  }
+  
+  def start(index: Long):Unit = {
+    lastApplied = index
+    start
   }
   
   def stop = {
     workerPool.shutdownNow()
     asyncPool.shutdown()
+    workerPool.awaitTermination(10, TimeUnit.SECONDS)
+    asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
   
   def commit(index: Long) = {
     if (lastApplied < index) commitIndexQueue.offer(index)
   }
   
-  def applyRead(command: ReadCommand) = applyPartialFunction.apply(command)
-
   private def asyncApplier = {
-    LOG.info(s"Starting applier from index #{}",lastApplied)
+    LOG.info(s"Starting applier from index #{}", lastApplied)
     try {
-    	while (!Thread.currentThread().isInterrupted()) {
-    		val index = next
-    				if (lastApplied < index) {
-    					val entry = rlog.logEntry(index)
-    							if (isFromCurrentTerm(entry)) {
-    								applyUntil(entry.get)
-    							}
-    				}
-    	}
-     } catch {
+      while (true) {
+        val index = next
+        if (lastApplied < index) {
+          val entry = rlog.logEntry(index)
+          if (isFromCurrentTerm(entry)) {
+            applyUntil(entry.get)
+          }
+        }
+      }
+    } catch {
       case e: InterruptedException => LOG.info("Shutdown CommandApplier...")
     }
   }
@@ -83,10 +90,10 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
       val entryToApply = if (index == entry.index) Some(entry) else rlog.logEntry(index)
       entryToApply.map { entry =>
         commitIndex = index
-        LOG.debug("New commitIndex #{}", index)
+        LOG.debug("New commitIndex is #{}", index)
         val command = entry.command
         LOG.debug("Will apply committed entry {}", entry)
-        val result = execute(entry.command)
+        val result = execute(entry.index, entry.command)
         lastApplied = index //What do we assume about the StateMachine persistence?
         LOG.debug("Last applied index is #{}", lastApplied)
         notifyResult(index, result)
@@ -107,13 +114,13 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def isCommitted(index: Long) = index <= commitIndex
 
-  private def execute(command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
+  private def execute(index: Long, command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
     LOG.debug("Executing {}", command)
     command match {
       case c: EnterJointConsensus => executeEnterJointConsensus(c)
       case c: LeaveJointConsensus => true
       case c: NoOp => true
-      case _ => applyCommand(command)
+      case w: WriteCommand => commandExecutor.applyWrite(index, w)
     }
   }
 
@@ -128,13 +135,8 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     true
   }
 
-  private def applyCommand(command: Command) = applyPartialFunction.apply(command)
-
-  private def apply(command: Command): Any = {
-    if (applyPartialFunction.isDefinedAt(command)) applyPartialFunction(command)
-    else throw new UnsupportedOperationException("No command handler in StateMachine")
-  }
-
+  def applyRead(read: ReadCommand) = commandExecutor.applyRead(read)
+  
   private def next = {
     if (commitIndexQueue.isEmpty()) {
     	commitIndexQueue.take()

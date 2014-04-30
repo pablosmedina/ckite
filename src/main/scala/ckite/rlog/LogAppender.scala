@@ -28,7 +28,10 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
   def start = asyncExecutionContext.execute(asyncAppend _)
   
-  def stop = asyncPool.shutdownNow()
+  def stop =  {
+    asyncPool.shutdownNow()
+    asyncPool.awaitTermination(10, TimeUnit.SECONDS)
+  }
 
   //leader append
   def append(term: Int, write: WriteCommand): Promise[(LogEntry, Promise[Any])] = append(LeaderAppend(term, write))
@@ -44,17 +47,17 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
   private def asyncAppend = {
     try {
-    	while (!Thread.currentThread().isInterrupted()) {
-    		val append = next
-    				
-    				val logEntry = append.logEntry
-    				
-    				rlog.shared {
-    			log.append(logEntry)
-    		}
-    		
-    		pendingFlushes = pendingFlushes :+ (logEntry, append)
-    	}
+      while (true) {
+        val append = next
+
+        val logEntry = append.logEntry
+
+        rlog.shared {
+          log.append(logEntry)
+        }
+
+        pendingFlushes = pendingFlushes :+ (logEntry, append)
+      }
     } catch {
       case e: InterruptedException => LOG.info("Shutdown LogAppender...")
     }

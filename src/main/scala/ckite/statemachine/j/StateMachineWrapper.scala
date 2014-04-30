@@ -2,6 +2,8 @@ package ckite.statemachine.j
 
 import java.nio.ByteBuffer
 import ckite.rpc.Command
+import ckite.rpc.WriteCommand
+import ckite.rpc.ReadCommand
 
 
 class StateMachineWrapper(jstateMachine: StateMachine) extends ckite.statemachine.StateMachine {
@@ -10,8 +12,13 @@ class StateMachineWrapper(jstateMachine: StateMachine) extends ckite.statemachin
   
   def serialize(): ByteBuffer = jstateMachine.serialize
   
-  def apply: PartialFunction[Command,Any] = {
-    case c:Command => jstateMachine.apply(c)
+  def applyWrite: PartialFunction[(Long, WriteCommand),Any] = {
+    case (index, write) => jstateMachine.applyWrite(index, write)
   }
   
+  def applyRead: PartialFunction[ReadCommand,Any] = {
+    case read => jstateMachine.applyRead(read)
+  }
+  
+  def lastAppliedIndex: Long = jstateMachine.lastAppliedIndex
 }

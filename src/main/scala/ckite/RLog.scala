@@ -165,24 +165,22 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   }
 
   def stop = {
-//    db.close()
     logAppender.stop
     commandApplier.stop
     persistentLog.close()
   }
   
   def serializeStateMachine = stateMachine.serialize().array()
-  
+
   private def initialize() = {
-    val nextIndexAfterSnapshot = snapshotManager.reloadSnapshot
     logAppender.start
-    commandApplier.start(nextIndexAfterSnapshot - 1)
-//    val lastApplied = commandApplier.lastApplied
-//    if (nextIndexAfterSnapshot <= lastApplied) {
-//      replay(nextIndexAfterSnapshot, lastApplied)
-//    } else {
-//      LOG.debug("No entries to be replayed")
-//    }
+    val lastAppliedIndex = commandApplier.lastApplied
+    if (lastAppliedIndex == 0) {
+      val nextIndexAfterSnapshot = snapshotManager.reloadSnapshot
+      commandApplier.start(nextIndexAfterSnapshot - 1)
+    } else {
+      commandApplier.start
+    }
   }
 
   private def raiseMissingLogEntryException(entryIndex: Long) = {
