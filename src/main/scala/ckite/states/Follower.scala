@@ -17,7 +17,7 @@ import ckite.rpc.AppendEntriesResponse
 import ckite.rpc.RequestVote
 import ckite.rpc.AppendEntries
 import ckite.RLog
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import java.util.concurrent.atomic.AtomicBoolean
 import ckite.rpc.Command
 import ckite.util.CKiteConversions._
@@ -102,8 +102,6 @@ class ElectionTimeout(cluster: Cluster) extends Logging {
     val electionTimeout =  randomTimeout
     LOG.trace(s"New timeout is $electionTimeout ms")
     val task: Runnable = () => {
-          cluster updateContextInfo
-          
     	  LOG.debug("Timeout reached! Time to elect a new Leader")
     	  cluster.local becomeCandidate (cluster.local.term)
           

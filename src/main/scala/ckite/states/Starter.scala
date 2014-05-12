@@ -7,16 +7,16 @@ import ckite.rpc.AppendEntriesResponse
 import ckite.rpc.RequestVote
 import ckite.rpc.RequestVoteResponse
 import ckite.rpc.RequestVoteResponse
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.Command
+import ckite.stats.StateInfo
+import ckite.stats.NonLeaderInfo
 
 case object Starter extends State {
 
   override def begin(term: Int) = {}
 
   override def stop = {}
-
-//  override def on[T](command: Command)(implicit cluster: Cluster) = {}
 
   override def on(appendEntries: AppendEntries): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
 

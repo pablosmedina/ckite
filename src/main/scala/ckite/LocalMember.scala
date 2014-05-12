@@ -22,13 +22,13 @@ import java.util.concurrent.atomic.AtomicInteger
 class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val state = new AtomicReference[State](Starter)
-   val db = DBMaker.newFileDB(file(cluster.configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
+  val db = DBMaker.newFileDB(file(cluster.configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
   val currentTerm = db.getAtomicInteger("term")
   val transientTerm = new AtomicInteger(currentTerm.intValue())
   val votedFor = db.getAtomicString("votedFor")
 
   val lock = new ReentrantLock()
-  
+
   def term(): Int = transientTerm.intValue()
 
   def voteForMyself = votedFor.set(id)
@@ -42,18 +42,16 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
   }
 
   def updateTermIfNeeded(receivedTerm: Int) = locked {
-    cluster.inContext {
-    	if (receivedTerm > term) {
-    		LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
-    		votedFor.set("")
-    		currentTerm.set(receivedTerm)
-    		db.commit()
-    		transientTerm.set(currentTerm.intValue())
-    	}
+    if (receivedTerm > term) {
+      LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
+      votedFor.set("")
+      currentTerm.set(receivedTerm)
+      db.commit()
+      transientTerm.set(currentTerm.intValue())
     }
   }
 
-  def incrementTerm = cluster.inContext {
+  def incrementTerm = {
     val t = currentTerm.incrementAndGet()
     db.commit()
     transientTerm.set(t)
@@ -65,25 +63,19 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
   def becomeCandidate(term: Int) = become(new Candidate(cluster), term)
 
   def becomeFollower(term: Int) = become(new Follower(cluster), term)
-  
-  def becomeFollower:Unit = becomeFollower(term())
-  
+
+  def becomeFollower: Unit = becomeFollower(term())
+
   def becomeStarter = changeState(Starter)
-  
-  private def become(newState: State, term: Int): Unit = locked {
+
+  private def become(newState: State, term: Int) = locked {
     if (currentState.canTransition) {
-      if (cluster.isActiveMember(id)) {
-        LOG.debug(s"Transition from $state to $newState")
-        currentState stop
+      LOG.debug(s"Transition from $state to $newState")
+      currentState stop
 
-        changeState(newState)
-        
-        newState begin term
+      changeState(newState)
 
-      } else {
-        LOG.warn(s"No longer part of the Cluster. Shutdown!")
-        cluster.stop
-      }
+      newState begin term
     }
   }
 
@@ -94,13 +86,13 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
   def on(jointConsensusCommited: MajorityJointConsensus) = currentState on jointConsensusCommited
 
   override def forwardCommand[T](command: Command): T = on(command)
-  
+
   def stepDown(term: Int, leaderId: Option[String] = None) = currentState.stepDown(term, leaderId)
-  
+
   def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
     currentState.onAppendEntriesResponse(member, request, response)
   }
-  
+
   def currentState = state.get()
 
   private def changeState(newState: State) = state.set(newState)
@@ -109,17 +101,17 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
     become(Stopped, cluster.local.term)
     db.close()
   }
-  
+
   def locked[T](f: => T): T = {
-       lock.lock()
-       try {
-         f
-       } finally {
-         lock.unlock()
-       }
+    lock.lock()
+    try {
+      f
+    } finally {
+      lock.unlock()
+    }
   }
-  
-    private def file(dataDir: String): File = {
+
+  private def file(dataDir: String): File = {
     val dir = new File(dataDir)
     dir.mkdirs()
     val file = new File(dir, "ckite")

@@ -18,7 +18,7 @@ import java.net.ConnectException
 import com.twitter.finagle.ChannelWriteException
 import ckite.rpc.AppendEntriesResponse
 import ckite.states.Starter
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.ReadCommand
 import ckite.rpc.Command

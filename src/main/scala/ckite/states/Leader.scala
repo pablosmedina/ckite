@@ -18,9 +18,9 @@ import ckite.rpc.LogEntry
 import ckite.RLog
 import java.lang.Boolean
 import ckite.Member
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.MajorityJointConsensus
-import ckite.rpc.LeaveJointConsensus
+import ckite.rpc.NewConfiguration
 import ckite.exception.WriteTimeoutException
 import ckite.util.CKiteConversions._
 import ckite.rpc.ReadCommand
@@ -39,6 +39,9 @@ import scala.collection.JavaConverters._
 import java.util.concurrent.TimeoutException
 import scala.concurrent._
 import scala.concurrent.duration._
+import ckite.stats.StateInfo
+import ckite.stats.LeaderInfo
+import ckite.stats.FollowerInfo
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -67,6 +70,10 @@ class Leader(cluster: Cluster) extends State {
   
   val appendEntriesTimeout = cluster.configuration.appendEntriesTimeout millis
   
+  val asyncPool = new ThreadPoolExecutor(0, 1,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LeaderAsync-worker", true))
+  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
+  
   override def begin(term: Int) = {
     if (term < cluster.local.term) {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
@@ -76,17 +83,21 @@ class Leader(cluster: Cluster) extends State {
       resetNextAndMatchIndexes
       resetFollowerInfo
       heartbeater start term
-      LOG.debug("Append a NoOp as part of Leader initialization")
-      on[Unit](NoOp())
+      appendNoOp
       cluster.updateLeader(cluster.local.id)
       LOG.info(s"Start being Leader")
     }
   }
   
+  private def appendNoOp(implicit context: ExecutionContext = asyncExecutionContext) = {
+      LOG.debug("Append a NoOp as part of Leader initialization")
+      on[Unit](NoOp())
+  }
+  
   private def resetLastLog = cluster.rlog.resetLastLog()
 
   private def resetNextAndMatchIndexes = {
-    val nextIndex = cluster.rlog.lastLog.intValue() + 1
+    val nextIndex = cluster.rlog.lastLog.longValue() + 1
     cluster.membership.remoteMembers.foreach { member => member.setNextLogIndex(nextIndex); member.resetMatchIndex }
   }
 
@@ -105,7 +116,6 @@ class Leader(cluster: Cluster) extends State {
   }
 
   private def onWriteCommand[T](write: WriteCommand): T = {
-    LOG.debug("Will wait for a majority consisting of {} until {} ms", cluster.membership.majoritiesMap, ReplicationTimeout)
     val (logEntry,promise) = cluster.rlog.append(write).asInstanceOf[(LogEntry,Promise[T])]
     replicate(logEntry)
     await(promise, logEntry)
@@ -113,8 +123,9 @@ class Leader(cluster: Cluster) extends State {
   
   private def await[T](promise: Promise[T], logEntry: LogEntry) = {
     try {
+      LOG.debug("Will wait for a majority consisting of {} until {} ms", cluster.membership.majoritiesMap, ReplicationTimeout)
       val value = Await.result(promise.future, appendEntriesTimeout)
-      LOG.trace("Finish wait for {} and got value {}", logEntry, value)
+      LOG.debug("Finish wait for {} and got value {}", logEntry, value)
       value
     } catch {
       case e: TimeoutException => {
@@ -157,8 +168,8 @@ class Leader(cluster: Cluster) extends State {
   }
 
   override def on(jointConsensusCommited: MajorityJointConsensus) = {
-    LOG.debug(s"Sending LeaveJointConsensus")
-    cluster.on[Boolean](LeaveJointConsensus(jointConsensusCommited.newBindings))
+    LOG.debug(s"JointConfiguration is committed... will switch to NewConfiguration")
+    cluster.on[Boolean](NewConfiguration(jointConsensusCommited.newBindings))
   }
   
   override protected def getCluster: Cluster = cluster
@@ -200,14 +211,14 @@ class Leader(cluster: Cluster) extends State {
   }
 
   private def onAppendEntriesResponseUpdateNextLogIndex(member: RemoteMember, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
-    val lastEntrySent = appendEntries.entries.last.index
+    val lastIndexSent = appendEntries.entries.last.index
     if (appendEntriesResponse.success) {
-      member.ackLogEntry(lastEntrySent)
-      LOG.debug(s"Member ${member} ack - LogIndex sent #$lastEntrySent - next LogIndex is #${member.nextLogIndex}")
-      tryToCommitEntries(lastEntrySent)
+      member.ackLogEntry(lastIndexSent)
+      LOG.debug(s"Member ${member} ack - index sent #$lastIndexSent - next index #${member.nextLogIndex}")
+      tryToCommitEntries(lastIndexSent)
     } else {
       member.decrementNextLogIndex()
-      LOG.debug(s"Member ${member} reject - LogIndex sent #$lastEntrySent - next LogIndex is #${member.nextLogIndex}")
+      LOG.debug(s"Member ${member} reject - index sent #$lastIndexSent - next index is #${member.nextLogIndex}")
     }
   }
   
@@ -234,7 +245,6 @@ class Leader(cluster: Cluster) extends State {
     cluster.rlog.snapshotManager.latestSnapshot map { snapshot =>
       LOG.debug(s"Sending InstallSnapshot to ${member} containing $snapshot")
       member.sendSnapshot(snapshot).map { success =>
-        cluster.inContext {
           if (success) {
             LOG.debug("Succesful InstallSnapshot")
             member.ackLogEntry(snapshot.lastLogEntryIndex)
@@ -243,7 +253,6 @@ class Leader(cluster: Cluster) extends State {
             LOG.debug("Failed InstallSnapshot")
           }
           member.enableReplications()
-        }
       }
 
     }
@@ -259,8 +268,6 @@ class Heartbeater(cluster: Cluster) extends Logging {
     LOG.debug("Start Heartbeater")
 
     val task:Runnable = () => {
-      cluster updateContextInfo
-
       LOG.trace("Heartbeater running")
       cluster.broadcastAppendEntries(term)
     } 

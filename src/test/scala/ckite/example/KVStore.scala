@@ -1,13 +1,12 @@
 package ckite.example
 
 import java.util.concurrent.ConcurrentHashMap
-import ckite.rpc.Command
+import java.nio.ByteBuffer
 import ckite.statemachine.StateMachine
 import ckite.util.Serializer
-import java.util.concurrent.atomic.AtomicLong
-import java.nio.ByteBuffer
+import ckite.util.Logging
 
-class KVStore extends StateMachine {
+class KVStore extends StateMachine with Logging {
 
   val map = new ConcurrentHashMap[String, String]()
   @volatile
@@ -15,6 +14,7 @@ class KVStore extends StateMachine {
 
   def applyWrite = {
     case (index, Put(key: String, value: String)) => {
+      LOG.debug(s"Put $key=$value")
       map.put(key, value);
       lastIndex = index
       value
@@ -22,11 +22,14 @@ class KVStore extends StateMachine {
   }
 
   def applyRead = {
-    case Get(key) => map.get(key)
+    case Get(key) => {
+      LOG.debug(s"Get $key")
+      map.get(key)
+    }
   }
 
   def lastAppliedIndex: Long = lastIndex
-  
+
   def deserialize(byteBuffer: ByteBuffer) = {
     val snapshotBytes = byteBuffer.array()
     val deserializedMap: ConcurrentHashMap[String, String] = Serializer.deserialize[ConcurrentHashMap[String, String]](snapshotBytes)

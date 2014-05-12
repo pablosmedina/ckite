@@ -14,6 +14,10 @@ import ckite.RLog
 import ckite.rpc.LogEntry
 import scala.collection.mutable.ArrayBuffer
 import ckite.util.Logging
+import ckite.rpc.Command
+import ckite.rpc.JointConfiguration
+import ckite.rpc.NewConfiguration
+import ckite.rpc.ClusterConfigurationCommand
 
 class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
@@ -55,12 +59,19 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
         rlog.shared {
           log.append(logEntry)
         }
+        
+        afterAppend(logEntry.index, logEntry.command)
 
         pendingFlushes = pendingFlushes :+ (logEntry, append)
       }
     } catch {
       case e: InterruptedException => LOG.info("Shutdown LogAppender...")
     }
+  }
+  
+  private def afterAppend(index:Long,command: Command) = command match {
+      case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
+      case _ => ;
   }
 
   private def next: Append[_] = {

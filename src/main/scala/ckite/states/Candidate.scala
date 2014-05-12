@@ -7,7 +7,7 @@ import ckite.rpc.WriteCommand
 import ckite.rpc.RequestVoteResponse
 import ckite.rpc.AppendEntriesResponse
 import ckite.rpc.AppendEntries
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.Command
 import ckite.util.Logging
 import java.util.concurrent.ThreadPoolExecutor

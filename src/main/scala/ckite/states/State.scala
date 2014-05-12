@@ -7,7 +7,7 @@ import ckite.rpc.RequestVoteResponse
 import ckite.rpc.AppendEntriesResponse
 import ckite.rpc.RequestVote
 import ckite.rpc.AppendEntries
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.ReadCommand
 import ckite.rpc.Command
@@ -15,6 +15,8 @@ import ckite.rpc.AppendEntries
 import ckite.rpc.AppendEntriesResponse
 import ckite.Member
 import ckite.RemoteMember
+import ckite.stats.StateInfo
+import ckite.stats.NonLeaderInfo
 
 trait State extends Logging {
 

@@ -1,4 +1,4 @@
-package ckite.states
+package ckite.stats
 
 class StateInfo
 

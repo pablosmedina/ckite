@@ -1,7 +1,6 @@
-package ckite.http
+package ckite.stats
 
 import ckite.rpc.LogEntry
-import ckite.states.StateInfo
 
 case class Status(cluster: ClusterStatus, log: LogStatus)
 

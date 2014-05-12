@@ -6,6 +6,8 @@ import ckite.rpc.AppendEntriesResponse
 import ckite.rpc.RequestVoteResponse
 import ckite.rpc.RequestVote
 import ckite.rpc.AppendEntries
+import ckite.stats.StateInfo
+import ckite.stats.NonLeaderInfo
 
 case object Stopped extends State {
 

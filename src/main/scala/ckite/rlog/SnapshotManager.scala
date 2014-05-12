@@ -41,11 +41,9 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     val wasCompacting = compacting.getAndSet(true)
     if (!wasCompacting) {
       logCompactionExecutor.execute(() => {
-        rlog.cluster.inContext {
           LOG.debug(s"Log compaction is required")
           compact
           compacting.set(false)
-        }
       })
     }
   }
@@ -93,15 +91,24 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
 
   def reloadSnapshot: Long = {
     latestSnapshot map { snapshot => 
-      LOG.debug(s"Reloading $snapshot")
+      LOG.info(s"Reloading $snapshot")
       stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
       snapshot.membership.recoverIn(cluster)
       latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
-      LOG.debug(s"Finished reloading $snapshot")
+      LOG.info(s"Finished reloading $snapshot")
       snapshot.lastLogEntryIndex + 1
     } getOrElse {
       1 //no snapshot to reload. start from index #1
     }
+  }
+
+  def reload(snapshot: Snapshot) = {
+    LOG.info(s"Reloading $snapshot")
+    stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
+    LOG.info("Restoring cluster configuration from Snapshot...")
+    snapshot.membership.recoverIn(cluster)
+    latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
+    LOG.info(s"Finished reloading $snapshot")
   }
   
   def latestSnapshot: Option[Snapshot] = {

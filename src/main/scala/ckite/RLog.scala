@@ -15,8 +15,8 @@ import ckite.rlog.MapDBPersistentLog
 import ckite.rlog.SnapshotManager
 import ckite.rpc.AppendEntries
 import ckite.rpc.Command
-import ckite.rpc.EnterJointConsensus
-import ckite.rpc.LeaveJointConsensus
+import ckite.rpc.JointConfiguration
+import ckite.rpc.NewConfiguration
 import ckite.rpc.LogEntry
 import ckite.rpc.ReadCommand
 import ckite.rpc.WriteCommand
@@ -48,7 +48,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   def append(write: WriteCommand): (LogEntry, Promise[Any]) = {
 	val appendPromise = logAppender.append(cluster.local.term, write)
 	val (logEntry, valuePromise) = Await.result(appendPromise.future, appendPromiseTimeout)
-    afterAppend(write)
     applyLogCompactionPolicy
     (logEntry, valuePromise)
   }
@@ -99,12 +98,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   
   private def hasIndex(index: Long) = persistentLog.getLastIndex >= index
   
-  private def afterAppend(command: Command) = command match {
-      case c: EnterJointConsensus => cluster.apply(c)
-      case c: LeaveJointConsensus => cluster.apply(c)
-      case _ => ;
-  }
-
   def commit(index: Long): Unit = commandApplier.commit(index)
 
   def commit(logEntry: LogEntry): Unit = commit(logEntry.index)
@@ -113,9 +106,9 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def logEntry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)
-    if (entry != null) Some(entry) else 
-      if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
-      else None
+    if (entry != null) Some(entry)
+    else if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
+    else None
   }
 
   private def withLogEntry[T](index: Long)(block: LogEntry => T) = logEntry(index) foreach block
@@ -151,19 +144,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def size() = persistentLog.size
 
-  def replay(from: Long, to: Long) = {
-    LOG.debug("Start log replay from index #{} to #{}",from,to)
-    from to to foreach { index => replayIndex(index) }
-    LOG.debug("Finished log replay")
-  }
-
-  private def replayIndex(index: Long) = {
-//    LOG.debug("Replaying index #{}",index)
-//    val logEntry = persistentLog.getEntry(index)
-//    afterAppend(logEntry.command)
-//    execute(logEntry.command)
-  }
-
   def stop = {
     logAppender.stop
     commandApplier.stop
@@ -172,15 +152,38 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   
   def serializeStateMachine = stateMachine.serialize().array()
 
+  def assertEmptyLog = {
+    if (persistentLog.size  > 0) throw new IllegalStateException("Log is not empty")
+  }
+  
+  def assertNoSnapshot = {
+    if (snapshotManager.latestSnapthotIndex > 0) throw new IllegalStateException("A Snapshot was found")
+  }
+  
   private def initialize() = {
+    LOG.info("Initializing...")
     logAppender.start
-    val lastAppliedIndex = commandApplier.lastApplied
-    if (lastAppliedIndex == 0) {
-      val nextIndexAfterSnapshot = snapshotManager.reloadSnapshot
-      commandApplier.start(nextIndexAfterSnapshot - 1)
-    } else {
-      commandApplier.start
+    
+    val latestSnapshot = snapshotManager.latestSnapshot
+    val lastAppliedIndex:Long = latestSnapshot map { snapshot =>
+      	LOG.info("Found a {}",snapshot)
+    	if (snapshot.lastLogEntryIndex > commandApplier.lastApplied) {
+    	  LOG.info("The Snapshot has more recent data than the StateMachine. Will reload it...")
+    	  snapshotManager.reload(snapshot)
+    	  snapshot.lastLogEntryIndex
+    	} else {
+    	  LOG.info("The StateMachine has more recent data than the Snapshot. Will just use the cluster configuration in the Snapshot...")
+    	  snapshot.membership.recoverIn(cluster)
+    	  commandApplier.lastApplied
+    	}
+    } getOrElse {
+      LOG.info("No Snapshot was found")
+      0
     }
+    
+    commandApplier.start(lastAppliedIndex)
+    
+    commandApplier.replay
   }
 
   private def raiseMissingLogEntryException(entryIndex: Long) = {

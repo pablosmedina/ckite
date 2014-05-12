@@ -6,6 +6,8 @@ import scala.collection.JavaConverters._
 
 class Configuration(var config: Config) {
 
+  val Bootstrap = "ckite.bootstrap"
+  
   val MinElectionTimeout = "ckite.election.minTimeout"
   val MaxElectionTimeout = "ckite.election.maxTimeout"
   val CollectVotesTimeout = "ckite.election.votingTimeout"
@@ -15,7 +17,6 @@ class Configuration(var config: Config) {
 
   val LocalBinding = "ckite.cluster.localBinding"
   val MemberBindings = "ckite.cluster.memberBindings"
-  val DynamicBootstrap = "ckite.cluster.dynamicBootstrap"
   val WaitForLeaderTimeout = "ckite.cluster.leaderTimeout"
 
   val AppendEntriesWorkers = "ckite.appendEntries.workers"
@@ -99,12 +100,12 @@ class Configuration(var config: Config) {
     config.getStringList(MemberBindings).asScala
   }
 
-  def dynamicBootstrap: Boolean = {
-    config.getBoolean(DynamicBootstrap)
+  def bootstrap: Boolean = {
+    config.getBoolean(Bootstrap)
   }
 
-  def withSeeds = {
-    config = config.withValue(DynamicBootstrap, ConfigValueFactory.fromAnyRef(true))
+  def bootstrap(enabled: Boolean) = {
+    config = config.withValue(Bootstrap, ConfigValueFactory.fromAnyRef(enabled))
   }
 
   def collectVotesTimeout: Long = {

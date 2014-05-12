@@ -11,7 +11,7 @@ import ckite.RLog
 import ckite.statemachine.StateMachine
 import ckite.util.Logging
 import ckite.rpc.Command
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import scala.concurrent._
 import scala.concurrent.duration._
 import ckite.rpc.MajorityJointConsensus
@@ -19,13 +19,15 @@ import ckite.exception.WriteTimeoutException
 import ckite.rpc.NoOp
 import ckite.rpc.Void
 import scala.util.Success
-import ckite.rpc.LeaveJointConsensus
+import ckite.rpc.NewConfiguration
 import ckite.rpc.ReadCommand
 import scala.util.Try
 import ckite.rpc.LogEntry
 import ckite.statemachine.CommandExecutor
 import ckite.rpc.WriteCommand
 import ckite.rpc.WriteCommand
+import ckite.rpc.ClusterConfigurationCommand
+import ckite.rpc.LogEntry
 
 class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
@@ -60,9 +62,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
   
-  def commit(index: Long) = {
-    if (lastApplied < index) commitIndexQueue.offer(index)
-  }
+  def commit(index: Long) = if (lastApplied < index) commitIndexQueue.offer(index)
   
   private def asyncApplier = {
     LOG.info(s"Starting applier from index #{}", lastApplied)
@@ -80,7 +80,39 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
       case e: InterruptedException => LOG.info("Shutdown CommandApplier...")
     }
   }
+
+  def replay: Unit = {
+    val latestClusterConfigurationEntry = findLatestClusterConfiguration
+    latestClusterConfigurationEntry foreach { entry =>
+      LOG.info("Found cluster configuration in the log: {}", entry.command)
+      rlog.cluster.apply(entry.index, entry.command.asInstanceOf[ClusterConfigurationCommand])
+    }
+    val from = lastApplied + 1
+    val to = commitIndex
+    if (from > to) {
+      LOG.info("No entry to replay. commitIndex is #{}", commitIndex)
+      return
+    }
+    replay(from, to)
+  }
   
+  private def findLatestClusterConfiguration: Option[LogEntry] = {
+     rlog.findLastLogIndex to 1 by -1 find { index => 
+      val logEntry = rlog.logEntry(index)
+      if (!logEntry.isDefined) return None
+      logEntry.collect {case LogEntry(term,entry,c:ClusterConfigurationCommand) => true}.getOrElse(false)
+    } map { index => rlog.logEntry(index) } flatten
+  }
+  
+  private def replay(from: Long, to: Long) = {
+    LOG.debug("Start log replay from index #{} to #{}",from,to)
+    rlog.logEntry(to).foreach {
+      entry => 
+        applyUntil(entry)
+    }
+    LOG.debug("Finished log replay")
+  }
+
   private def isFromCurrentTerm(entryOption: Option[LogEntry]) = {
     entryOption.map(entry => entry.term == rlog.cluster.local.term).getOrElse(false)
   }
@@ -117,20 +149,24 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   private def execute(index: Long, command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
     LOG.debug("Executing {}", command)
     command match {
-      case c: EnterJointConsensus => executeEnterJointConsensus(c)
-      case c: LeaveJointConsensus => true
+      case c: JointConfiguration => executeEnterJointConsensus(index, c)
+      case c: NewConfiguration => true
       case c: NoOp => true
       case w: WriteCommand => commandExecutor.applyWrite(index, w)
     }
   }
 
-  private def executeEnterJointConsensus(c: EnterJointConsensus)(implicit context: ExecutionContext = asyncExecutionContext) = {
-    future {
-      try {
-        rlog.cluster.on(MajorityJointConsensus(c.newBindings))
-      } catch {
-        case e: WriteTimeoutException => LOG.warn(s"Could not commit LeaveJointConsensus")
-      }
+  private def executeEnterJointConsensus(index:Long, c: JointConfiguration)(implicit context: ExecutionContext = asyncExecutionContext) = {
+    if (index >= rlog.cluster.membership.index) {
+    	future {
+    		try {
+    			rlog.cluster.on(MajorityJointConsensus(c.newBindings))
+    		} catch {
+    		case e: WriteTimeoutException => LOG.warn(s"Could not commit LeaveJointConsensus")
+    		}
+    	}
+    } else {
+      LOG.info("Skipping old configuration {}",c)
     }
     true
   }

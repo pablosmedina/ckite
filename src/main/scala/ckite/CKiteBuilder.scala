@@ -71,6 +71,11 @@ class CKiteBuilder {
     configuration.withSyncEnabled(enabled)
     this
   }
+  
+  def bootstrap(enabled: Boolean): CKiteBuilder = {
+    configuration.bootstrap(enabled)
+    this
+  }
 
   def build(): CKite = {
     new CKite(new Cluster(stateMachine, configuration), this)

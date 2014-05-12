@@ -1,7 +1,6 @@
 package ckite
 
 import ckite.rpc.thrift.ThriftServer
-import ckite.http.HttpServer
 import ckite.rpc.WriteCommand
 import ckite.rpc.ReadCommand
 import java.util.concurrent.atomic.AtomicBoolean
@@ -9,13 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKiteBuilder) {
 
   private val thrift = ThriftServer(cluster)
-  private val http = HttpServer(cluster)
-
   private val stopped = new AtomicBoolean(false)
   
   def start = {
-    http start
-
     thrift start
 
     cluster start
@@ -24,8 +19,6 @@ class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKi
   def stop = {
     if (!stopped.getAndSet(true)) {
     	thrift stop
-    	
-    	http stop
     	
     	cluster stop
     }
@@ -44,5 +37,9 @@ class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKi
   def removeMember(memberBinding: String) = cluster.removeMember(memberBinding)
 
   def isLeader: Boolean = cluster.awaitLeader == cluster.local
+  
+  def getMembers:List[String] = cluster.getMembers.toList
+  
+  def status = cluster.getStatus
 
 }

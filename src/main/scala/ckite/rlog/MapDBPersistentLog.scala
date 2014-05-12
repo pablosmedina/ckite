@@ -61,9 +61,7 @@ class MapDBPersistentLog(dataDir: String, rlog: RLog) extends PersistentLog with
      lastIndex.set(index - 1)
   }
   
-  def close() = {
-    logDB.close()
-  } 
+  def close() = logDB.close() 
   
   private def firstIndex: Long = if (!entries.isEmpty) entries.firstKey else 1
 

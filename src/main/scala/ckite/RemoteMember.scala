@@ -18,7 +18,7 @@ import java.net.ConnectException
 import com.twitter.finagle.ChannelWriteException
 import ckite.rpc.AppendEntriesResponse
 import ckite.states.Starter
-import ckite.rpc.EnterJointConsensus
+import ckite.rpc.JointConfiguration
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.ReadCommand
 import ckite.rpc.Command
@@ -48,14 +48,14 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   private def rlog = cluster.rlog
 
   override def forwardCommand[T](command: Command): T = {
-    LOG.debug(s"Forward command $command to $id")
+    LOG.debug("Forward command {} to {}",command,id)
     connector.send[T](command)
   }
 
   def sendAppendEntries(term: Int) = {
     val request = createAppendEntries(term)
     connector.send(request).map { response =>
-      LOG.trace(s"AppendEntries response $response")
+      LOG.trace("AppendEntries response {}",response)
       if (response.term > term) {
     	 receivedHigherTerm(response.term, term)
       } else {
@@ -70,7 +70,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   private def receivedHigherTerm(higherTerm: Int, oldTerm: Int) = {
     val currentTerm = localMember.term
     if (higherTerm > currentTerm) {
-    	LOG.debug(s"Detected a term ${higherTerm} higher than current term ${currentTerm}. Step down")
+    	LOG.debug("Detected a term {} higher than current term {}. Step down",higherTerm,currentTerm)
     	localMember.stepDown(higherTerm)
     }
   }
@@ -82,7 +82,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   private def replication(term: Int, head: LogEntry, list: List[LogEntry]) = {
     val toReplicate = head :: list
-    LOG.trace(s"Replicating ${toReplicate.size} entries to $id")
+    LOG.trace("Replicating {} entries to {}",toReplicate.size,id)
     rlog.getPreviousLogEntry(head) match {
       case Some(previous) => normalReplication(term, previous, toReplicate)
       case None => firstReplication(term, toReplicate)
@@ -109,22 +109,20 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   
   private def isBeingReplicated(index: Long) = replicationsInProgress.put(index, true)
   
-  def ackLogEntry(logEntryIndex: Long) = {
-    updateMatchIndex(logEntryIndex)
+  def ackLogEntry(index: Long) = {
+    updateMatchIndex(index)
     updateNextLogIndex
-    replicationsInProgress.remove(logEntryIndex)
+    replicationsInProgress.remove(index)
   }
   
-  private def updateMatchIndex(logEntryIndex: Long) = {
+  private def updateMatchIndex(index: Long) = {
     var currentMatchIndex = matchIndex.longValue()
-	while(currentMatchIndex <= logEntryIndex && !matchIndex.compareAndSet(currentMatchIndex, logEntryIndex)) {
+	while(currentMatchIndex < index && !matchIndex.compareAndSet(currentMatchIndex, index)) {
 	     currentMatchIndex = matchIndex.longValue()
 	}
   }
   
-  private def updateNextLogIndex = {
-    nextLogIndex.set(matchIndex.intValue() + 1)
-  }
+  private def updateNextLogIndex = nextLogIndex.set(matchIndex.longValue() + 1)
 
   def decrementNextLogIndex() = {
     val currentIndex = nextLogIndex.decrementAndGet()
@@ -136,7 +134,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
       connector.send(snapshot)
   }
 
-  def setNextLogIndex(index: Int) = nextLogIndex.set(index)
+  def setNextLogIndex(index: Long) = nextLogIndex.set(index)
   
   def resetMatchIndex = matchIndex.set(0)
 

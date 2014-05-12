@@ -19,7 +19,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   "A single member cluster" should "elect a Leader" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
+    		 				   .withStateMachine(new KVStore()).bootstrap(true).build
      ckite start
      
      ckite.isLeader should be 
@@ -30,7 +30,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   it should "read committed writes" in {
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
     		 				   .withDataDir(someTmpDir)
-    		 				   .withStateMachine(new KVStore()).build
+    		 				   .withStateMachine(new KVStore()).bootstrap(true).build
      ckite start
      
      ckite.write(Put(Key1,Value1))
@@ -46,7 +46,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      val dir = someTmpDir
     
      val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
-    		 				   .withDataDir(dir)
+    		 				   .withDataDir(dir).bootstrap(true)
     		 				   .withLogCompactionThreshold(5 + 1) //5 writes + 1 NoOp
     		 				   .withStateMachine(new KVStore()).build
      ckite start
@@ -76,6 +76,60 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     ckiteRestarted.read[String](Get("key5")) should be ("value5")
     
     ckiteRestarted.stop
+  }
+  
+  it should "restore latest cluster configuration from Log" in {
+     val dir = someTmpDir
+    
+     val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
+    		 				   .withDataDir(dir).bootstrap(true)
+    		 				   .withStateMachine(new KVStore()).build
+     ckite start
+     
+     //It is expected to timeout since 9092 is not up and the configuration need to committed under the new configuration (9091 and 9092)
+     //TODO: What if two subsequent EnterJointConsensus ???
+     intercept[WriteTimeoutException] {
+    	 ckite.addMember("localhost:9092")
+     }
+     
+     ckite stop
+     
+     val ckiteRestarted = rebuild(ckite)
+     
+     val members = ckiteRestarted.getMembers
+     
+     members should contain ("localhost:9092")
+  }
+  
+    it should "restore latest cluster configuration from Snapshot" in {
+     val dir = someTmpDir
+    
+     val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
+    		 				   .withDataDir(dir).bootstrap(true)
+    		 				   .withLogCompactionThreshold(2 + 1) //1 writes + 1 NoOp
+    		 				   .withStateMachine(new KVStore()).build
+     ckite start
+     
+     //It is expected to timeout since 9092 is not up and the configuration need to committed under the new configuration (9091 and 9092)
+     //TODO: What if two subsequent EnterJointConsensus ???
+     intercept[WriteTimeoutException] {
+    	 ckite.addMember("localhost:9092")
+     }
+     
+     
+     //This will force the Snapshot. Again, it is expected to timeout.
+     intercept[WriteTimeoutException] {
+    	 ckite.write(Put(Key1,Value1))
+     }
+     
+     ckite.stop
+     
+     val ckiteRestarted = rebuild(ckite)
+     
+     val members = ckiteRestarted.getMembers
+     
+     members should contain ("localhost:9092")
+     
   }
   
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
@@ -156,8 +210,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
    
   it should "replicate missing commands on restarted member" in {
 
-    val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMemberBindings(Seq("localhost:9092", "localhost:9093"))
-      .withDataDir(someTmpDir).withStateMachine(new KVStore()).build
+    val member1 = CKiteBuilder().withLocalBinding("localhost:9091")
+      .withDataDir(someTmpDir).withStateMachine(new KVStore()).bootstrap(true).build
 
     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMemberBindings(Seq("localhost:9091", "localhost:9093"))
       .withMinElectionTimeout(1000).withMaxElectionTimeout(1000).withDataDir(someTmpDir)
@@ -288,11 +342,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   
   private def withThreeMemberCluster(test: Seq[CKite] => Any) = {
      //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
-     val member1 = CKiteBuilder().withLocalBinding("localhost:9091").withMemberBindings(Seq("localhost:9092","localhost:9093"))
-    		 					.withDataDir(someTmpDir)
+     val member1 = CKiteBuilder().withLocalBinding("localhost:9091")
+    		 					.withDataDir(someTmpDir).bootstrap(true)
     		 				   .withStateMachine(new KVStore()).build
     		 				   
-     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMemberBindings(Seq("localhost:9091","localhost:9093"))
+     val member2 = CKiteBuilder().withLocalBinding("localhost:9092").withMemberBindings(Seq("localhost:9091"))
     		 					.withMinElectionTimeout(1250).withMaxElectionTimeout(1500) //higher election timeout
     		 					.withDataDir(someTmpDir)
     		 				   .withStateMachine(new KVStore()).build
@@ -303,7 +357,12 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     		 				   .withStateMachine(new KVStore()).build
     val members = Seq(member1, member2, member3)
     LOG.info(s"Starting all the members")
-    members.par foreach {_ start}
+    member1 start
+    
+    member2 start
+    
+    member3 start
+    
     waitSomeTimeForElection 
      try {
     	 LOG.info(s"Running test...")
@@ -314,11 +373,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
      }
   }
   
-  private def rebuild(ckite: CKite) = ckite.builder.withStateMachine(new KVStore())build
+  private def rebuild(ckite: CKite) = ckite.builder.withStateMachine(new KVStore()).bootstrap(false).build
   
   private def waitSomeTimeForElection = Thread.sleep(2000)
 
-  private def waitSomeTimeForAppendEntries = Thread.sleep(1000)
+  private def waitSomeTimeForAppendEntries = Thread.sleep(2000)
   
   private def someTmpDir: String = {
     "/tmp/"+System.currentTimeMillis()
