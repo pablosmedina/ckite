@@ -29,11 +29,13 @@ import ckite.util.CKiteConversions._
  * •! Receiving valid AppendEntries RPC, or
  * •! Granting vote to candidate
  */
-class Follower(cluster: Cluster) extends State with Logging {
+class Follower(cluster: Cluster, passive: Boolean = false) extends State with Logging {
 
   val electionTimeout = new ElectionTimeout(cluster)
   
-  override def begin(term: Int) = electionTimeout restart
+  override def begin(term: Int) = {
+    if (!passive) electionTimeout restart
+  }
 
   override def stop = electionTimeout stop
 

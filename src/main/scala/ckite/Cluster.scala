@@ -101,6 +101,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
     //validate empty log and no snapshot
     consensusMembership.set(new SimpleConsensus(Some(local), Seq(), 0))
+    
     local becomeFollower
 
     LOG.info("Will set a configuration with just myself: {}", local.id)
@@ -112,7 +113,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     LOG.info("Empty log & no snapshot")
     LOG.info("Will try to Join an existing Cluster using the seeds: {}", configuration.memberBindings)
 
-    local becomeFollower
+    local becomePassiveFollower //don't start elections
 
     breakable {
       for (remoteMemberBinding <- configuration.memberBindings) {
@@ -121,9 +122,11 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
         val response = remoteMember.join(local.id)
         if (response.success) {
           LOG.info("Join was successful")
+          local becomeFollower
           break
         }
       }
+      //TODO: Implement retries/shutdown here
     }
   }
 
@@ -334,6 +337,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     awaitLeader
     f
   }
+  
+  def isLeader = awaitLeader == local
 
   private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
 

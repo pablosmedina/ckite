@@ -12,62 +12,62 @@ class CKiteBuilder {
   private val configuration = new Configuration(ConfigFactory.load())
   private var stateMachine: StateMachine = _
 
-  def withMinElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
+  def minElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
     configuration.withMinElectionTimeout(minElectionTimeout)
     this
   }
 
-  def withMaxElectionTimeout(maxElectionTimeout: Int): CKiteBuilder = {
+  def maxElectionTimeout(maxElectionTimeout: Int): CKiteBuilder = {
     configuration.withMaxElectionTimeout(maxElectionTimeout)
     this
   }
 
-  def withHeartbeatsInterval(heartbeatsInterval: Int): CKiteBuilder = {
+  def heartbeatsPeriod(heartbeatsInterval: Int): CKiteBuilder = {
     configuration.withHeartbeatsInterval(heartbeatsInterval)
     this
   }
 
-  def withLocalBinding(localBinding: String): CKiteBuilder = {
+  def listenAddress(localBinding: String): CKiteBuilder = {
     configuration.withLocalBinding(localBinding)
     this
   }
   
-  def withDataDir(dataDir: String): CKiteBuilder = {
+  def dataDir(dataDir: String): CKiteBuilder = {
     configuration.withDataDir(dataDir)
     this
   }
 
-  def withMemberBindings(memberBindings: Seq[String]): CKiteBuilder = {
+  def members(memberBindings: Seq[String]): CKiteBuilder = {
     configuration.withMemberBindings(memberBindings)
     this
   }
   
-  def withMemberBindings(memberBindings: String): CKiteBuilder = {
+  def members(memberBindings: String): CKiteBuilder = {
     configuration.withMemberBindings(memberBindings.split(","))
     this
   }
   
-  def withLogCompactionThreshold(threshold: Int): CKiteBuilder = {
+  def compactionThreshold(threshold: Int): CKiteBuilder = {
     configuration.withLogCompactionThreshold(threshold)
     this
   }
   
-  def withStateMachine(stateMachine: StateMachine): CKiteBuilder = {
+  def stateMachine(stateMachine: StateMachine): CKiteBuilder = {
     this.stateMachine = stateMachine
     this
   }
   
-  def withStateMachine(stateMachine: ckite.statemachine.j.StateMachine): CKiteBuilder = {
+  def stateMachine(stateMachine: ckite.statemachine.j.StateMachine): CKiteBuilder = {
     this.stateMachine = new StateMachineWrapper(stateMachine)
     this
   }
   
-  def withFlushSize(flushSize: Long): CKiteBuilder = {
+  def flushSize(flushSize: Long): CKiteBuilder = {
     configuration.withFlushSize(flushSize)
     this
   }
   
-  def withSyncEnabled(enabled: Boolean):CKiteBuilder = {
+  def sync(enabled: Boolean):CKiteBuilder = {
     configuration.withSyncEnabled(enabled)
     this
   }

@@ -17,7 +17,6 @@ class CommandExecutor(stateMachine: StateMachine) extends Logging {
   }
 
   def applyRead(read: ReadCommand): Any = {
-//    readFunction(read)
     if (readFunction.isDefinedAt(read)) readFunction(read)
     else LOG.warn(s"No handler for ${read} is available in the StateMachine")
   }

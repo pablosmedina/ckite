@@ -62,10 +62,12 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def becomeCandidate(term: Int) = become(new Candidate(cluster), term)
 
-  def becomeFollower(term: Int) = become(new Follower(cluster), term)
+  def becomeFollower(term: Int, passive: Boolean = false) = become(new Follower(cluster, passive), term)
 
-  def becomeFollower: Unit = becomeFollower(term())
-
+  def becomeFollower: Unit = becomeFollower(term(), false)
+  
+  def becomePassiveFollower: Unit = becomeFollower(term(), true)
+  
   def becomeStarter = changeState(Starter)
 
   private def become(newState: State, term: Int) = locked {

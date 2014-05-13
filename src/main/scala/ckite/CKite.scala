@@ -32,11 +32,9 @@ class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKi
 
   def addMember(memberBinding: String) = cluster.addMember(memberBinding)
 
-  def leaveCluster() = cluster.removeMember(cluster.local.id)
-
   def removeMember(memberBinding: String) = cluster.removeMember(memberBinding)
 
-  def isLeader: Boolean = cluster.awaitLeader == cluster.local
+  def isLeader: Boolean = cluster.isLeader
   
   def getMembers:List[String] = cluster.getMembers.toList
   
