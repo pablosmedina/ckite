@@ -24,7 +24,7 @@ Performance tests will be included soon.
 
 #### SBT settings
 
-The latest release 0.1.3 is in Maven central. Add the following sbt dependency to your project settings:
+The latest release 0.1.4 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
 libraryDependencies += "io.ckite" % "ckite" % "0.1.4"
@@ -53,8 +53,6 @@ Add the following maven dependency to your pom.xml:
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
-  @volatile
-  var lastIndex: Long = 0
 
   //called when a consensus has been reached for a WriteCommand
   //index associated to the write is provided to implement your own persistent semantics
@@ -62,7 +60,6 @@ class KVStore extends StateMachine {
   def applyWrite = {
     case (index, Put(key: String, value: String)) => {
       map.put(key, value);
-      lastIndex = index
       value
     }
   }
@@ -70,7 +67,7 @@ class KVStore extends StateMachine {
   //CKite needs to know the last applied write on log replay to 
   //provide exactly-once semantics
   //If no persistence is needed then state machines can just return zero
-  def lastAppliedIndex: Long = lastIndex
+  def lastAppliedIndex: Long = 0
 
   //called when a read command has been received
   def applyRead = {
@@ -97,59 +94,82 @@ case class Put(key: String, value: String) extends WriteCommand
 //ReadCommands are not replicated but forwarded to the Leader
 case class Get(key: String) extends ReadCommand
 ```
-
 #### 2) Create a CKite instance using the builder
 ```scala
+val ckite = CKiteBuilder().listenAddress("node1:9091")
+                          .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
+                          .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
+                          .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
+                          .build
+```
+
+#### 3) Create a CKite instance using the builder
+```scala
 val ckite = CKiteBuilder().listenAddress("localhost:9091")
-                          .members(Seq("localhost:9092","localhost:9093"))
+                          .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
                           .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
                           .heartbeatsPeriod(250) //optional
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
-                          .bootstrap(true) //just the first time for the very first node
                           .build
+```
+#### 4) Start a CKite
+```scala
 ckite.start()
 ```
-#### 3) Send a write command
+
+#### 4) Send a write command
 ```scala
 //this Put command is forwarded to the Leader and applied under Raft rules
 ckite.write(Put("key1","value1")) 
 ```
 
-#### 4) Send a consistent read command
+#### 5) Send a consistent read command
 ```scala
 //consistent read commands are forwarded to the Leader
 val value = ckite.read(Get("key1")) 
 ```
-#### 5) Add a new Member
+#### 6) Add a new Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
 ckite.addMember("someHost:9094")
 ```
 
-#### 6) Remove a Member
+#### 7) Remove a Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
 ckite.removeMember("someHost:9094")
 ```
 
-#### 7) Send a local read command
+#### 8) Send a local read command
 ```scala
 //alternatively you can read from its local state machine allowing possible stale values
 val value = ckite.readLocal(Get("key1")) 
 ```
 
-#### 8) Check leadership
+#### 9) Check leadership
 ```scala
 //if necessary waits for elections to end
 ckite.isLeader() 
 ```
-#### 9) Stop ckite
+#### 10) Stop ckite
 ```scala
 ckite.stop()
 ```
 
+## How CKite bootstraps
 
+To start a new cluster you have to run the very first node turning on the bootstrap parameter. This will create an initial configuration with just the first node. The next nodes starts by pointing to the existing ones to join the cluster. 
+You can bootstrap the first node using the builder, overriding ckite.bootstrap in your application.conf or by starting your application with a system property ckite.bootstrap=true. See [KVStore](https://github.com/pablosmedina/kvstore)
+
+#### bootstrapping the first node using the builder
+```scala
+val ckite = CKiteBuilder().listenAddress("node1:9091")
+                          .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
+                          .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
+                          .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
+                          .build
+```
 ## Implementation details
 
   * Built in Scala.
