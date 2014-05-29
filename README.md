@@ -94,7 +94,7 @@ case class Put(key: String, value: String) extends WriteCommand
 //ReadCommands are not replicated but forwarded to the Leader
 case class Get(key: String) extends ReadCommand
 ```
-#### 2) Create a CKite instance using the builder
+#### 2) Create a CKite instance using the builder (minimal)
 ```scala
 val ckite = CKiteBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
@@ -103,7 +103,7 @@ val ckite = CKiteBuilder().listenAddress("node1:9091")
                           .build
 ```
 
-#### 3) Create a CKite instance using the builder
+#### 3) Create a CKite instance using the builder (extended)
 ```scala
 val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
@@ -111,6 +111,8 @@ val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .heartbeatsPeriod(250) //optional
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
+                          .sync(false) //disables log sync to disk
+                          .flushSize(10) //max batch size when flushing log to disk
                           .build
 ```
 #### 4) Start a CKite
@@ -160,7 +162,7 @@ ckite.stop()
 ## How CKite bootstraps
 
 To start a new cluster you have to run the very first node turning on the bootstrap parameter. This will create an initial configuration with just the first node. The next nodes starts by pointing to the existing ones to join the cluster. 
-You can bootstrap the first node using the builder, overriding ckite.bootstrap in your application.conf or by starting your application with a system property ckite.bootstrap=true. See [KVStore](https://github.com/pablosmedina/kvstore)
+You can bootstrap the first node using the builder, overriding ckite.bootstrap in your application.conf or by starting your application with a system property -Dckite.bootstrap=true. See [KVStore](https://github.com/pablosmedina/kvstore)
 
 #### bootstrapping the first node using the builder
 ```scala
