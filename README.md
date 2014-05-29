@@ -7,7 +7,7 @@ A __JVM__ implementation of the [Raft distributed consensus algorithm](http://ra
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.3__ following the instructions detailed below to start playing with it. 
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.4__ following the instructions detailed below to start playing with it. 
 Performance tests will be included soon.
 
 
@@ -18,7 +18,6 @@ Performance tests will be included soon.
 * Cluster Membership Changes
 * Log Compaction
 * Finagle based RPC between members
-* REST admin console
 
 
 ## Getting started (Scala)
@@ -28,7 +27,7 @@ Performance tests will be included soon.
 The latest release 0.1.3 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" % "ckite" % "0.1.3"
+libraryDependencies += "io.ckite" % "ckite" % "0.1.4"
 ```
 
 ## Getting started (Java)
@@ -41,7 +40,7 @@ Add the following maven dependency to your pom.xml:
 <dependency>
 	<groupId>io.ckite</groupId>
 	<artifactId>ckite</artifactId>
-	<version>0.1.3</version>
+	<version>0.1.4</version>
 </dependency>
 ```
 
@@ -50,15 +49,32 @@ Add the following maven dependency to your pom.xml:
 
 #### 1) Define a StateMachine and its commands
 ```scala
-//KVStore is a simple distributed Map accepting Puts and Gets
+//KVStore is a distributed Map accepting Puts and Gets
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
+  @volatile
+  var lastIndex: Long = 0
 
-  //called when a consensus has been reached for a WriteCommand or when a ReadCommand was received
-  def apply = {
-    case Get(key) => map.get(key)
-    case Put(key:String,value:String) => map.put(key,value); value
+  //called when a consensus has been reached for a WriteCommand
+  //index associated to the write is provided to implement your own persistent semantics. see lastAppliedIndex
+  def applyWrite = {
+    case (index, Put(key: String, value: String)) => {
+      map.put(key, value);
+      lastIndex = index
+      value
+    }
+  }
+  
+  //CKite needs to know the last applied write on restarts for log replay
+  //If no persistence is needed then state machines can just return zero
+  def lastAppliedIndex: Long = lastIndex
+
+  //called when a read command has been received
+  def applyRead = {
+    case Get(key) => {
+      map.get(key)
+    }
   }
 
   //called during Log replay on startup and upon installSnapshot requests
@@ -82,12 +98,12 @@ case class Get(key: String) extends ReadCommand
 
 #### 2) Create a CKite instance using the builder
 ```scala
-val ckite = CKiteBuilder().withLocalBinding("localhost:9091")
-                          .withMembersBindings(Seq("localhost:9092","localhost:9093"))
-                          .withMinElectionTimeout(1000).withMaxElectionTimeout(1500) //optional
-                          .withHeartbeatsInterval(250) //optional
-                          .withDataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
-                          .withStateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
+val ckite = CKiteBuilder().listenAddress("localhost:9091")
+                          .members(Seq("localhost:9092","localhost:9093"))
+                          .minElectionTimeout(1000).withMaxElectionTimeout(1500) //optional
+                          .heartbeatsPeriod(250) //optional
+                          .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
+                          .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .build
 ckite.start()
 ```
