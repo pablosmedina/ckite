@@ -57,7 +57,8 @@ class KVStore extends StateMachine {
   var lastIndex: Long = 0
 
   //called when a consensus has been reached for a WriteCommand
-  //index associated to the write is provided to implement your own persistent semantics. see lastAppliedIndex
+  //index associated to the write is provided to implement your own persistent semantics
+  //see lastAppliedIndex
   def applyWrite = {
     case (index, Put(key: String, value: String)) => {
       map.put(key, value);
@@ -66,7 +67,8 @@ class KVStore extends StateMachine {
     }
   }
   
-  //CKite needs to know the last applied write on restarts for log replay
+  //CKite needs to know the last applied write on log replay to 
+  //provide exactly-once semantics
   //If no persistence is needed then state machines can just return zero
   def lastAppliedIndex: Long = lastIndex
 
@@ -100,7 +102,7 @@ case class Get(key: String) extends ReadCommand
 ```scala
 val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093"))
-                          .minElectionTimeout(1000).withMaxElectionTimeout(1500) //optional
+                          .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
                           .heartbeatsPeriod(250) //optional
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
