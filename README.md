@@ -47,7 +47,7 @@ Add the following maven dependency to your pom.xml:
 
 ## Example
 
-#### 1) Define a StateMachine and its commands
+#### 1) Create a StateMachine
 ```scala
 //KVStore is a distributed Map accepting Puts and Gets
 class KVStore extends StateMachine {
@@ -178,6 +178,8 @@ val ckite = CKiteBuilder().listenAddress("node1:9091")
   * [Twitter Finagle](http://twitter.github.io/finagle/).
   * [Thrift](http://thrift.apache.org/).
   * [Twitter Scrooge](http://twitter.github.io/scrooge/).
+  * [MapDB](http://www.mapdb.org/)
+  * [Kryo](https://github.com/EsotericSoftware/kryo)
 
 
 ## Contributions
