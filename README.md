@@ -108,7 +108,7 @@ val ckite = CKiteBuilder().listenAddress("node1:9091")
 val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
                           .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
-                          .heartbeatsPeriod(250) //optional
+                          .heartbeatsPeriod(250) //optional. period to send heartbeats interval when being Leader
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .sync(false) //disables log sync to disk
