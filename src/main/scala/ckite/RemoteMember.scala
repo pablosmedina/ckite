@@ -34,10 +34,13 @@ import ckite.rpc.AppendEntries
 import java.util.concurrent.ConcurrentHashMap
 import ckite.rpc.LogEntry
 import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
-  LOG.debug(s"Creating RemoteMember $binding")
+  LOG.debug(s"Creating RemoteMember[$binding] client")
   
   val nextLogIndex = new AtomicLong(1)
   val matchIndex = new AtomicLong(0)
@@ -47,7 +50,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   private def localMember = cluster.local
   private def rlog = cluster.rlog
 
-  override def forwardCommand[T](command: Command): T = {
+  override def forwardCommand[T](command: Command): Future[T] = {
     LOG.debug("Forward command {} to {}",command,id)
     connector.send[T](command)
   }
@@ -55,16 +58,18 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   def sendAppendEntries(term: Int) = {
     val request = createAppendEntries(term)
     connector.send(request).map { response =>
-      LOG.trace("AppendEntries response {}",response)
+      LOG.trace("AppendEntries response {} from {}", response,id)
       if (response.term > term) {
-    	 receivedHigherTerm(response.term, term)
+        receivedHigherTerm(response.term, term)
       } else {
         localMember.onAppendEntriesResponse(this, request, response)
       }
-    }.recover { case e:Exception =>
-      LOG.trace("Error sending appendEntries",e)
+    }.recover {
+      case e: Exception =>
+        LOG.trace("Error sending appendEntries {}", e.getMessage())
+    }.map { _ =>
+      request.entries foreach { entry => replicationsInProgress.remove(entry.index) }
     }
-    request.entries foreach { entry => replicationsInProgress.remove(entry.index) }
   }
 
   private def receivedHigherTerm(higherTerm: Int, oldTerm: Int) = {
@@ -139,15 +144,15 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   def resetMatchIndex = matchIndex.set(0)
 
   /* If the candidate receives no response for an RPC, it reissues the RPC repeatedly until a response arrives or the election concludes */
-  def requestVote: Boolean = {
+  def requestVote(term: Int): Future[Boolean] = {
     LOG.debug(s"Requesting vote to $id")
     val lastLogEntry = rlog.getLastLogEntry()
     connector.send(lastLogEntry match {
-      case None => RequestVote(localMember.id, localMember.term)
-      case Some(entry) => RequestVote(localMember.id, localMember.term, entry.index, entry.term)
+      case None => RequestVote(localMember.id, term)
+      case Some(entry) => RequestVote(localMember.id, term, entry.index, entry.term)
     }).map { voteResponse =>
       LOG.debug(s"Got $voteResponse from $id")
-      voteResponse.granted
+      voteResponse.granted && voteResponse.currentTerm == term
     } recover {
       case ChannelWriteException(e: ConnectException) =>
         LOG.debug(s"Can't connect to member $id")
@@ -155,7 +160,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
       case e: Exception =>
         LOG.error(s"Requesting vote: ${e.getMessage()}")
         false
-    } get
+    }
   }
 
   def enableReplications() = {
@@ -170,21 +175,21 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     wasEnabled
   }
   
-  def join(joiningMemberId: String): JoinResponse = {
+  def join(joiningMemberId: String): Future[JoinResponse] = {
     LOG.debug(s"Joining with $id")
     connector.send(JoinRequest(joiningMemberId)).recover {
       case ChannelWriteException(e: ConnectException) =>
         LOG.debug(s"Can't connect to member $id")
         JoinResponse(false)
-    } get
+    }
   }
   
-  def getMembers(): GetMembersResponse = {
+  def getMembers(): Future[GetMembersResponse] = {
     connector.send(GetMembersRequest()).recover {
       case ChannelWriteException(e: ConnectException) =>
         LOG.debug(s"Can't connect to member $id")
         GetMembersResponse(false, Seq())
-    } get
+    }
   }
 
   def isReplicationEnabled = replicationsEnabled.get()

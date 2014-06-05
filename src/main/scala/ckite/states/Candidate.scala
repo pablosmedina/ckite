@@ -15,8 +15,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.SynchronousQueue
 import com.twitter.concurrent.NamedPoolThreadFactory
 import ckite.util.CKiteConversions._
-import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicReference
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import ckite.Member
 
 
 /** 	•! Increment currentTerm, vote for self
@@ -29,32 +31,37 @@ import java.util.concurrent.atomic.AtomicReference
  * increment term, start new election
  * •! Discover higher term: step down (§5.1)
  */
-class Candidate(cluster: Cluster) extends State {
+class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise) {
 
   val election = new Election(cluster)
   
-  override def begin(term: Int) = {
-    val inTerm = cluster.local.incrementTerm
-    cluster.setNoLeader
-    
-    LOG.debug(s"Start election")
-    election.start(inTerm)
+  override def canTransitionTo(newState: State) = {
+    newState match {
+      case leader:Leader => leader.term == term
+      case _ => newState.term > term
+    }
   }
   
-  override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
+  override def begin() = {
+    LOG.debug(s"Start election")
+    election.start(term)
+  }
+  
+  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
     if (appendEntries.term < cluster.local.term) {
-      AppendEntriesResponse(cluster.local.term, false)
+      Future.successful(AppendEntriesResponse(cluster.local.term, false))
     }
     else {
       election.abort
+      //warn lock
       stepDown(appendEntries.term, Some(appendEntries.leaderId))
       cluster.local on appendEntries 
     }
   }
 
-  override def on(requestVote: RequestVote): RequestVoteResponse = {
-    if (requestVote.term <= cluster.local.term) {
-      RequestVoteResponse(cluster.local.term, false)
+  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
+    if (requestVote.term <= term) {
+      Future.successful(RequestVoteResponse(term, false))
     } else {
       election.abort
       stepDown(requestVote.term, None)
@@ -62,11 +69,11 @@ class Candidate(cluster: Cluster) extends State {
     }
   }
   
-  override def on[T](command: Command): T = {
+  override def on[T](command: Command): Future[T] = {
     cluster.forwardToLeader[T](command)
   }
   
-  override def toString = "Candidate"
+  override def toString = s"Candidate[$term]"
     
   override protected def getCluster: Cluster = cluster
   
@@ -78,13 +85,11 @@ class Election(cluster: Cluster) extends Logging {
                                       60L, TimeUnit.SECONDS,
                                       new SynchronousQueue[Runnable](),
                                       new NamedPoolThreadFactory("CandidateElection-worker", true))
-  val electionFutureTask = new AtomicReference[Future[_]]()
+  val electionFutureTask = new AtomicReference[java.util.concurrent.Future[_]]()
   
   def start(inTerm: Int) = {
     val task: Runnable = () => {
-	     cluster.local voteForMyself
-	    
-	     val votes = cluster collectVotes
+	     val votes = cluster collectVotes inTerm
 	    
 	    LOG.debug(s"Got ${votes.size} votes in a majority of ${cluster.majority}")
 	    if (cluster.reachMajority(votes)) {

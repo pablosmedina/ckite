@@ -137,7 +137,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   }
 
   private def notifyResult(index: Long, result: Any) = {
-    val applyPromise = rlog.applyPromises.get(index)
+    val applyPromise = rlog.applyPromises.get(index).asInstanceOf[Promise[Any]]
     if (applyPromise != null) {
       applyPromise.success(result)
       rlog.applyPromises.remove(index)
@@ -147,12 +147,14 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   private def isCommitted(index: Long) = index <= commitIndex
 
   private def execute(index: Long, command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
-    LOG.debug("Executing {}", command)
     command match {
       case c: JointConfiguration => executeEnterJointConsensus(index, c)
       case c: NewConfiguration => true
       case c: NoOp => true
-      case w: WriteCommand => commandExecutor.applyWrite(index, w)
+      case w: WriteCommand[_] => {
+        LOG.debug("Executing write {}", command)
+        commandExecutor.applyWrite(index, w)
+      }
     }
   }
 
@@ -166,12 +168,12 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     		}
     	}
     } else {
-      LOG.info("Skipping old configuration {}",c)
+      LOG.debug("Skipping old configuration {}",c)
     }
     true
   }
 
-  def applyRead(read: ReadCommand) = commandExecutor.applyRead(read)
+  def applyRead[T](read: ReadCommand[T]) = commandExecutor.applyRead(read)
   
   private def next = {
     if (commitIndexQueue.isEmpty()) {

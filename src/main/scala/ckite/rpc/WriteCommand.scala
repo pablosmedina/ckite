@@ -1,3 +1,3 @@
 package ckite.rpc
 
-trait WriteCommand extends Command
+trait WriteCommand[T] extends Command

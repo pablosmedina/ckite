@@ -17,33 +17,56 @@ import ckite.Member
 import ckite.RemoteMember
 import ckite.stats.StateInfo
 import ckite.stats.NonLeaderInfo
+import scala.concurrent.Future
+import scala.concurrent.Promise
 
-trait State extends Logging {
+abstract class State(val term: Int, val leaderPromise: Promise[Member]) extends Logging {
 
-  def begin(term: Int) = {}
+  def begin() = {
+  }
   
-  def stop = {}
+  def stop(term: Int):Boolean = {
+    true
+  }
 
-  def on(requestVote: RequestVote): RequestVoteResponse
+  def on(requestVote: RequestVote): Future[RequestVoteResponse]
 
-  def on(appendEntries: AppendEntries): AppendEntriesResponse
+  def on(appendEntries: AppendEntries): Future[AppendEntriesResponse]
 
-  def on[T](command: Command): T = throw new UnsupportedOperationException()
+  def on[T](command: Command): Future[T] = throw new UnsupportedOperationException()
   
   def on(jointConsensusCommited: MajorityJointConsensus) = {}
   
-  def canTransition: Boolean = true
+  def canTransitionTo(newState: State): Boolean = {
+     newState.term > term
+  }
   
   /**
    * Step down from being either Candidate or Leader and start following the given Leader
    * on the given Term
    */
-  def stepDown(term: Int, leaderId: Option[String]) = {
-    LOG.debug(s"Step down from being $this")
+  def stepDown(term: Int, leaderId: Option[String]):Unit = {
     val cluster = getCluster
-	cluster.local.updateTermIfNeeded(term)
-    if (!leaderId.isDefined) cluster.setNoLeader
-    cluster.local becomeFollower term
+    LOG.debug(s"${cluster.local.id} Step down from being $this")
+    
+    val e = leaderId map { lid:String => 
+    	cluster.obtainMember(lid) map { leader => 
+    	  cluster.local.currentState.leaderPromise.trySuccess(leader)
+    	  cluster.local.becomeFollower(term = term, leaderPromise = Promise.successful(leader))
+    	
+    	}
+    } flatten 
+    
+    e.orElse {
+        if (!cluster.local.currentState.leaderPromise.isCompleted) {
+        	cluster.local becomeFollower(term = term, leaderPromise = cluster.local.currentState.leaderPromise)
+          
+        } else {
+          cluster.local becomeFollower term
+        }
+    	None
+    }
+    
   }
 
   def info(): StateInfo = NonLeaderInfo(getCluster.leader.toString())

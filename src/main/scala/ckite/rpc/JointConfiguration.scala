@@ -6,7 +6,7 @@ import com.esotericsoftware.kryo.io.Output
 import com.esotericsoftware.kryo.io.Input
 import com.esotericsoftware.kryo.KryoSerializable
 
-case class JointConfiguration(var oldBindings: List[String], var newBindings: List[String]) extends WriteCommand with KryoSerializable with ClusterConfigurationCommand {
+case class JointConfiguration(var oldBindings: List[String], var newBindings: List[String]) extends WriteCommand[Boolean] with KryoSerializable with ClusterConfigurationCommand {
      def write(kryo: Kryo, output: Output) = {
        output.writeString(oldBindings.mkString(","))
        output.writeString(newBindings.mkString(","))

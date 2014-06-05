@@ -18,6 +18,7 @@ import ckite.rpc.Command
 import ckite.rpc.JointConfiguration
 import ckite.rpc.NewConfiguration
 import ckite.rpc.ClusterConfigurationCommand
+import scala.concurrent.Future
 
 class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
@@ -38,15 +39,15 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
   }
 
   //leader append
-  def append(term: Int, write: WriteCommand): Promise[(LogEntry, Promise[Any])] = append(LeaderAppend(term, write))
+  def append[T](term: Int, write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = append(LeaderAppend[T](term, write))
 
   //follower append
-  def append(entry: LogEntry): Promise[Long] = append(FollowerAppend(entry))
+  def append(entry: LogEntry): Future[Long] = append(FollowerAppend(entry))
 
-  private def append[T](append: Append[T]): Promise[T] = {
+  private def append[T](append: Append[T]): Future[T] = {
     val promise: Promise[T] = append.promise
     queue.offer(append)
-    promise
+    promise.future
   }
 
   private def asyncAppend = {
@@ -102,9 +103,9 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
     def onFlush(logEntry: LogEntry)
   }
 
-  case class LeaderAppend(term: Int, write: WriteCommand) extends Append[(LogEntry, Promise[Any])] {
-    val _promise = Promise[(LogEntry, Promise[Any])]()
-    val _valuePromise = Promise[Any]()
+  case class LeaderAppend[T](term: Int, write: WriteCommand[T]) extends Append[(LogEntry, Promise[T])] {
+    val _promise = Promise[(LogEntry, Promise[T])]()
+    val _valuePromise = Promise[T]()
     def promise = _promise
     def logEntry = {
       val logEntry = LogEntry(term, rlog.nextLogIndex, write)

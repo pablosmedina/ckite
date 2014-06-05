@@ -12,11 +12,11 @@ class StateMachineWrapper(jstateMachine: StateMachine) extends ckite.statemachin
   
   def serialize(): ByteBuffer = jstateMachine.serialize
   
-  def applyWrite: PartialFunction[(Long, WriteCommand),Any] = {
+  def applyWrite: PartialFunction[(Long, WriteCommand[_]),Any] = {
     case (index, write) => jstateMachine.applyWrite(index, write)
   }
   
-  def applyRead: PartialFunction[ReadCommand,Any] = {
+  def applyRead: PartialFunction[ReadCommand[_],Any] = {
     case read => jstateMachine.applyRead(read)
   }
   

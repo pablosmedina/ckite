@@ -50,14 +50,13 @@ import ckite.stats.Status
 import ckite.rpc.ClusterConfigurationCommand
 import ckite.rpc.NewConfiguration
 import ckite.rpc.NewConfiguration
+import ckite.rpc.AppendEntriesResponse
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
   val rlog = new RLog(this, stateMachine)
-
-  val leaderPromise = new AtomicReference[Promise[Member]](Promise[Member]())
 
   val appendEntriesPool = new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true))
@@ -71,6 +70,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
 
+  implicit def context: ExecutionContext = appendEntriesExecutionContext
+  
   def start = {
     LOG.info("Starting CKite...")
 
@@ -89,7 +90,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   private def startNormal = {
     //start as a normal follower
     LOG.info("Existing configuration. Start normal")
-    local becomeFollower
+    local becomeFollower local.persistedTerm.intValue()
   }
 
   private def startBootstrap = {
@@ -102,27 +103,28 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     //validate empty log and no snapshot
     consensusMembership.set(new SimpleConsensus(Some(local), Seq(), 0))
     
-    local becomeFollower
+    local becomeFollower 0
 
-    LOG.info("Will set a configuration with just myself: {}", local.id)
-    on[Boolean](NewConfiguration(List(local.id))) //the initial configuration must be saved in the log
+    awaitLeader
   }
 
   private def startJoining = {
     //no configuration. will try to join an existing cluster
     LOG.info("Empty log & no snapshot")
-    LOG.info("Will try to Join an existing Cluster using the seeds: {}", configuration.memberBindings)
+    LOG.info("Will try to join an existing Cluster using the seeds: {}", configuration.memberBindings)
 
-    local becomePassiveFollower //don't start elections
+    local becomePassiveFollower 0//don't start elections
 
     breakable {
       for (remoteMemberBinding <- configuration.memberBindings) {
         LOG.info("Try to join with {}", remoteMemberBinding)
         val remoteMember = new RemoteMember(this, remoteMemberBinding)
-        val response = remoteMember.join(local.id)
-        if (response.success) {
-          LOG.info("Join was successful")
-          local becomeFollower
+        val response = Await.result(remoteMember.join(local.id), 3 seconds) //TODO: Refactor me
+        if (response.success) { 
+          LOG.info("Join successful")
+          
+          local.becomeFollower(term = 1, leaderPromise = local.currentState.leaderPromise)
+          
           break
         }
       }
@@ -148,21 +150,21 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     scheduledElectionTimeoutExecutor.shutdown()
   }
 
-  def on(requestVote: RequestVote): RequestVoteResponse = {
+  def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
     LOG.debug("RequestVote received: {}", requestVote)
     obtainRemoteMember(requestVote.memberId).map { remoteMember =>
       local on requestVote
     }.getOrElse {
       LOG.warn("Reject vote to member {} who is not present in the Cluster", requestVote.memberId)
-      RequestVoteResponse(local term, false)
+      Future.successful(RequestVoteResponse(local term, false))
     }
   }
 
-  def on(appendEntries: AppendEntries) = {
+  def on(appendEntries: AppendEntries):Future[AppendEntriesResponse] = {
     local on appendEntries
   }
 
-  def on[T](command: Command): T = {
+  def on[T](command: Command): Future[T] = {
     havingLeader {
       LOG.debug("Command received: {}", command)
       local.on[T](command)
@@ -179,35 +181,37 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  def onLocal(readCommand: ReadCommand) = rlog execute readCommand
+  def onLocal[T](readCommand: ReadCommand[T]) = rlog execute readCommand
 
-  def collectVotes(implicit context: ExecutionContext = electionExecutionContext): Seq[Member] = {
+  def collectVotes(term: Int)(implicit context: ExecutionContext = electionExecutionContext): Seq[Member] = {
     if (!hasRemoteMembers) return Seq(local)
     val promise = Promise[Seq[Member]]()
     val votes = new ConcurrentHashMap[Member, Boolean]()
     votes.put(local, true)
     membership.remoteMembers.foreach { remoteMember =>
       future {
-        (remoteMember, remoteMember requestVote)
+        (remoteMember, remoteMember requestVote term)
       } onSuccess {
         case (member, vote) =>
-          votes.put(member, vote)
-          val grantedVotes = votes.asScala.filter { tuple => tuple._2 }.keySet.toSeq
-          val rejectedVotes = votes.asScala.filterNot { tuple => tuple._2 }.keySet.toSeq
-          if (membership.reachMajority(grantedVotes) ||
-            membership.reachAnyMajority(rejectedVotes) ||
-            membership.allMembers.size == votes.size())
-            promise.trySuccess(grantedVotes)
+          vote map { granted =>
+            votes.put(member, granted)
+            val grantedVotes = votes.asScala.filter { tuple => tuple._2 }.keySet.toSeq
+            val rejectedVotes = votes.asScala.filterNot { tuple => tuple._2 }.keySet.toSeq
+            if (membership.reachMajority(grantedVotes) ||
+              membership.reachAnyMajority(rejectedVotes) ||
+              membership.allMembers.size == votes.size())
+              promise.trySuccess(grantedVotes)
+          }
       }
     }
     Try {
-      Await.result(promise.future, configuration.collectVotesTimeout millis)
+      Await.result(promise.future, configuration.collectVotesTimeout millis) //TODO: Refactor me
     } getOrElse {
       votes.asScala.filter { tuple => tuple._2 }.keySet.toSeq
     }
   }
 
-  def forwardToLeader[T](command: Command): T = withLeader { leader =>
+  def forwardToLeader[T](command: Command): Future[T] = withLeader { leader =>
     LOG.debug("Forward command {}", command)
     leader.forwardCommand[T](command)
   }
@@ -215,7 +219,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   def addMember(memberBinding: String) = {
     if (membership.allBindings contains memberBinding) {
       LOG.info("The member {} is already present in the cluster", memberBinding)
-      true
+      Future.successful(true)
     } else {
       LOG.info("The member {} is going to be added to the cluster", memberBinding)
 
@@ -241,7 +245,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def apply(index: Long, clusterConfiguration: ClusterConfigurationCommand) = {
     if (membership.index < index) {
-      LOG.info(s"Applying {}", clusterConfiguration)
+      LOG.debug(s"Applying {}", clusterConfiguration)
       clusterConfiguration match {
         case JointConfiguration(oldBindings, newBindings) => {
           //EnterJointConsensus received. Switch membership to JointConsensus
@@ -257,7 +261,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   private def setNewMembership(membership: Membership) = {
     consensusMembership.set(membership)
-    LOG.info("New cluster configuration is {}", consensusMembership.get())
+    LOG.info("Cluster Configuration in {} changed to {}", local.id, consensusMembership.get())
   }
 
   private def simpleConsensus(bindings: Seq[String], index: Long = 0): SimpleConsensus = {
@@ -271,37 +275,44 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def hasRemoteMembers = !membership.remoteMembers.isEmpty
 
-  def updateLeader(leaderId: String): Boolean = leaderPromise.synchronized {
-    obtainMember(leaderId) map { newLeader =>
-      val promise = leaderPromise.get()
-      val isNew = !promise.isCompleted || promise.future.value.get.get != newLeader
-      if (isNew) {
-        leaderPromise.get().success(newLeader) //complete current promise for operations waiting for it
-        leaderPromise.set(Promise.successful(newLeader)) //kept promise for subsequent leader 
-      }
-      isNew
-    } getOrElse (false)
-  }
+//  def updateLeader(term: Int, leaderId: String): Boolean = {
+//    obtainMember(leaderId) map { newLeader =>
+//    if (local.term == term) {
+//    	leaderPromise.get().trySuccess(newLeader) //complete current promise for operations waiting for it
+//    } else false
+//      val promise = leaderPromise.get()
+//      val isNew = !promise.isCompleted || promise.future.value.get.get != newLeader
+//      if (isNew) {
+//        leaderPromise.set(Promise.successful(newLeader)) //kept promise for subsequent leader 
+//      }
+//      isNew
+    /*
+     * Start -> Follower -> Candidate -> Leader  completa el Promise
+     * Leader -> Follower  (es un stepDown, arranca una nueva promise, puede ser ya conocido entonces es un KeptPromise)
+     * Candidate -> Follower (traslada el promise si la election falla o  keptPromise si ya es conocido)
+     */
+//    } getOrElse (false)
+//  }
 
-  def setNoLeader = leaderPromise.synchronized {
-    if (leaderPromise.get().isCompleted) {
-      leaderPromise.set(Promise[Member]())
-    }
-  }
+//  def setNoLeader(term: Int) = {
+//    if (leaderPromise.get().isCompleted && local.term == term) {
+//      leaderPromise.set(Promise[Member]())
+//    }
+//  }
 
   def awaitLeader: Member = {
     try {
-      Await.result(leaderPromise.get().future, waitForLeaderTimeout)
+      Await.result(local.currentState.leaderPromise.future, waitForLeaderTimeout)
     } catch {
       case e: TimeoutException => {
-        LOG.warn("Wait for Leader timed out after {}", waitForLeaderTimeout)
+        LOG.warn("Wait for Leader in {} timed out after {}", waitForLeaderTimeout)
         throw new LeaderTimeoutException(e)
       }
     }
   }
 
   def leader: Option[Member] = {
-    val promise = leaderPromise.get()
+    val promise = local.currentState.leaderPromise
     if (promise.isCompleted) Some(promise.future.value.get.get) else None
   }
 
@@ -328,18 +339,18 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     Status(clusterStatus, logStatus)
   }
 
-  def withLeader[T](f: Member => T): T = {
-    val leader = awaitLeader
-    f(leader)
+  def withLeader[T](f: Member => Future[T]): Future[T] = {
+    local.currentState.leaderPromise.future.flatMap(f)
   }
 
-  def havingLeader[T](f: => T): T = {
-    awaitLeader
-    f
+  def havingLeader[T](f: => Future[T]): Future[T] = {
+    local.currentState.leaderPromise.future.flatMap { member =>
+      f
+    }
   }
   
-  def isLeader = awaitLeader == local
+  def isLeader = Try{ awaitLeader == local }.getOrElse(false)
 
-  private def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
+  def obtainMember(memberId: String): Option[Member] = (membership.allMembers).find { _.id == memberId }
 
 }

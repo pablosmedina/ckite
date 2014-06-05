@@ -11,9 +11,9 @@ trait StateMachine {
   
   def serialize(): ByteBuffer
   
-  def applyWrite(index:Long, write: WriteCommand):Any
+  def applyWrite(index:Long, write: WriteCommand[_]):Any
   
-  def applyRead(read: ReadCommand):Any
+  def applyRead(read: ReadCommand[_]):Any
   
   def lastAppliedIndex: Long
   

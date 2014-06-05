@@ -18,76 +18,82 @@ import java.util.concurrent.locks.ReentrantLock
 import org.mapdb.DBMaker
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import scala.concurrent.Future
+import scala.concurrent.Promise
 
 class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val state = new AtomicReference[State](Starter)
+  
   val db = DBMaker.newFileDB(file(cluster.configuration.dataDir)).mmapFileEnable().closeOnJvmShutdown().make()
-  val currentTerm = db.getAtomicInteger("term")
-  val transientTerm = new AtomicInteger(currentTerm.intValue())
+  val persistedTerm = db.getAtomicInteger("term")
   val votedFor = db.getAtomicString("votedFor")
-
+  
   val lock = new ReentrantLock()
 
-  def term(): Int = transientTerm.intValue()
+  def term(): Int = currentState.term
 
   def voteForMyself = votedFor.set(id)
+  
+  def persistState() = {
+    if (currentState != Stopped) {
+    	persistedTerm.set(currentState.term)
+    	db.commit()
+    }
+  }
 
-  def on(requestVote: RequestVote): RequestVoteResponse = locked {
+  def becomeLeader(term: Int) = become(new Leader(cluster, term, currentLeaderPromise), term)
+
+  def becomeCandidate(term: Int) = become(new Candidate(cluster, term, currentLeaderPromiseForCandidate), term)
+
+  def becomeFollower(term: Int, passive: Boolean = false, leaderPromise: Promise[Member] = Promise[Member]()) = become(new Follower(cluster, passive, term, leaderPromise), term)
+
+  def becomePassiveFollower(term: Int): Unit = becomeFollower(term, true)
+  
+  def becomeStarter = changeState(Starter, Starter)
+  
+  private def currentLeaderPromise = {
+    currentState.leaderPromise
+  }
+  
+  private def currentLeaderPromiseForCandidate = {
+    val promise = currentLeaderPromise
+    if (!promise.isCompleted) promise else Promise[Member]()
+  }
+
+  private def become(newState: State, term: Int) = {
+    LOG.trace("Trying to become {}",newState)
+    var current = currentState
+    //stops when current == newState or current.term < newState.term
+    while(current.canTransitionTo(newState)) {
+      if (changeState(current, newState)) {
+    	  LOG.debug(s"$id Transition from $current to $newState")
+    	  cluster.local.persistState
+    	  current stop term
+    	  newState begin
+    	  
+      }
+      current = currentState
+    }
+    LOG.trace("State is {}",current)
+  }
+  
+  //must operate on a fixed term and give at most one vote per term
+  def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
     if (requestVote.term < term) {
       LOG.debug(s"Rejecting vote to old candidate: ${requestVote}")
-      return RequestVoteResponse(term, false)
+      return Future.successful(RequestVoteResponse(term, false))
     }
     currentState on requestVote
   }
 
-  def updateTermIfNeeded(receivedTerm: Int) = locked {
-    if (receivedTerm > term) {
-      LOG.debug(s"New term detected. Moving from ${term} to ${receivedTerm}.")
-      votedFor.set("")
-      currentTerm.set(receivedTerm)
-      db.commit()
-      transientTerm.set(currentTerm.intValue())
-    }
-  }
+  def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = currentState on appendEntries
 
-  def incrementTerm = {
-    val t = currentTerm.incrementAndGet()
-    db.commit()
-    transientTerm.set(t)
-    t
-  }
-
-  def becomeLeader(term: Int) = become(new Leader(cluster), term)
-
-  def becomeCandidate(term: Int) = become(new Candidate(cluster), term)
-
-  def becomeFollower(term: Int, passive: Boolean = false) = become(new Follower(cluster, passive), term)
-
-  def becomeFollower: Unit = becomeFollower(term(), false)
-  
-  def becomePassiveFollower: Unit = becomeFollower(term(), true)
-  
-  def becomeStarter = changeState(Starter)
-
-  private def become(newState: State, term: Int) = locked {
-    if (currentState.canTransition) {
-      LOG.debug(s"Transition from $state to $newState")
-      currentState stop
-
-      changeState(newState)
-
-      newState begin term
-    }
-  }
-
-  def on(appendEntries: AppendEntries): AppendEntriesResponse = currentState on appendEntries
-
-  def on[T](command: Command): T = currentState.on[T](command)
+  def on[T](command: Command): Future[T] = currentState.on[T](command)
 
   def on(jointConsensusCommited: MajorityJointConsensus) = currentState on jointConsensusCommited
 
-  override def forwardCommand[T](command: Command): T = on(command)
+  override def forwardCommand[T](command: Command): Future[T] = on(command)
 
   def stepDown(term: Int, leaderId: Option[String] = None) = currentState.stepDown(term, leaderId)
 
@@ -97,20 +103,11 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def currentState = state.get()
 
-  private def changeState(newState: State) = state.set(newState)
+  private def changeState(current: State, newState: State) = state.compareAndSet(current, newState)
 
   def stop: Unit = {
-    become(Stopped, cluster.local.term)
+    become(Stopped, Stopped.term)
     db.close()
-  }
-
-  def locked[T](f: => T): T = {
-    lock.lock()
-    try {
-      f
-    } finally {
-      lock.unlock()
-    }
   }
 
   private def file(dataDir: String): File = {

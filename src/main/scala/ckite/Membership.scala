@@ -103,7 +103,7 @@ class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember],idx
   
   def index = idx
   
-  override def toString(): String = allMembers.toString 
+  override def toString(): String = s"(${allMembers.mkString(",")})" 
 
 }
 
@@ -135,7 +135,7 @@ class JointConsensus(oldMembership: Membership, newMembership: Membership, idx:L
   def index:Long = idx
   
   override def toString(): String = {
-    s"[Cold=(${oldMembership}), Cnew=(${newMembership})]"
+    s"[Cold=${oldMembership}, Cnew=${newMembership}]"
   }
 }
 

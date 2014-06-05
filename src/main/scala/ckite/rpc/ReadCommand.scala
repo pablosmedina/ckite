@@ -1,3 +1,3 @@
 package ckite.rpc
 
-trait ReadCommand extends Command
+trait ReadCommand[T] extends Command
