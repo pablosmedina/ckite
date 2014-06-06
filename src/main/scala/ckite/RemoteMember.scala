@@ -40,7 +40,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
-  LOG.debug(s"Creating RemoteMember[$binding] client")
+  LOG.debug(s"Creating RemoteMember client for $binding")
   
   val nextLogIndex = new AtomicLong(1)
   val matchIndex = new AtomicLong(0)

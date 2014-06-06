@@ -90,7 +90,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   private def startNormal = {
     //start as a normal follower
     LOG.info("Existing configuration. Start normal")
-    local becomeFollower local.persistedTerm.intValue()
+    val votedFor = local.votedFor.get()
+    local.becomeFollower(term = local.persistedTerm.intValue(), vote = if (votedFor.isEmpty()) None else Some(votedFor))
   }
 
   private def startBootstrap = {

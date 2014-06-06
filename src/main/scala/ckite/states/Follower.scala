@@ -33,21 +33,20 @@ import scala.concurrent.Promise
  * •! Receiving valid AppendEntries RPC, or
  * •! Granting vote to candidate
  */
-class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise) with Logging {
+class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderPromise: Promise[Member], vote: Option[String]) extends State(term, leaderPromise, vote) with Logging {
 
   val electionTimeout = new ElectionTimeout(cluster, term)
-  val votedFor = new AtomicReference[String]("")
   
   override def begin() = {
     if (!passive) electionTimeout restart
+    
+    if (leaderPromise.isCompleted) LOG.info("Following {} in term[{}]", cluster.leader,term)
   }
 
   override def stop(stopTerm: Int) = {
     if (stopTerm > term) {
     	electionTimeout stop
-    	
-    	true
-    } else false
+    }
   }
 
   override def on[T](command: Command): Future[T] = cluster.forwardToLeader[T](command)
@@ -89,18 +88,17 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
       case requestTerm if requestTerm == term => {
         val couldGrantVote = checkGrantVotePolicy(requestVote)
         if (couldGrantVote) {
-          if (votedFor.compareAndSet("", requestVote.memberId) || votedFor.get() == requestVote.memberId) {
-        	  LOG.debug(s"Granting vote to ${requestVote.memberId} in term ${term}")
-        	  cluster.local.votedFor.set(requestVote.memberId)
+          if (votedFor.compareAndSet(None, Some(requestVote.memberId)) || votedFor.get().equals(Some(requestVote.memberId))) {
+        	  LOG.debug(s"Granting vote to ${requestVote.memberId} in term[${term}]")
         	  electionTimeout.restart
         	  cluster.local.persistState()
         	  Future.successful(RequestVoteResponse(term, true))
           } else {
-              LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term ${term}. Already voted for ${votedFor.get()}")
+              LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term[${term}]. Already voted for ${votedFor.get()}")
               Future.successful(RequestVoteResponse(term, false))
           }
         } else {
-          LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term ${term}")
+          LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term[${term}]")
           Future.successful(RequestVoteResponse(term, false))
         }
       }
@@ -108,8 +106,8 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
   }
   
   private def checkGrantVotePolicy(requestVote: RequestVote) = {
-    val votedFor = cluster.local.votedFor.get()
-    (votedFor.isEmpty() || votedFor == requestVote.memberId) && isMuchUpToDate(requestVote)
+    val vote = votedFor.get()
+    (!vote.isDefined || vote.get == requestVote.memberId) && isMuchUpToDate(requestVote)
   }
 
   private def isMuchUpToDate(requestVote: RequestVote) = {

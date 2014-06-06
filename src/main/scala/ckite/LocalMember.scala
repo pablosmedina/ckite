@@ -33,11 +33,11 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def term(): Int = currentState.term
 
-  def voteForMyself = votedFor.set(id)
-  
   def persistState() = {
-    if (currentState != Stopped) {
-    	persistedTerm.set(currentState.term)
+    val st = currentState
+    if (st != Stopped) {
+    	persistedTerm.set(st.term)
+    	votedFor.set(st.votedFor.get().getOrElse(""))
     	db.commit()
     }
   }
@@ -46,7 +46,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   def becomeCandidate(term: Int) = become(new Candidate(cluster, term, currentLeaderPromiseForCandidate), term)
 
-  def becomeFollower(term: Int, passive: Boolean = false, leaderPromise: Promise[Member] = Promise[Member]()) = become(new Follower(cluster, passive, term, leaderPromise), term)
+  def becomeFollower(term: Int, passive: Boolean = false, leaderPromise: Promise[Member] = Promise[Member](), vote: Option[String] = None) = become(new Follower(cluster, passive, term, leaderPromise, vote), term)
 
   def becomePassiveFollower(term: Int): Unit = becomeFollower(term, true)
   
@@ -71,7 +71,6 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
     	  cluster.local.persistState
     	  current stop term
     	  newState begin
-    	  
       }
       current = currentState
     }

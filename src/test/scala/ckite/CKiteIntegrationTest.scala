@@ -350,12 +350,12 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       .stateMachine(new KVStore()).build
 
     val member2 = RaftBuilder().listenAddress(Member2Address).members(Seq(Member1Address))
-      .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
+//      .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
       .dataDir(someTmpDir)
       .stateMachine(new KVStore()).build
 
     val member3 = RaftBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
-      .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
+//      .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
       .dataDir(someTmpDir)
       .stateMachine(new KVStore()).build
     val members = Seq(member1, member2, member3)

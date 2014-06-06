@@ -31,13 +31,14 @@ import ckite.Member
  * increment term, start new election
  * •! Discover higher term: step down (§5.1)
  */
-class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise) {
+class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise, Some(cluster.local.id)) {
 
   val election = new Election(cluster)
   
   override def canTransitionTo(newState: State) = {
     newState match {
       case leader:Leader => leader.term == term
+      case follower:Follower => follower.term >= term //in case of split vote or being an old candidate
       case _ => newState.term > term
     }
   }
@@ -52,6 +53,7 @@ class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) ext
       Future.successful(AppendEntriesResponse(cluster.local.term, false))
     }
     else {
+      LOG.debug("Leader already elected in term[{}]", term)
       election.abort
       //warn lock
       stepDown(appendEntries.term, Some(appendEntries.leaderId))
@@ -96,7 +98,7 @@ class Election(cluster: Cluster) extends Logging {
 	      cluster.local becomeLeader inTerm
 	    } else {
 	      LOG.info(s"Not enough votes to be a Leader")
-	      cluster.local becomeFollower inTerm
+	      cluster.local.becomeFollower(term = inTerm, vote = Some(cluster.local.id)) //voted for my self when Candidate
 	    }
     }
     electionFutureTask.set(executor.submit(task))

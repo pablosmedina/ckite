@@ -60,7 +60,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
  * servers. Apply newly committed entries to state machine.
  * •! Step down if currentTerm changes (§5.5)
  */
-class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise) {
+class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise, Some(cluster.local.id)) {
 
   val ReplicationTimeout = cluster.configuration.appendEntriesTimeout
   val startTime = System.currentTimeMillis()
@@ -112,10 +112,7 @@ class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extend
     	heartbeater stop
     	
     	LOG.debug("Stop being Leader")
-    	true
-    } else {
-      false
-    }
+    } 
   }
 
   override def on[T](command: Command): Future[T] = {
