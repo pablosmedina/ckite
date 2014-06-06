@@ -1,4 +1,4 @@
-CKite [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https://travis-ci.org/pablosmedina/ckite)
+CKite - JVM Raft [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https://travis-ci.org/pablosmedina/ckite)
 =====
 
 ## Overview
@@ -45,7 +45,7 @@ Add the following maven dependency to your pom.xml:
 ```
 
 
-## Example
+## Example (See [KVStore](https://github.com/pablosmedina/kvstore))
 
 #### 1) Create a StateMachine
 ```scala
