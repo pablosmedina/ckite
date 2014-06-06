@@ -47,7 +47,7 @@ Add the following maven dependency to your pom.xml:
 
 ## Example
 
-#### 1) Define a StateMachine and its commands
+#### 1) Create a StateMachine
 ```scala
 //KVStore is a distributed Map accepting Puts and Gets
 class KVStore extends StateMachine {
@@ -103,7 +103,7 @@ val raft = RaftBuilder().listenAddress("node1:9091")
                           .build
 ```
 
-#### 3) Create a CKite instance using the builder (extended)
+#### 3) Create a Raft instance using the builder (extended)
 ```scala
 val raft = RaftBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
@@ -115,7 +115,7 @@ val raft = RaftBuilder().listenAddress("localhost:9091")
                           .flushSize(10) //max batch size when flushing log to disk
                           .build
 ```
-#### 4) Start a CKite
+#### 4) Start raft
 ```scala
 raft.start()
 ```
@@ -154,7 +154,7 @@ val value = raft.readLocal(Get("key1"))
 //if necessary waits for elections to end
 raft.isLeader() 
 ```
-#### 10) Stop ckite
+#### 10) Stop raft
 ```scala
 raft.stop()
 ```
@@ -166,7 +166,7 @@ You can bootstrap the first node using the builder, overriding ckite.bootstrap i
 
 #### bootstrapping the first node using the builder
 ```scala
-val ckite = CKiteBuilder().listenAddress("node1:9091")
+val raft = RaftBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
