@@ -1,11 +1,14 @@
 package ckite
 
-import ckite.rpc.thrift.ThriftServer
-import ckite.rpc.WriteCommand
-import ckite.rpc.ReadCommand
 import java.util.concurrent.atomic.AtomicBoolean
 
-class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKiteBuilder) {
+import scala.concurrent.Future
+
+import ckite.rpc.ReadCommand
+import ckite.rpc.WriteCommand
+import ckite.rpc.thrift.ThriftServer
+
+class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: RaftBuilder) {
 
   private val thrift = ThriftServer(cluster)
   private val stopped = new AtomicBoolean(false)
@@ -24,11 +27,11 @@ class CKite(private[ckite] val cluster: Cluster, private[ckite] val builder: CKi
     }
   }
 
-  def write[T](writeCommand: WriteCommand): T = cluster.on[T](writeCommand)
+  def write[T](writeCommand: WriteCommand[T]): Future[T] = cluster.on[T](writeCommand)
 
-  def read[T](readCommand: ReadCommand): T = cluster.on[T](readCommand)
+  def read[T](readCommand: ReadCommand[T]): Future[T] = cluster.on[T](readCommand)
 
-  def readLocal[T](readCommand: ReadCommand): T = cluster.onLocal(readCommand).asInstanceOf[T]
+  def readLocal[T](readCommand: ReadCommand[T]): T = cluster.onLocal(readCommand)
 
   def addMember(memberBinding: String) = cluster.addMember(memberBinding)
 

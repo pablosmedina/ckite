@@ -8,20 +8,19 @@ import ckite.rpc.RequestVote
 import ckite.rpc.AppendEntries
 import ckite.stats.StateInfo
 import ckite.stats.NonLeaderInfo
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import ckite.Member
 
-case object Stopped extends State {
+case object Stopped extends State(Int.MaxValue, Promise.failed(new IllegalStateException("Stopped"))) {
 
-  override def begin(term: Int) = {}
+  override def begin() = {}
 
-  override def stop = {}
+  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = Future.successful(AppendEntriesResponse(appendEntries.term, false))
 
-//  override def on(command: Command)(implicit cluster: Cluster) = {}
-
-  override def on(appendEntries: AppendEntries): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
-
-  override def on(requestVote: RequestVote): RequestVoteResponse = RequestVoteResponse(requestVote.term,false)
+  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = Future.successful(RequestVoteResponse(requestVote.term,false))
   
-  override def canTransition: Boolean = false
+  override def canTransitionTo(state: State): Boolean = false
   
   override def stepDown(term: Int, leaderId: Option[String]) = { }
 

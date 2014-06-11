@@ -5,7 +5,8 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 
 import scala.Option.option2Iterable
-import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
 
@@ -14,14 +15,12 @@ import ckite.rlog.LogAppender
 import ckite.rlog.MapDBPersistentLog
 import ckite.rlog.SnapshotManager
 import ckite.rpc.AppendEntries
-import ckite.rpc.Command
-import ckite.rpc.JointConfiguration
-import ckite.rpc.NewConfiguration
 import ckite.rpc.LogEntry
 import ckite.rpc.ReadCommand
 import ckite.rpc.WriteCommand
 import ckite.statemachine.StateMachine
 import ckite.util.Logging
+
 
 class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging {
 
@@ -33,7 +32,7 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   val exclusiveLock = lock.writeLock()
   val sharedLock = lock.readLock()
 
-  val applyPromises = new ConcurrentHashMap[Long, Promise[Any]]()
+  val applyPromises = new ConcurrentHashMap[Long, Promise[_]]()
 
   val snapshotManager = new SnapshotManager(this, cluster.configuration)
   
@@ -45,23 +44,25 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
   initialize()
 
   //Leader append
-  def append(write: WriteCommand): (LogEntry, Promise[Any]) = {
-	val appendPromise = logAppender.append(cluster.local.term, write)
-	val (logEntry, valuePromise) = Await.result(appendPromise.future, appendPromiseTimeout)
-    applyLogCompactionPolicy
-    (logEntry, valuePromise)
+  def append[T](write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = {
+	val appendFuture = logAppender.append[T](cluster.local.term, write)
+	applyLogCompactionPolicy
+	appendFuture
   }
 
   //Follower append
-  def tryAppend(appendEntries: AppendEntries) = {
+  def tryAppend(appendEntries: AppendEntries): Future[Boolean] = {
     LOG.trace("Try appending {}", appendEntries)
     val canAppend = hasPreviousLogEntry(appendEntries)
     if (canAppend) {
-      appendAll(appendEntries.entries)
-      commandApplier.commit(appendEntries.commitIndex)
-      applyLogCompactionPolicy
+      appendAll(appendEntries.entries) map { _ =>
+        commandApplier.commit(appendEntries.commitIndex)
+        applyLogCompactionPolicy
+        canAppend
+      }
+    } else {
+    	Promise.successful(canAppend).future
     }
-    canAppend
   }
 
   private def applyLogCompactionPolicy = snapshotManager.applyLogCompactionPolicy
@@ -87,13 +88,15 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
         None
       }
     }
-    waitForAll(appendPromises)
+    composeFutures(appendPromises)
   }
 
-  private def waitForAll[T](appendPromises: List[Option[Promise[T]]]) = {
-    appendPromises.flatten.foreach { promise =>
-      Await.ready(promise.future, appendPromiseTimeout)
-    }
+  private def composeFutures(appendPromises: List[Option[Future[Long]]]) = {
+    val futures = for {
+       append <- appendPromises
+       future <- append
+    } yield future
+    Future.sequence(futures)
   }
   
   private def hasIndex(index: Long) = persistentLog.getLastIndex >= index
@@ -102,7 +105,7 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
 
   def commit(logEntry: LogEntry): Unit = commit(logEntry.index)
 
-  def execute(command: ReadCommand) = commandApplier.applyRead(command)
+  def execute[T](command: ReadCommand[T]) = commandApplier.applyRead(command)
 
   def logEntry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)

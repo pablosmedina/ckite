@@ -1,47 +1,38 @@
 package ckite.states
 
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
-import scala.util.Try
-import ckite.Cluster
-import ckite.rpc.WriteCommand
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.Callable
-import java.util.concurrent.TimeUnit
-import scala.collection.JavaConversions._
-import ckite.rpc.RequestVoteResponse
-import ckite.util.Logging
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.RequestVote
-import ckite.rpc.AppendEntries
-import ckite.rpc.LogEntry
-import ckite.RLog
 import java.lang.Boolean
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+
+import scala.collection.JavaConversions.mapAsScalaConcurrentMap
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.concurrent.duration.DurationLong
+import scala.concurrent.future
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
+import ckite.Cluster
 import ckite.Member
-import ckite.rpc.JointConfiguration
+import ckite.RemoteMember
+import ckite.rpc.AppendEntries
+import ckite.rpc.AppendEntriesResponse
+import ckite.rpc.Command
+import ckite.rpc.LogEntry
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.NewConfiguration
-import ckite.exception.WriteTimeoutException
-import ckite.util.CKiteConversions._
+import ckite.rpc.NoOp
 import ckite.rpc.ReadCommand
-import ckite.rpc.Command
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.SynchronousQueue
-import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.RemoteMember
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import scala.collection.mutable.ArrayBuffer
-import ckite.rpc.NoOp
-import ckite.rpc.NoOp
-import scala.collection.JavaConverters._
-import java.util.concurrent.TimeoutException
-import scala.concurrent._
-import scala.concurrent.duration._
-import ckite.stats.StateInfo
-import ckite.stats.LeaderInfo
+import ckite.rpc.RequestVote
+import ckite.rpc.RequestVoteResponse
+import ckite.rpc.WriteCommand
 import ckite.stats.FollowerInfo
+import ckite.stats.LeaderInfo
+import ckite.stats.StateInfo
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -60,7 +51,7 @@ import ckite.stats.FollowerInfo
  * servers. Apply newly committed entries to state machine.
  * •! Step down if currentTerm changes (§5.5)
  */
-class Leader(cluster: Cluster) extends State {
+class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise, Some(cluster.local.id)) {
 
   val ReplicationTimeout = cluster.configuration.appendEntriesTimeout
   val startTime = System.currentTimeMillis()
@@ -70,11 +61,7 @@ class Leader(cluster: Cluster) extends State {
   
   val appendEntriesTimeout = cluster.configuration.appendEntriesTimeout millis
   
-  val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LeaderAsync-worker", true))
-  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
-  
-  override def begin(term: Int) = {
+  override def begin() = {
     if (term < cluster.local.term) {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
       cluster.local.becomeFollower(cluster.local.term)
@@ -84,14 +71,20 @@ class Leader(cluster: Cluster) extends State {
       resetFollowerInfo
       heartbeater start term
       appendNoOp
-      cluster.updateLeader(cluster.local.id)
-      LOG.info(s"Start being Leader")
+      LOG.info(s"Start being $this")
+      leaderPromise.success(cluster.local)
+      cluster.local.persistState
     }
   }
   
-  private def appendNoOp(implicit context: ExecutionContext = asyncExecutionContext) = {
-      LOG.debug("Append a NoOp as part of Leader initialization")
-      on[Unit](NoOp())
+  private def appendNoOp = {
+	  if (cluster.rlog.lastLog.longValue() == 0) {
+	    LOG.info("Will set a configuration with just myself: {}", cluster.local.id)
+	    on[Boolean](NewConfiguration(List(cluster.local.id))) //the initial configuration must be saved in the log
+	  } else {
+		  LOG.debug("Append a NoOp as part of Leader initialization")
+		  on[Unit](NoOp())
+	  }
   }
   
   private def resetLastLog = cluster.rlog.resetLastLog()
@@ -101,37 +94,27 @@ class Leader(cluster: Cluster) extends State {
     cluster.membership.remoteMembers.foreach { member => member.setNextLogIndex(nextIndex); member.resetMatchIndex }
   }
 
-  override def stop = {
-    LOG.debug("Stop being Leader")
-    heartbeater stop
-    
-    cluster.setNoLeader
+  override def stop(stopTerm: Int) = {
+    if (stopTerm > term) {
+    	heartbeater stop
+    	
+    	LOG.debug("Stop being Leader")
+    } 
   }
 
-  override def on[T](command: Command): T = {
+  override def on[T](command: Command): Future[T] = {
     command match {
-      case w: WriteCommand => onWriteCommand[T](w)
-      case r: ReadCommand => onReadCommand[T](r)
+      case w: WriteCommand[T] => onWriteCommand[T](w)
+      case r: ReadCommand[T] => onReadCommand[T](r)
     }
   }
 
-  private def onWriteCommand[T](write: WriteCommand): T = {
-    val (logEntry,promise) = cluster.rlog.append(write).asInstanceOf[(LogEntry,Promise[T])]
-    replicate(logEntry)
-    await(promise, logEntry)
-  }
-  
-  private def await[T](promise: Promise[T], logEntry: LogEntry) = {
-    try {
-      LOG.debug("Will wait for a majority consisting of {} until {} ms", cluster.membership.majoritiesMap, ReplicationTimeout)
-      val value = Await.result(promise.future, appendEntriesTimeout)
-      LOG.debug("Finish wait for {} and got value {}", logEntry, value)
-      value
-    } catch {
-      case e: TimeoutException => {
-        LOG.warn("WriteTimeout - {}",logEntry)
-        throw new WriteTimeoutException(logEntry)
-      }
+  private def onWriteCommand[T](write: WriteCommand[T]): Future[T] = {
+    cluster.rlog.append[T](write) flatMap { tuple =>
+      val logEntry = tuple._1
+      val valuePromise = tuple._2
+      replicate(logEntry)
+      valuePromise.future
     }
   }
   
@@ -145,22 +128,22 @@ class Leader(cluster: Cluster) extends State {
   }
   
   
-  private def onReadCommand[T](command: ReadCommand): T = {
-    (cluster.rlog execute command).asInstanceOf[T]
+  private def onReadCommand[T](command: ReadCommand[T]): Future[T] = future {
+    	cluster.rlog execute command
   }
 
-  override def on(appendEntries: AppendEntries): AppendEntriesResponse = {
-    if (appendEntries.term < cluster.local.term) {
-      AppendEntriesResponse(cluster.local.term, false)
+  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
+    if (appendEntries.term < term) {
+      Future.successful(AppendEntriesResponse(term, false))
     } else {
       stepDown(appendEntries.term, Some(appendEntries.leaderId))
       cluster.local on appendEntries
     }
   }
 
-  override def on(requestVote: RequestVote): RequestVoteResponse = {
-    if (requestVote.term <= cluster.local.term) {
-      RequestVoteResponse(cluster.local.term, false)
+  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
+    if (requestVote.term <= term) {
+      Future.successful(RequestVoteResponse(term, false))
     } else {
       stepDown(requestVote.term, None)
       cluster.local on requestVote
@@ -174,7 +157,7 @@ class Leader(cluster: Cluster) extends State {
   
   override protected def getCluster: Cluster = cluster
 
-  override def toString = "Leader"
+  override def toString = s"Leader[$term]"
 
   override def info(): StateInfo = {
     val now = System.currentTimeMillis()

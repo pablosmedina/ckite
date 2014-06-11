@@ -1,4 +1,4 @@
-CKite [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https://travis-ci.org/pablosmedina/ckite)
+CKite - JVM Raft [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.png)](https://travis-ci.org/pablosmedina/ckite)
 =====
 
 ## Overview
@@ -45,7 +45,7 @@ Add the following maven dependency to your pom.xml:
 ```
 
 
-## Example
+## Example (See [KVStore](https://github.com/pablosmedina/kvstore))
 
 #### 1) Create a StateMachine
 ```scala
@@ -89,23 +89,23 @@ class KVStore extends StateMachine {
 }
 
 //WriteCommands are replicated under Raft rules
-case class Put(key: String, value: String) extends WriteCommand
+case class Put(key: String, value: String) extends WriteCommand[String]
 
 //ReadCommands are not replicated but forwarded to the Leader
-case class Get(key: String) extends ReadCommand
+case class Get(key: String) extends ReadCommand[String]
 ```
-#### 2) Create a CKite instance using the builder (minimal)
+#### 2) Create a Raft instance using the builder (minimal)
 ```scala
-val ckite = CKiteBuilder().listenAddress("node1:9091")
+val raft = RaftBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
                           .build
 ```
 
-#### 3) Create a CKite instance using the builder (extended)
+#### 3) Create a Raft instance using the builder (extended)
 ```scala
-val ckite = CKiteBuilder().listenAddress("localhost:9091")
+val raft = RaftBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
                           .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
                           .heartbeatsPeriod(250) //optional. period to send heartbeats interval when being Leader
@@ -115,48 +115,48 @@ val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .flushSize(10) //max batch size when flushing log to disk
                           .build
 ```
-#### 4) Start a CKite
+#### 4) Start raft
 ```scala
-ckite.start()
+raft.start()
 ```
 
 #### 4) Send a write command
 ```scala
 //this Put command is forwarded to the Leader and applied under Raft rules
-ckite.write(Put("key1","value1")) 
+val writeFuture:Future[String] = raft.write(Put("key1","value1")) 
 ```
 
 #### 5) Send a consistent read command
 ```scala
 //consistent read commands are forwarded to the Leader
-val value = ckite.read(Get("key1")) 
+val readFuture:Future[String] = raft.read(Get("key1")) 
 ```
 #### 6) Add a new Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
-ckite.addMember("someHost:9094")
+raft.addMember("someHost:9094")
 ```
 
 #### 7) Remove a Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
-ckite.removeMember("someHost:9094")
+raft.removeMember("someHost:9094")
 ```
 
 #### 8) Send a local read command
 ```scala
 //alternatively you can read from its local state machine allowing possible stale values
-val value = ckite.readLocal(Get("key1")) 
+val value = raft.readLocal(Get("key1")) 
 ```
 
 #### 9) Check leadership
 ```scala
 //if necessary waits for elections to end
-ckite.isLeader() 
+raft.isLeader() 
 ```
-#### 10) Stop ckite
+#### 10) Stop raft
 ```scala
-ckite.stop()
+raft.stop()
 ```
 
 ## How CKite bootstraps
@@ -166,7 +166,7 @@ You can bootstrap the first node using the builder, overriding ckite.bootstrap i
 
 #### bootstrapping the first node using the builder
 ```scala
-val ckite = CKiteBuilder().listenAddress("node1:9091")
+val raft = RaftBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node

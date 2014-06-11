@@ -4,22 +4,20 @@ import scala.util.Try
 import ckite.Member
 import ckite.rlog.Snapshot
 import ckite.RemoteMember
-import com.twitter.util.Future
+import scala.concurrent.Future
 
 trait Connector {
 
-  def send(request: RequestVote): Try[RequestVoteResponse]
+  def send(request: RequestVote): Future[RequestVoteResponse]
 
-  def send(appendEntries: AppendEntries): Try[AppendEntriesResponse]
+  def send(appendEntries: AppendEntries): Future[AppendEntriesResponse]
   
   def send(snapshot: Snapshot): Future[Boolean]
   
-  def send[T](command: Command): T
+  def send[T](command: Command): Future[T]
   
-  def send(joinRequest: JoinRequest): Try[JoinResponse]
+  def send(joinRequest: JoinRequest): Future[JoinResponse]
   
-  def send(getMembersRequest: GetMembersRequest): Try[GetMembersResponse]
-  
-  
+  def send(getMembersRequest: GetMembersRequest): Future[GetMembersResponse]
   
 }

@@ -14,7 +14,7 @@ trait StateMachine {
    * updates and the index. CKite will ask the lastAppliedIndex 
    * when deciding which WriteCommands can be replayed during startups.
    */
-  def applyWrite: PartialFunction[(Long, WriteCommand), Any]
+  def applyWrite: PartialFunction[(Long, WriteCommand[_]), Any]
 
   /**
    * The last applied index in the StateMachine. It is called 
@@ -24,7 +24,7 @@ trait StateMachine {
   /**
    * Called when readonly commands are requested. 
    */
-  def applyRead: PartialFunction[ReadCommand, Any]
+  def applyRead: PartialFunction[ReadCommand[_], Any]
 
   /**
    * Restore the StateMachine state from a Snapshot

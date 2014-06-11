@@ -1,23 +1,24 @@
 package ckite.rlog
 
 import java.util.concurrent.LinkedBlockingQueue
-import scala.concurrent.ExecutionContext
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.SynchronousQueue
-import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.util.CKiteConversions._
-import ckite.rpc.WriteCommand
-import scala.concurrent.Promise
-import ckite.rpc.LogEntry
-import ckite.RLog
-import ckite.rpc.LogEntry
+
 import scala.collection.mutable.ArrayBuffer
-import ckite.util.Logging
-import ckite.rpc.Command
-import ckite.rpc.JointConfiguration
-import ckite.rpc.NewConfiguration
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.Promise
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
+import ckite.RLog
 import ckite.rpc.ClusterConfigurationCommand
+import ckite.rpc.Command
+import ckite.rpc.LogEntry
+import ckite.rpc.WriteCommand
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
@@ -31,22 +32,22 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
   val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
 
   def start = asyncExecutionContext.execute(asyncAppend _)
-  
-  def stop =  {
+
+  def stop = {
     asyncPool.shutdownNow()
     asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
 
   //leader append
-  def append(term: Int, write: WriteCommand): Promise[(LogEntry, Promise[Any])] = append(LeaderAppend(term, write))
+  def append[T](term: Int, write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = append(LeaderAppend[T](term, write))
 
   //follower append
-  def append(entry: LogEntry): Promise[Long] = append(FollowerAppend(entry))
+  def append(entry: LogEntry): Future[Long] = append(FollowerAppend(entry))
 
-  private def append[T](append: Append[T]): Promise[T] = {
+  private def append[T](append: Append[T]): Future[T] = {
     val promise: Promise[T] = append.promise
     queue.offer(append)
-    promise
+    promise.future
   }
 
   private def asyncAppend = {
@@ -59,7 +60,7 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
         rlog.shared {
           log.append(logEntry)
         }
-        
+
         afterAppend(logEntry.index, logEntry.command)
 
         pendingFlushes = pendingFlushes :+ (logEntry, append)
@@ -68,10 +69,10 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
       case e: InterruptedException => LOG.info("Shutdown LogAppender...")
     }
   }
-  
-  private def afterAppend(index:Long,command: Command) = command match {
-      case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
-      case _ => ;
+
+  private def afterAppend(index: Long, command: Command) = command match {
+    case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
+    case _ => ;
   }
 
   private def next: Append[_] = {
@@ -102,9 +103,9 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
     def onFlush(logEntry: LogEntry)
   }
 
-  case class LeaderAppend(term: Int, write: WriteCommand) extends Append[(LogEntry, Promise[Any])] {
-    val _promise = Promise[(LogEntry, Promise[Any])]()
-    val _valuePromise = Promise[Any]()
+  case class LeaderAppend[T](term: Int, write: WriteCommand[T]) extends Append[(LogEntry, Promise[T])] {
+    val _promise = Promise[(LogEntry, Promise[T])]()
+    val _valuePromise = Promise[T]()
     def promise = _promise
     def logEntry = {
       val logEntry = LogEntry(term, rlog.nextLogIndex, write)

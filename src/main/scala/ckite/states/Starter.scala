@@ -11,16 +11,17 @@ import ckite.rpc.JointConfiguration
 import ckite.rpc.Command
 import ckite.stats.StateInfo
 import ckite.stats.NonLeaderInfo
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import ckite.Member
 
-case object Starter extends State {
+case object Starter extends State(-1, Promise[Member]()) {
 
-  override def begin(term: Int) = {}
+  override def begin() = {}
 
-  override def stop = {}
+  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = Future.successful(AppendEntriesResponse(appendEntries.term, false))
 
-  override def on(appendEntries: AppendEntries): AppendEntriesResponse = AppendEntriesResponse(appendEntries.term, false)
-
-  override def on(requestVote: RequestVote): RequestVoteResponse = RequestVoteResponse(requestVote.term,false)
+  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = Future.successful(RequestVoteResponse(requestVote.term,false))
   
   override def stepDown(term: Int, leaderId: Option[String]) = { }
 

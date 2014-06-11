@@ -19,7 +19,7 @@ import scala.collection.mutable.{
 import scala.collection.{Map, Set}
 
 
-@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-05-13T01:02:06.254-0300")
+@javax.annotation.Generated(value = Array("com.twitter.scrooge.Compiler"), date = "2014-06-05T00:26:57.605-0300")
 class CKiteService$FinagleService(
   iface: CKiteService[Future],
   protocolFactory: TProtocolFactory
