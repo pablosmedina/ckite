@@ -49,7 +49,7 @@ Add the following maven dependency to your pom.xml:
 
 #### 1) Create a StateMachine
 ```scala
-//KVStore is a distributed Map accepting Puts and Gets
+//KVStore is an in memory distributed Map allowing Puts and Gets operations
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
