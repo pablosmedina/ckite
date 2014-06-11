@@ -67,7 +67,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
     //stops when current == newState or current.term < newState.term
     while(current.canTransitionTo(newState)) {
       if (changeState(current, newState)) {
-    	  LOG.debug(s"$id Transition from $current to $newState")
+    	  LOG.debug(s"Transition from $current to $newState")
     	  cluster.local.persistState
     	  current stop term
     	  newState begin

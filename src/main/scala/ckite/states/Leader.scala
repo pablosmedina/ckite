@@ -1,47 +1,38 @@
 package ckite.states
 
-import java.util.concurrent.Executors
-import scala.util.Try
-import ckite.Cluster
-import ckite.rpc.WriteCommand
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.Callable
-import java.util.concurrent.TimeUnit
-import scala.collection.JavaConversions._
-import ckite.rpc.RequestVoteResponse
-import ckite.util.Logging
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.RequestVote
-import ckite.rpc.AppendEntries
-import ckite.rpc.LogEntry
-import ckite.RLog
 import java.lang.Boolean
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+
+import scala.collection.JavaConversions.mapAsScalaConcurrentMap
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.concurrent.duration.DurationLong
+import scala.concurrent.future
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
+import ckite.Cluster
 import ckite.Member
-import ckite.rpc.JointConfiguration
+import ckite.RemoteMember
+import ckite.rpc.AppendEntries
+import ckite.rpc.AppendEntriesResponse
+import ckite.rpc.Command
+import ckite.rpc.LogEntry
 import ckite.rpc.MajorityJointConsensus
 import ckite.rpc.NewConfiguration
-import ckite.exception.WriteTimeoutException
-import ckite.util.CKiteConversions._
+import ckite.rpc.NoOp
 import ckite.rpc.ReadCommand
-import ckite.rpc.Command
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.SynchronousQueue
-import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.RemoteMember
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import scala.collection.mutable.ArrayBuffer
-import ckite.rpc.NoOp
-import ckite.rpc.NoOp
-import scala.collection.JavaConverters._
-import java.util.concurrent.TimeoutException
-import scala.concurrent._
-import scala.concurrent.duration._
-import ckite.stats.StateInfo
-import ckite.stats.LeaderInfo
+import ckite.rpc.RequestVote
+import ckite.rpc.RequestVoteResponse
+import ckite.rpc.WriteCommand
 import ckite.stats.FollowerInfo
-import scala.concurrent.ExecutionContext.Implicits.global
+import ckite.stats.LeaderInfo
+import ckite.stats.StateInfo
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 /**
  * 	•! Initialize nextIndex for each to last log index + 1
@@ -70,10 +61,6 @@ class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extend
   
   val appendEntriesTimeout = cluster.configuration.appendEntriesTimeout millis
   
-  val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LeaderAsync-worker", true))
-  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
-  
   override def begin() = {
     if (term < cluster.local.term) {
       LOG.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
@@ -90,7 +77,7 @@ class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extend
     }
   }
   
-  private def appendNoOp(implicit context: ExecutionContext = asyncExecutionContext) = {
+  private def appendNoOp = {
 	  if (cluster.rlog.lastLog.longValue() == 0) {
 	    LOG.info("Will set a configuration with just myself: {}", cluster.local.id)
 	    on[Boolean](NewConfiguration(List(cluster.local.id))) //the initial configuration must be saved in the log
@@ -128,20 +115,6 @@ class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extend
       val valuePromise = tuple._2
       replicate(logEntry)
       valuePromise.future
-    }
-  }
-  
-  private def await[T](promise: Promise[T], logEntry: LogEntry) = {
-    try {
-      LOG.debug("Will wait for a majority consisting of {} until {} ms", cluster.membership.majoritiesMap, ReplicationTimeout)
-      val value = Await.result(promise.future, appendEntriesTimeout)
-      LOG.debug("Finish wait for {} and got value {}", logEntry, value)
-      value
-    } catch {
-      case e: TimeoutException => {
-        LOG.warn("WriteTimeout - {}",logEntry)
-        throw new WriteTimeoutException(logEntry)
-      }
     }
   }
   

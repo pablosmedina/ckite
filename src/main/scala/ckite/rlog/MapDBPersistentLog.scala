@@ -1,20 +1,13 @@
 package ckite.rlog
 
-import ckite.rpc.LogEntry
-import ckite.Cluster
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.ThreadPoolExecutor
-import com.twitter.concurrent.NamedPoolThreadFactory
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.SynchronousQueue
-import ckite.util.Logging
-import org.mapdb.DB
-import java.util.concurrent.atomic.AtomicLong
-import org.mapdb.DBMaker
 import java.io.File
-import ckite.rpc.WriteCommand
-import ckite.rpc.LogEntry
+import java.util.concurrent.atomic.AtomicLong
+
+import org.mapdb.DBMaker
+
 import ckite.RLog
+import ckite.rpc.LogEntry
+import ckite.util.Logging
 import ckite.util.Serializer
 
 class MapDBPersistentLog(dataDir: String, rlog: RLog) extends PersistentLog with Logging {

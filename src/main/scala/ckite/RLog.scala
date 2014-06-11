@@ -3,25 +3,23 @@ package ckite
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
+
 import scala.Option.option2Iterable
-import scala.concurrent.Await
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
+
 import ckite.rlog.CommandApplier
 import ckite.rlog.LogAppender
 import ckite.rlog.MapDBPersistentLog
 import ckite.rlog.SnapshotManager
 import ckite.rpc.AppendEntries
-import ckite.rpc.Command
-import ckite.rpc.JointConfiguration
-import ckite.rpc.NewConfiguration
 import ckite.rpc.LogEntry
 import ckite.rpc.ReadCommand
 import ckite.rpc.WriteCommand
 import ckite.statemachine.StateMachine
 import ckite.util.Logging
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
 
 
 class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging {
@@ -90,10 +88,10 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging
         None
       }
     }
-    waitForAll(appendPromises)
+    composeFutures(appendPromises)
   }
 
-  private def waitForAll(appendPromises: List[Option[Future[Long]]]) = {
+  private def composeFutures(appendPromises: List[Option[Future[Long]]]) = {
     val futures = for {
        append <- appendPromises
        future <- append

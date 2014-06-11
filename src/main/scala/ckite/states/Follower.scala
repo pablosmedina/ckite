@@ -1,29 +1,23 @@
 package ckite.states
 
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.ScheduledFuture
-import java.util.concurrent.ScheduledExecutorService
-import scala.util.Try
-import org.slf4j.LoggerFactory
 import java.util.Random
-import ckite.Cluster
-import ckite.rpc.WriteCommand
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import ckite.rpc.RequestVoteResponse
-import ckite.util.Logging
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.RequestVote
-import ckite.rpc.AppendEntries
-import ckite.RLog
-import ckite.rpc.JointConfiguration
-import java.util.concurrent.atomic.AtomicBoolean
-import ckite.rpc.Command
-import ckite.util.CKiteConversions._
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import ckite.Member
 import scala.concurrent.Promise
+
+import ckite.Cluster
+import ckite.Member
+import ckite.rpc.AppendEntries
+import ckite.rpc.AppendEntriesResponse
+import ckite.rpc.Command
+import ckite.rpc.RequestVote
+import ckite.rpc.RequestVoteResponse
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 
 /**

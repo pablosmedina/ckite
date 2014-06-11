@@ -1,41 +1,27 @@
 package ckite
 
-import java.util.concurrent.atomic.AtomicInteger
-import ckite.rpc.RequestVote
-import java.util.concurrent.atomic.AtomicReference
-import ckite.states.Follower
-import ckite.rpc.WriteCommand
-import ckite.states.Leader
-import ckite.states.Candidate
-import ckite.rpc.RequestVoteResponse
-import ckite.util.Logging
-import ckite.states.State
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.AppendEntries
-import ckite.rpc.Connector
-import ckite.rpc.thrift.ThriftConnector
 import java.net.ConnectException
-import com.twitter.finagle.ChannelWriteException
-import ckite.rpc.AppendEntriesResponse
-import ckite.states.Starter
-import ckite.rpc.JointConfiguration
-import ckite.rpc.MajorityJointConsensus
-import ckite.rpc.ReadCommand
-import ckite.rpc.Command
-import ckite.states.Stopped
-import java.util.concurrent.atomic.AtomicBoolean
-import ckite.rlog.Snapshot
-import ckite.rpc.JoinResponse
-import ckite.rpc.JoinRequest
-import ckite.rpc.GetMembersResponse
-import ckite.rpc.GetMembersRequest
-import ckite.rpc.LogEntry
-import ckite.rpc.AppendEntries
 import java.util.concurrent.ConcurrentHashMap
-import ckite.rpc.LogEntry
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import scala.concurrent.Future
+
+import scala.Option.option2Iterable
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+
+import com.twitter.finagle.ChannelWriteException
+
+import ckite.rlog.Snapshot
+import ckite.rpc.AppendEntries
+import ckite.rpc.Command
+import ckite.rpc.Connector
+import ckite.rpc.GetMembersRequest
+import ckite.rpc.GetMembersResponse
+import ckite.rpc.JoinRequest
+import ckite.rpc.JoinResponse
+import ckite.rpc.LogEntry
+import ckite.rpc.RequestVote
+import ckite.rpc.thrift.ThriftConnector
 
 
 class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {

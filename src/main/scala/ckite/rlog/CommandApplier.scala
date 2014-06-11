@@ -1,69 +1,62 @@
 package ckite.rlog
 
 import java.util.concurrent.LinkedBlockingQueue
-import scala.concurrent.ExecutionContext
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.SynchronousQueue
+
+import scala.concurrent.ExecutionContext
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Promise
+import scala.concurrent.future
+
 import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.util.CKiteConversions._
+
 import ckite.RLog
-import ckite.statemachine.StateMachine
-import ckite.util.Logging
+import ckite.exception.WriteTimeoutException
+import ckite.rpc.ClusterConfigurationCommand
 import ckite.rpc.Command
 import ckite.rpc.JointConfiguration
-import scala.concurrent._
-import scala.concurrent.duration._
+import ckite.rpc.LogEntry
 import ckite.rpc.MajorityJointConsensus
-import ckite.exception.WriteTimeoutException
-import ckite.rpc.NoOp
-import ckite.rpc.Void
-import scala.util.Success
 import ckite.rpc.NewConfiguration
+import ckite.rpc.NoOp
 import ckite.rpc.ReadCommand
-import scala.util.Try
-import ckite.rpc.LogEntry
+import ckite.rpc.WriteCommand
 import ckite.statemachine.CommandExecutor
-import ckite.rpc.WriteCommand
-import ckite.rpc.WriteCommand
-import ckite.rpc.ClusterConfigurationCommand
-import ckite.rpc.LogEntry
+import ckite.statemachine.StateMachine
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   val commandExecutor = new CommandExecutor(stateMachine)
   val commitIndexQueue = new LinkedBlockingQueue[Long]()
 
-  val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Async-worker", true))
-  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
   val workerPool = new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("CommandApplier-worker", true))
-  val workerExecutor = ExecutionContext.fromExecutor(workerPool)
 
   @volatile
   var commitIndex: Long = 0
   @volatile
   var lastApplied: Long = stateMachine.lastAppliedIndex
 
-  def start:Unit = {
-    workerExecutor.execute(asyncApplier _)
+  def start: Unit = {
+    workerPool.execute(asyncApplier _)
   }
-  
-  def start(index: Long):Unit = {
+
+  def start(index: Long): Unit = {
     lastApplied = index
     start
   }
-  
+
   def stop = {
     workerPool.shutdownNow()
-    asyncPool.shutdown()
     workerPool.awaitTermination(10, TimeUnit.SECONDS)
-    asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
-  
+
   def commit(index: Long) = if (lastApplied < index) commitIndexQueue.offer(index)
-  
+
   private def asyncApplier = {
     LOG.info(s"Starting applier from index #{}", lastApplied)
     try {
@@ -95,19 +88,19 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     }
     replay(from, to)
   }
-  
+
   private def findLatestClusterConfiguration: Option[LogEntry] = {
-     rlog.findLastLogIndex to 1 by -1 find { index => 
+    rlog.findLastLogIndex to 1 by -1 find { index =>
       val logEntry = rlog.logEntry(index)
       if (!logEntry.isDefined) return None
-      logEntry.collect {case LogEntry(term,entry,c:ClusterConfigurationCommand) => true}.getOrElse(false)
+      logEntry.collect { case LogEntry(term, entry, c: ClusterConfigurationCommand) => true }.getOrElse(false)
     } map { index => rlog.logEntry(index) } flatten
   }
-  
+
   private def replay(from: Long, to: Long) = {
-    LOG.debug("Start log replay from index #{} to #{}",from,to)
+    LOG.debug("Start log replay from index #{} to #{}", from, to)
     rlog.logEntry(to).foreach {
-      entry => 
+      entry =>
         applyUntil(entry)
     }
     LOG.debug("Finished log replay")
@@ -119,21 +112,32 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def applyUntil(entry: LogEntry) = rlog.shared {
     (lastApplied + 1) to entry.index foreach { index =>
-      val entryToApply = if (index == entry.index) Some(entry) else rlog.logEntry(index)
-      entryToApply.map { entry =>
-        commitIndex = index
-        LOG.debug("New commitIndex is #{}", index)
+      entryToApply(index, entry).map { entry =>
+        updateCommitIndex(index)
         val command = entry.command
         LOG.debug("Will apply committed entry {}", entry)
         val result = execute(entry.index, entry.command)
-        lastApplied = index //What do we assume about the StateMachine persistence?
-        LOG.debug("Last applied index is #{}", lastApplied)
+        updateLastAppliedIndex(index)
         notifyResult(index, result)
       }.orElse {
         LOG.error(s"Missing index #$index")
         None
       }
     }
+  }
+
+  private def updateCommitIndex(index: Long) = {
+    commitIndex = index
+    LOG.debug("New commitIndex is #{}", index)
+  }
+
+  private def updateLastAppliedIndex(index: Long) = {
+    lastApplied = index //What do we assume about the StateMachine persistence?
+    LOG.debug("Last applied index is #{}", index)
+  }
+
+  private def entryToApply(index: Long, entry: LogEntry) = {
+    if (index == entry.index) Some(entry) else rlog.logEntry(index)
   }
 
   private def notifyResult(index: Long, result: Any) = {
@@ -146,38 +150,34 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def isCommitted(index: Long) = index <= commitIndex
 
-  private def execute(index: Long, command: Command)(implicit context: ExecutionContext = asyncExecutionContext) = {
+  private def execute(index: Long, command: Command) = {
     command match {
-      case c: JointConfiguration => executeEnterJointConsensus(index, c)
-      case c: NewConfiguration => true
+      case jointConf: JointConfiguration => executeEnterJointConsensus(index, jointConf)
+      case newConf: NewConfiguration => true
       case c: NoOp => true
-      case w: WriteCommand[_] => {
-        LOG.debug("Executing write {}", command)
-        commandExecutor.applyWrite(index, w)
+      case write: WriteCommand[_] => {
+        LOG.debug("Executing write {}", write)
+        commandExecutor.applyWrite(index, write)
       }
     }
   }
 
-  private def executeEnterJointConsensus(index:Long, c: JointConfiguration)(implicit context: ExecutionContext = asyncExecutionContext) = {
+  private def executeEnterJointConsensus(index: Long, c: JointConfiguration) = {
     if (index >= rlog.cluster.membership.index) {
-    	future {
-    		try {
-    			rlog.cluster.on(MajorityJointConsensus(c.newBindings))
-    		} catch {
-    		case e: WriteTimeoutException => LOG.warn(s"Could not commit LeaveJointConsensus")
-    		}
-    	}
+      future {
+        rlog.cluster.on(MajorityJointConsensus(c.newBindings))
+      }
     } else {
-      LOG.debug("Skipping old configuration {}",c)
+      LOG.debug("Skipping old configuration {}", c)
     }
     true
   }
 
   def applyRead[T](read: ReadCommand[T]) = commandExecutor.applyRead(read)
-  
+
   private def next = {
     if (commitIndexQueue.isEmpty()) {
-    	commitIndexQueue.take()
+      commitIndexQueue.take()
     } else {
       commitIndexQueue.poll
     }

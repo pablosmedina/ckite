@@ -1,56 +1,46 @@
 package ckite
 
-import ckite.rpc.RequestVote
-import java.util.concurrent.atomic.AtomicReference
-import org.slf4j.MDC
-import ckite.util.Logging
-import ckite.rpc.WriteCommand
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.AppendEntries
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
+
+import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
+import scala.concurrent.Await
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.DurationLong
+import scala.concurrent.future
+import scala.concurrent.ExecutionContext.Implicits.global
+
+import scala.util.Try
+import scala.util.control.Breaks.break
+import scala.util.control.Breaks.breakable
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
+import ckite.exception.LeaderTimeoutException
+import ckite.rlog.Snapshot
+import ckite.rpc.AppendEntries
+import ckite.rpc.AppendEntriesResponse
+import ckite.rpc.ClusterConfigurationCommand
+import ckite.rpc.Command
 import ckite.rpc.JointConfiguration
-import ckite.rpc.NewConfiguration
 import ckite.rpc.MajorityJointConsensus
+import ckite.rpc.NewConfiguration
+import ckite.rpc.ReadCommand
+import ckite.rpc.RequestVote
 import ckite.rpc.RequestVoteResponse
 import ckite.statemachine.StateMachine
-import com.typesafe.config.Config
-import scala.concurrent.Promise
-import scala.concurrent.Await
-import scala.concurrent.duration.Duration
-import java.util.concurrent.TimeUnit
-import scala.concurrent.duration.FiniteDuration
-import ckite.exception.LeaderTimeoutException
-import scala.util.Success
-import java.util.concurrent.TimeoutException
-import java.util.concurrent.Callable
-import scala.collection.JavaConversions._
-import scala.collection.JavaConverters._
-import ckite.util.CKiteConversions._
-import ckite.rpc.ReadCommand
-import ckite.rpc.Command
-import org.mapdb.DBMaker
-import java.io.File
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.SynchronousQueue
-import java.util.concurrent.Executors.DefaultThreadFactory
-import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.rpc.JointConfiguration
-import ckite.rlog.Snapshot
-import scala.util.control.Breaks._
-import java.util.concurrent.locks.ReentrantLock
-import scala.concurrent._
-import scala.collection.mutable.ArrayBuffer
-import java.util.concurrent.ConcurrentHashMap
-import scala.concurrent.duration._
-import scala.util.Try
-import scala.util.Success
 import ckite.stats.ClusterStatus
 import ckite.stats.LogStatus
 import ckite.stats.Status
-import ckite.rpc.ClusterConfigurationCommand
-import ckite.rpc.NewConfiguration
-import ckite.rpc.NewConfiguration
-import ckite.rpc.AppendEntriesResponse
+import ckite.util.Logging
 
 class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
 
@@ -58,20 +48,10 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
   val rlog = new RLog(this, stateMachine)
 
-  val appendEntriesPool = new ThreadPoolExecutor(0, configuration.appendEntriesWorkers,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("AppendEntries-worker", true))
-  val appendEntriesExecutionContext = ExecutionContext.fromExecutor(appendEntriesPool)
-
-  val electionPool = new ThreadPoolExecutor(0, configuration.electionWorkers,
-    15L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("Election-worker", true))
-  val electionExecutionContext = ExecutionContext.fromExecutor(electionPool)
-
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
 
   val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
 
-  implicit def context: ExecutionContext = appendEntriesExecutionContext
-  
   def start = {
     LOG.info("Starting CKite...")
 
@@ -146,8 +126,6 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
   }
 
   private def shutdownPools = {
-    appendEntriesPool.shutdown()
-    electionPool.shutdown()
     scheduledElectionTimeoutExecutor.shutdown()
   }
 
@@ -172,7 +150,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     }
   }
 
-  def broadcastAppendEntries(term: Int)(implicit context: ExecutionContext = appendEntriesExecutionContext) = {
+  def broadcastAppendEntries(term: Int) = {
     if (term == local.term) {
       membership.remoteMembers foreach { member =>
         future {
@@ -184,7 +162,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def onLocal[T](readCommand: ReadCommand[T]) = rlog execute readCommand
 
-  def collectVotes(term: Int)(implicit context: ExecutionContext = electionExecutionContext): Seq[Member] = {
+  def collectVotes(term: Int): Seq[Member] = {
     if (!hasRemoteMembers) return Seq(local)
     val promise = Promise[Seq[Member]]()
     val votes = new ConcurrentHashMap[Member, Boolean]()
@@ -262,7 +240,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   private def setNewMembership(membership: Membership) = {
     consensusMembership.set(membership)
-    LOG.info("Cluster Configuration in {} changed to {}", local.id, consensusMembership.get())
+    LOG.info("Cluster Configuration changed to {}", consensusMembership.get())
   }
 
   private def simpleConsensus(bindings: Seq[String], index: Long = 0): SimpleConsensus = {
@@ -276,32 +254,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
 
   def hasRemoteMembers = !membership.remoteMembers.isEmpty
 
-//  def updateLeader(term: Int, leaderId: String): Boolean = {
-//    obtainMember(leaderId) map { newLeader =>
-//    if (local.term == term) {
-//    	leaderPromise.get().trySuccess(newLeader) //complete current promise for operations waiting for it
-//    } else false
-//      val promise = leaderPromise.get()
-//      val isNew = !promise.isCompleted || promise.future.value.get.get != newLeader
-//      if (isNew) {
-//        leaderPromise.set(Promise.successful(newLeader)) //kept promise for subsequent leader 
-//      }
-//      isNew
-    /*
-     * Start -> Follower -> Candidate -> Leader  completa el Promise
-     * Leader -> Follower  (es un stepDown, arranca una nueva promise, puede ser ya conocido entonces es un KeptPromise)
-     * Candidate -> Follower (traslada el promise si la election falla o  keptPromise si ya es conocido)
-     */
-//    } getOrElse (false)
-//  }
-
-//  def setNoLeader(term: Int) = {
-//    if (leaderPromise.get().isCompleted && local.term == term) {
-//      leaderPromise.set(Promise[Member]())
-//    }
-//  }
-
-  def awaitLeader: Member = {
+  private def awaitLeader: Member = {
     try {
       Await.result(local.currentState.leaderPromise.future, waitForLeaderTimeout)
     } catch {

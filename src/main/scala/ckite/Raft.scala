@@ -1,10 +1,12 @@
 package ckite
 
-import ckite.rpc.thrift.ThriftServer
-import ckite.rpc.WriteCommand
-import ckite.rpc.ReadCommand
 import java.util.concurrent.atomic.AtomicBoolean
+
 import scala.concurrent.Future
+
+import ckite.rpc.ReadCommand
+import ckite.rpc.WriteCommand
+import ckite.rpc.thrift.ThriftServer
 
 class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: RaftBuilder) {
 
@@ -29,7 +31,7 @@ class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: Raft
 
   def read[T](readCommand: ReadCommand[T]): Future[T] = cluster.on[T](readCommand)
 
-  def readLocal[T](readCommand: ReadCommand[T]): T = cluster.onLocal(readCommand).asInstanceOf[T]
+  def readLocal[T](readCommand: ReadCommand[T]): T = cluster.onLocal(readCommand)
 
   def addMember(memberBinding: String) = cluster.addMember(memberBinding)
 

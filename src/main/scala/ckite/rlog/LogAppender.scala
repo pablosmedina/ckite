@@ -1,24 +1,24 @@
 package ckite.rlog
 
 import java.util.concurrent.LinkedBlockingQueue
-import scala.concurrent.ExecutionContext
+import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.SynchronousQueue
-import com.twitter.concurrent.NamedPoolThreadFactory
-import ckite.util.CKiteConversions._
-import ckite.rpc.WriteCommand
-import scala.concurrent.Promise
-import ckite.rpc.LogEntry
-import ckite.RLog
-import ckite.rpc.LogEntry
+
 import scala.collection.mutable.ArrayBuffer
-import ckite.util.Logging
-import ckite.rpc.Command
-import ckite.rpc.JointConfiguration
-import ckite.rpc.NewConfiguration
-import ckite.rpc.ClusterConfigurationCommand
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.concurrent.Promise
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
+import ckite.RLog
+import ckite.rpc.ClusterConfigurationCommand
+import ckite.rpc.Command
+import ckite.rpc.LogEntry
+import ckite.rpc.WriteCommand
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
 
@@ -32,8 +32,8 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
   val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
 
   def start = asyncExecutionContext.execute(asyncAppend _)
-  
-  def stop =  {
+
+  def stop = {
     asyncPool.shutdownNow()
     asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
@@ -60,7 +60,7 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
         rlog.shared {
           log.append(logEntry)
         }
-        
+
         afterAppend(logEntry.index, logEntry.command)
 
         pendingFlushes = pendingFlushes :+ (logEntry, append)
@@ -69,10 +69,10 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
       case e: InterruptedException => LOG.info("Shutdown LogAppender...")
     }
   }
-  
-  private def afterAppend(index:Long,command: Command) = command match {
-      case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
-      case _ => ;
+
+  private def afterAppend(index: Long, command: Command) = command match {
+    case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
+    case _ => ;
   }
 
   private def next: Append[_] = {

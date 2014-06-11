@@ -1,20 +1,21 @@
 package ckite.rlog
 
+import java.io.File
+import java.nio.ByteBuffer
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+
+import com.twitter.concurrent.NamedPoolThreadFactory
+
 import ckite.Configuration
 import ckite.RLog
-import ckite.util.Logging
-import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.ThreadPoolExecutor
-import com.twitter.concurrent.NamedPoolThreadFactory
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.SynchronousQueue
-import ckite.util.CKiteConversions._
+import ckite.rpc.CompactedEntry
 import ckite.rpc.LogEntry
-import ckite.rpc.CompactedEntry
-import java.io.File
-import ckite.rpc.CompactedEntry
+import ckite.util.CKiteConversions.fromFunctionToRunnable
+import ckite.util.Logging
 
 class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging {
 
@@ -50,12 +51,16 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
 
   private def compact = {
     val snapshot = takeSnapshot
-    persist(snapshot)
+    save(snapshot)
     rollLog(snapshot.lastLogEntryIndex)
+    updateLatestSnapshotCoordinates(snapshot)
+  }
+  
+  private def updateLatestSnapshotCoordinates(snapshot: Snapshot) = {
     latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
   }
 
-  private def persist(snapshot: Snapshot) = {
+  private def save(snapshot: Snapshot) = {
     LOG.debug(s"Saving Snapshot $snapshot")
 
     snapshot.write(configuration.dataDir)

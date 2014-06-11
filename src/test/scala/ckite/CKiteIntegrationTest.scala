@@ -264,7 +264,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     await(leader.addMember(Member4Address))
 
     val member4 = RaftBuilder().listenAddress(Member4Address).members(Seq(Member2Address, Member1Address, Member3Address))
-    							.dataDir(someTmpDir).stateMachine(new KVStore()).build
+    							.dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).build
     //start member4
     member4.start
 
@@ -276,7 +276,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     waitSomeTimeForAppendEntries
 
     //get value for Key1 from local
-    val localValue = member4.readLocal[String](Get(Key1))
+    val localValue = member4.readLocal(Get(Key1))
 
     localValue should be(replicatedValue)
 

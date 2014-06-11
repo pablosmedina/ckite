@@ -1,10 +1,8 @@
 package ckite
 
-import ckite.statemachine.StateMachine
 import com.typesafe.config.ConfigFactory
-import com.typesafe.config.Config
-import com.typesafe.config.impl.ConfigInt
-import com.typesafe.config.ConfigValueFactory
+
+import ckite.statemachine.StateMachine
 import ckite.statemachine.j.StateMachineWrapper
 
 class RaftBuilder {
