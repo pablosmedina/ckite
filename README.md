@@ -3,11 +3,11 @@ CKite - JVM Raft [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.p
 
 ## Overview
 
-A __JVM__ implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a library with an easy to use api for both __Java and Scala__ to be used by distributed applications needing consensus agreement. 
+A __JVM__ implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a consensus library with an easy to use api intended to be used by distributed applications needing consensus agreement. 
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.5__ following the instructions detailed below to start playing with it. 
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.6__ following the instructions detailed below to start playing with it. 
 Performance tests will be included soon.
 
 
@@ -17,17 +17,17 @@ Performance tests will be included soon.
 * Log Replication
 * Cluster Membership Changes
 * Log Compaction
-* Finagle based RPC between members
+* Finagle based Thrift RPC between members
 
 
 ## Getting started (Scala)
 
 #### SBT settings
 
-The latest release 0.1.5 is in Maven central. Add the following sbt dependency to your project settings:
+The latest release 0.1.6 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" % "ckite" % "0.1.5"
+libraryDependencies += "io.ckite" % "ckite" % "0.1.6"
 ```
 
 ## Getting started (Java)
@@ -40,7 +40,7 @@ Add the following maven dependency to your pom.xml:
 <dependency>
 	<groupId>io.ckite</groupId>
 	<artifactId>ckite</artifactId>
-	<version>0.1.5</version>
+	<version>0.1.6</version>
 </dependency>
 ```
 
@@ -49,7 +49,7 @@ Add the following maven dependency to your pom.xml:
 
 #### 1) Create a StateMachine
 ```scala
-//KVStore is an in memory distributed Map allowing Puts and Gets operations
+//KVStore is an in-memory distributed Map allowing Puts and Gets operations
 class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
