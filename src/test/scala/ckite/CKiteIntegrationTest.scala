@@ -230,11 +230,14 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     members foreach { _ start }
 
     try {
+      
+      val leader = members leader
+      
       //member3 goes down
       member3.stop
 
       //still having a quorum. This write is committed.
-      await(member1.write(Put(Key1, Value1)))
+      await(leader.write(Put(Key1, Value1)))
 
       //member3 is back
       val restartedMember3 = rebuild(member3)
