@@ -12,20 +12,6 @@ class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: Raft
 
   private val thrift = ThriftServer(cluster)
   private val stopped = new AtomicBoolean(false)
-  
-  def start = {
-    thrift start
-
-    cluster start
-  }
-
-  def stop = {
-    if (!stopped.getAndSet(true)) {
-    	thrift stop
-    	
-    	cluster stop
-    }
-  }
 
   def write[T](writeCommand: WriteCommand[T]): Future[T] = cluster.on[T](writeCommand)
 
@@ -38,9 +24,22 @@ class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: Raft
   def removeMember(memberBinding: String) = cluster.removeMember(memberBinding)
 
   def isLeader: Boolean = cluster.isLeader
-  
-  def getMembers:List[String] = cluster.getMembers.toList
-  
+
+  def getMembers: List[String] = cluster.getMembers
+
   def status = cluster.getStatus
 
+  def start = {
+    thrift start
+
+    cluster start
+  }
+
+  def stop = {
+    if (!stopped.getAndSet(true)) {
+      thrift stop
+
+      cluster stop
+    }
+  }
 }

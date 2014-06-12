@@ -275,7 +275,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration) exte
     rlog.snapshotManager.installSnapshot(snapshot)
   }
 
-  def getMembers(): Seq[String] = membership.allBindings
+  def getMembers(): List[String] = membership.allBindings.toList
 
   def isActiveMember(memberId: String): Boolean = membership.allBindings.contains(memberId)
 
