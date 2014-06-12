@@ -2,7 +2,7 @@ name := "ckite"
 
 organization := "io.ckite"
 
-version := "0.1.6-SNAPSHOT"
+version := "0.1.7-SNAPSHOT"
 
 scalaVersion := "2.10.4"
 
