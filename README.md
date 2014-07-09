@@ -162,6 +162,7 @@ raft.stop()
 To start a new cluster you have to run the very first node turning on the bootstrap parameter. This will create an initial configuration with just the first node. The next nodes starts by pointing to the existing ones to join the cluster. 
 You can bootstrap the first node using the builder, overriding ckite.bootstrap in your application.conf or by starting your application with a system property -Dckite.bootstrap=true. See [KVStore](https://github.com/pablosmedina/kvstore) for more details.
 
+
 #### bootstrapping the first node using the builder
 ```scala
 val raft = RaftBuilder().listenAddress("node1:9091")
