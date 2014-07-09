@@ -8,8 +8,6 @@ A __JVM__ implementation of the [Raft distributed consensus algorithm](http://ra
 ## Status
 
 CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.6__ following the instructions detailed below to start playing with it. 
-Performance tests will be included soon.
-
 
 ## Features
 
