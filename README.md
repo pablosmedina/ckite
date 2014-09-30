@@ -42,7 +42,6 @@ Add the following maven dependency to your pom.xml:
 </dependency>
 ```
 
-
 ## Example (See [KVStore](https://github.com/pablosmedina/kvstore))
 
 #### 1) Create a StateMachine
@@ -52,7 +51,7 @@ class KVStore extends StateMachine {
 
   val map = new ConcurrentHashMap[String, String]()
 
-  //called when a consensus has been reached for a WriteCommand
+  //Called when a consensus has been reached for a WriteCommand
   //index associated to the write is provided to implement your own persistent semantics
   //see lastAppliedIndex
   def applyWrite = {
@@ -179,6 +178,7 @@ val raft = RaftBuilder().listenAddress("node1:9091")
   * [Twitter Scrooge](http://twitter.github.io/scrooge/).
   * [MapDB](http://www.mapdb.org/)
   * [Kryo](https://github.com/EsotericSoftware/kryo)
+  * Chronicle (to be implemented)
 
 
 ## Contributions
