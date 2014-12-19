@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Promise
-import scala.concurrent.future
+import scala.concurrent.Future
 
 import com.twitter.concurrent.NamedPoolThreadFactory
 
@@ -164,7 +164,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def executeEnterJointConsensus(index: Long, c: JointConfiguration) = {
     if (index >= rlog.cluster.membership.index) {
-      future {
+      Future {
         rlog.cluster.on(MajorityJointConsensus(c.newBindings))
       }
     } else {
