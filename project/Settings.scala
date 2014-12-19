@@ -10,36 +10,11 @@ object Settings {
   val ScalaVersion = "2.11.4"
 
   lazy val basicSettings = Seq(
-    scalaVersion  := ScalaVersion,
+    scalaVersion := ScalaVersion,
     organization := "io.ckite",
     version := "0.2.0-SNAPSHOT",
-    fork in (Test, run) := true,
-      publishMavenStyle := true,
-      publishArtifact in Test := true,
-  pomIncludeRepository := { x => false},
-  pomExtra := {
-  <url>http://ckite.io</url>
-    <licenses>
-      <license>
-        <name>Apache 2</name>
-        <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
-        <distribution>repo</distribution>
-      </license>
-    </licenses>
-    <scm>
-      <connection>scm:git:github.com/pablosmedina/ckite.git</connection>
-      <developerConnection>scm:git:git@github.com:pablosmedina/ckite.git</developerConnection>
-      <url>github.com/pablosmedina/ckite.git</url>
-    </scm>
-    <developers>
-      <developer>
-        <id>pmedina</id>
-        <name>Pablo S. Medina</name>
-        <url>https://twitter.com/pablosmedina</url>
-      </developer>
-    </developers>
-},
-    javacOptions  := Seq(
+    fork in(Test, run) := true,
+    javacOptions := Seq(
       "-source", "1.8", "-target", "1.8"
     ),
     scalacOptions := Seq(
@@ -55,11 +30,39 @@ object Settings {
       "-language:implicitConversions",
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
-    )) ++ com.twitter.scrooge.ScroogeSBT.newSettings
+    )) ++ sonatypeSettings ++ com.twitter.scrooge.ScroogeSBT.newSettings
+
+  lazy val sonatypeSettings = Seq(
+    publishMavenStyle := true,
+    publishArtifact in Test := true,
+    pomIncludeRepository := { x => false},
+    pomExtra := {
+      <url>http://ckite.io</url>
+        <licenses>
+          <license>
+            <name>Apache 2</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+          </license>
+        </licenses>
+        <scm>
+          <connection>scm:git:github.com/pablosmedina/ckite.git</connection>
+          <developerConnection>scm:git:git@github.com:pablosmedina/ckite.git</developerConnection>
+          <url>github.com/pablosmedina/ckite.git</url>
+        </scm>
+        <developers>
+          <developer>
+            <id>pmedina</id>
+            <name>Pablo S. Medina</name>
+            <url>https://twitter.com/pablosmedina</url>
+          </developer>
+        </developers>
+    }
+  )
 
   lazy val formatSettings = SbtScalariform.scalariformSettings ++ Seq(
     ScalariformKeys.preferences in Compile := formattingPreferences,
-    ScalariformKeys.preferences in Test    := formattingPreferences
+    ScalariformKeys.preferences in Test := formattingPreferences
   )
 
   def formattingPreferences =
