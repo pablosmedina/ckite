@@ -20,7 +20,7 @@ import ckite.rpc.WriteCommand
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.Logging
 
-class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
+class LogAppender(rlog: RLog, persistentLog: PersistentLog) extends Logging {
 
   val queue = new LinkedBlockingQueue[Append[_]]()
   var pendingFlushes = ArrayBuffer[(LogEntry, Append[_])]()
@@ -58,7 +58,7 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
         val logEntry = append.logEntry
 
         rlog.shared {
-          log.append(logEntry)
+          persistentLog.append(logEntry)
         }
 
         afterAppend(logEntry.index, logEntry.command)
@@ -66,13 +66,13 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
         pendingFlushes = pendingFlushes :+ (logEntry, append)
       }
     } catch {
-      case e: InterruptedException => LOG.info("Shutdown LogAppender...")
+      case e: InterruptedException ⇒ log.info("Shutdown LogAppender...")
     }
   }
 
   private def afterAppend(index: Long, command: Command) = command match {
-    case c: ClusterConfigurationCommand => rlog.cluster.apply(index, c)
-    case _ => ;
+    case c: ClusterConfigurationCommand ⇒ rlog.cluster.apply(index, c)
+    case _                              ⇒ ;
   }
 
   private def next: Append[_] = {
@@ -86,8 +86,8 @@ class LogAppender(rlog: RLog, log: PersistentLog) extends Logging {
   }
 
   private def flush = {
-    if (syncEnabled) log.commit
-    pendingFlushes.foreach { pendingFlush =>
+    if (syncEnabled) persistentLog.commit
+    pendingFlushes.foreach { pendingFlush ⇒
       val logEntry = pendingFlush._1
       val append = pendingFlush._2
       append.onFlush(logEntry)

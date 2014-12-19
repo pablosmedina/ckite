@@ -6,7 +6,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{ Future => ScalaFuture }
+import scala.concurrent.{ Future ⇒ ScalaFuture }
 import scala.util.Failure
 import scala.util.Success
 
@@ -35,8 +35,8 @@ class ThriftServer(cluster: Cluster) {
   implicit def toTwitterFuture[T](scalaFuture: ScalaFuture[T]): Future[T] = {
     val promise = Promise[T]
     scalaFuture.onComplete {
-      case Success(value) => promise.setValue(value)
-      case Failure(t) => promise.raise(t)
+      case Success(value) ⇒ promise.setValue(value)
+      case Failure(t)     ⇒ promise.raise(t)
     }
     promise
   }
@@ -45,19 +45,19 @@ class ThriftServer(cluster: Cluster) {
     val ckiteService = new CKiteService[Future]() {
 
       override def sendRequestVote(requestVote: RequestVoteST): Future[RequestVoteResponseST] = {
-        (cluster on requestVote).map[RequestVoteResponseST] { response => response }
+        (cluster on requestVote).map[RequestVoteResponseST] { response ⇒ response }
       }
       override def sendAppendEntries(appendEntries: AppendEntriesST): Future[AppendEntriesResponseST] = {
-        (cluster on appendEntries).map[AppendEntriesResponseST] { response => response }
+        (cluster on appendEntries).map[AppendEntriesResponseST] { response ⇒ response }
       }
 
       override def forwardCommand(bb: ByteBuffer): Future[ByteBuffer] = {
         val command: Command = bb
-        (cluster.on[Any](command)).map[ByteBuffer] { response => response }
+        (cluster.on[Any](command)).map[ByteBuffer] { response ⇒ response }
       }
 
       override def join(joinRequest: JoinRequestST): Future[JoinResponseST] = {
-        (cluster.addMember(joinRequest._1)).map { response => JoinResponseST(response) }
+        (cluster.addMember(joinRequest._1)).map { response ⇒ JoinResponseST(response) }
       }
 
       override def getMembers() = {
@@ -67,7 +67,7 @@ class ThriftServer(cluster: Cluster) {
         cluster.installSnapshot(installSnapshot)
       }
     }
-    
+
     new CKiteService$FinagleService(ckiteService, new TBinaryProtocol.Factory())
   }
 

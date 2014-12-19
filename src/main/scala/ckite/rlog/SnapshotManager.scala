@@ -41,10 +41,10 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   def asyncCompact = {
     val wasCompacting = compacting.getAndSet(true)
     if (!wasCompacting) {
-      logCompactionExecutor.execute(() => {
-          LOG.debug(s"Log compaction is required")
-          compact
-          compacting.set(false)
+      logCompactionExecutor.execute(() ⇒ {
+        log.debug(s"Log compaction is required")
+        compact
+        compacting.set(false)
       })
     }
   }
@@ -55,17 +55,17 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     rollLog(snapshot.lastLogEntryIndex)
     updateLatestSnapshotCoordinates(snapshot)
   }
-  
+
   private def updateLatestSnapshotCoordinates(snapshot: Snapshot) = {
     latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
   }
 
   private def save(snapshot: Snapshot) = {
-    LOG.debug(s"Saving Snapshot $snapshot")
+    log.debug(s"Saving Snapshot $snapshot")
 
     snapshot.write(configuration.dataDir)
 
-    LOG.debug(s"Finished saving Snapshot ${snapshot}")
+    log.debug(s"Finished saving Snapshot ${snapshot}")
   }
 
   //rolls the current log up to the given logIndex
@@ -84,23 +84,23 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   }
 
   def installSnapshot(snapshot: Snapshot): Boolean = rlog.exclusive {
-    LOG.debug(s"Installing $snapshot")
+    log.debug(s"Installing $snapshot")
     snapshot.write(configuration.dataDir)
 
     stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
     snapshot.membership.recoverIn(cluster)
 
-    LOG.debug(s"Finished installing $snapshot")
+    log.debug(s"Finished installing $snapshot")
     true //?
   }
 
   def reloadSnapshot: Long = {
-    latestSnapshot map { snapshot => 
-      LOG.info(s"Reloading $snapshot")
+    latestSnapshot map { snapshot ⇒
+      log.info(s"Reloading $snapshot")
       stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
       snapshot.membership.recoverIn(cluster)
       latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
-      LOG.info(s"Finished reloading $snapshot")
+      log.info(s"Finished reloading $snapshot")
       snapshot.lastLogEntryIndex + 1
     } getOrElse {
       1 //no snapshot to reload. start from index #1
@@ -108,26 +108,28 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   }
 
   def reload(snapshot: Snapshot) = {
-    LOG.info(s"Reloading $snapshot")
+    log.info(s"Reloading $snapshot")
     stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
-    LOG.info("Restoring cluster configuration from Snapshot...")
+    log.info("Restoring cluster configuration from Snapshot...")
     snapshot.membership.recoverIn(cluster)
     latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
-    LOG.info(s"Finished reloading $snapshot")
+    log.info(s"Finished reloading $snapshot")
   }
-  
+
   def latestSnapshot: Option[Snapshot] = {
-     latestSnapshotFile map { snapshotFile =>
+    latestSnapshotFile map { snapshotFile ⇒
       Snapshot.read(snapshotFile)
     }
   }
-  
+
   def latestSnapthotIndex = latestSnapshotCoordinates.get()._1
-  
-  private def latestSnapshotFile: Option[File] = { 
+
+  private def latestSnapshotFile: Option[File] = {
     val snapshotDir = Option(new File(s"${configuration.dataDir}/snapshots"))
-    snapshotDir.filter(dir => dir.exists()).map {dir => dir.list().toList.filter( fileName => fileName.startsWith("snapshot"))
-      .sorted.headOption.map( fileName => new File(s"${configuration.dataDir}/snapshots/$fileName")) }.flatten
+    snapshotDir.filter(dir ⇒ dir.exists()).map { dir ⇒
+      dir.list().toList.filter(fileName ⇒ fileName.startsWith("snapshot"))
+        .sorted.headOption.map(fileName ⇒ new File(s"${configuration.dataDir}/snapshots/$fileName"))
+    }.flatten
   }
 
   def isInSnapshot(index: Long, term: Int): Boolean = {

@@ -8,13 +8,13 @@ import ckite.rpc.ReadCommand
 trait StateMachine {
 
   def deserialize(byteBuffer: ByteBuffer)
-  
+
   def serialize(): ByteBuffer
-  
-  def applyWrite(index:Long, write: WriteCommand[_]):Any
-  
-  def applyRead(read: ReadCommand[_]):Any
-  
+
+  def applyWrite(index: Long, write: WriteCommand[_]): Any
+
+  def applyRead(read: ReadCommand[_]): Any
+
   def lastAppliedIndex: Long
-  
+
 }

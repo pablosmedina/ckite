@@ -2,11 +2,10 @@ package ckite
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import scala.concurrent.Future
-
-import ckite.rpc.ReadCommand
-import ckite.rpc.WriteCommand
+import ckite.rpc.{ ReadCommand, WriteCommand }
 import ckite.rpc.thrift.ThriftServer
+
+import scala.concurrent.Future
 
 class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: RaftBuilder) {
 

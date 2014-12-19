@@ -58,7 +58,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   def commit(index: Long) = if (lastApplied < index) commitIndexQueue.offer(index)
 
   private def asyncApplier = {
-    LOG.info(s"Starting applier from index #{}", lastApplied)
+    log.info(s"Starting applier from index #{}", lastApplied)
     try {
       while (true) {
         val index = next
@@ -70,57 +70,57 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
         }
       }
     } catch {
-      case e: InterruptedException => LOG.info("Shutdown CommandApplier...")
+      case e: InterruptedException ⇒ log.info("Shutdown CommandApplier...")
     }
   }
 
   def replay: Unit = {
     val latestClusterConfigurationEntry = findLatestClusterConfiguration
-    latestClusterConfigurationEntry foreach { entry =>
-      LOG.info("Found cluster configuration in the log: {}", entry.command)
+    latestClusterConfigurationEntry foreach { entry ⇒
+      log.info("Found cluster configuration in the log: {}", entry.command)
       rlog.cluster.apply(entry.index, entry.command.asInstanceOf[ClusterConfigurationCommand])
     }
     val from = lastApplied + 1
     val to = commitIndex
     if (from > to) {
-      LOG.info("No entry to replay. commitIndex is #{}", commitIndex)
+      log.info("No entry to replay. commitIndex is #{}", commitIndex)
       return
     }
     replay(from, to)
   }
 
   private def findLatestClusterConfiguration: Option[LogEntry] = {
-    rlog.findLastLogIndex to 1 by -1 find { index =>
+    rlog.findLastLogIndex to 1 by -1 find { index ⇒
       val logEntry = rlog.logEntry(index)
       if (!logEntry.isDefined) return None
-      logEntry.collect { case LogEntry(term, entry, c: ClusterConfigurationCommand) => true }.getOrElse(false)
-    } map { index => rlog.logEntry(index) } flatten
+      logEntry.collect { case LogEntry(term, entry, c: ClusterConfigurationCommand) ⇒ true }.getOrElse(false)
+    } map { index ⇒ rlog.logEntry(index) } flatten
   }
 
   private def replay(from: Long, to: Long) = {
-    LOG.debug("Start log replay from index #{} to #{}", from, to)
+    log.debug("Start log replay from index #{} to #{}", from, to)
     rlog.logEntry(to).foreach {
-      entry =>
+      entry ⇒
         applyUntil(entry)
     }
-    LOG.debug("Finished log replay")
+    log.debug("Finished log replay")
   }
 
   private def isFromCurrentTerm(entryOption: Option[LogEntry]) = {
-    entryOption.map(entry => entry.term == rlog.cluster.local.term).getOrElse(false)
+    entryOption.map(entry ⇒ entry.term == rlog.cluster.local.term).getOrElse(false)
   }
 
   private def applyUntil(entry: LogEntry) = rlog.shared {
-    (lastApplied + 1) to entry.index foreach { index =>
-      entryToApply(index, entry).map { entry =>
+    (lastApplied + 1) to entry.index foreach { index ⇒
+      entryToApply(index, entry).map { entry ⇒
         updateCommitIndex(index)
         val command = entry.command
-        LOG.debug("Will apply committed entry {}", entry)
+        log.debug("Will apply committed entry {}", entry)
         val result = execute(entry.index, entry.command)
         updateLastAppliedIndex(index)
         notifyResult(index, result)
       }.orElse {
-        LOG.error(s"Missing index #$index")
+        log.error(s"Missing index #$index")
         None
       }
     }
@@ -128,12 +128,12 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def updateCommitIndex(index: Long) = {
     commitIndex = index
-    LOG.debug("New commitIndex is #{}", index)
+    log.debug("New commitIndex is #{}", index)
   }
 
   private def updateLastAppliedIndex(index: Long) = {
     lastApplied = index //What do we assume about the StateMachine persistence?
-    LOG.debug("Last applied index is #{}", index)
+    log.debug("Last applied index is #{}", index)
   }
 
   private def entryToApply(index: Long, entry: LogEntry) = {
@@ -152,11 +152,11 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def execute(index: Long, command: Command) = {
     command match {
-      case jointConf: JointConfiguration => executeEnterJointConsensus(index, jointConf)
-      case newConf: NewConfiguration => true
-      case c: NoOp => true
-      case write: WriteCommand[_] => {
-        LOG.debug("Executing write {}", write)
+      case jointConf: JointConfiguration ⇒ executeEnterJointConsensus(index, jointConf)
+      case newConf: NewConfiguration     ⇒ true
+      case c: NoOp                       ⇒ true
+      case write: WriteCommand[_] ⇒ {
+        log.debug("Executing write {}", write)
         commandExecutor.applyWrite(index, write)
       }
     }
@@ -168,7 +168,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
         rlog.cluster.on(MajorityJointConsensus(c.newBindings))
       }
     } else {
-      LOG.debug("Skipping old configuration {}", c)
+      log.debug("Skipping old configuration {}", c)
     }
     true
   }

@@ -1,6 +1,6 @@
 package ckite.rpc
 
-case class NoOp extends WriteCommand[Unit]
+case class NoOp() extends WriteCommand[Unit]
 
 case object Void
 

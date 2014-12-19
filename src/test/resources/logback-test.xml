@@ -11,7 +11,7 @@
     <appender-ref ref="STDOUT" />
   </appender> 
    
-  <logger name="ckite" level="debug"/>
+  <logger name="ckite" level="trace"/>
  
   <root level="debug">
     <appender-ref ref="STDOUT" />

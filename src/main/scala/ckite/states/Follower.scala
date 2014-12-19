@@ -19,7 +19,6 @@ import ckite.rpc.RequestVoteResponse
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.Logging
 
-
 /**
  *  •! RePCs from candidates and leaders.
  * •! Convert to candidate if election timeout elapses without
@@ -30,16 +29,16 @@ import ckite.util.Logging
 class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderPromise: Promise[Member], vote: Option[String]) extends State(term, leaderPromise, vote) with Logging {
 
   val electionTimeout = new ElectionTimeout(cluster, term)
-  
+
   override def begin() = {
     if (!passive) electionTimeout restart
-    
-    if (leaderPromise.isCompleted) LOG.info("Following {} in term[{}]", cluster.leader,term)
+
+    if (leaderPromise.isCompleted) log.info("Following {} in term[{}]", cluster.leader, term)
   }
 
   override def stop(stopTerm: Int) = {
     if (stopTerm > term) {
-    	electionTimeout stop
+      electionTimeout stop
     }
   }
 
@@ -57,15 +56,15 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
       } else {
 
         if (!leaderPromise.isCompleted) {
-          cluster.obtainMember(appendEntries.leaderId) map { leader =>
+          cluster.obtainMember(appendEntries.leaderId) map { leader ⇒
             if (leaderPromise.trySuccess(leader)) {
-              LOG.info("Following {} in term[{}]", cluster.leader,term)
+              log.info("Following {} in term[{}]", cluster.leader, term)
               cluster.local.persistState
             }
           }
         }
-        
-        cluster.rlog.tryAppend(appendEntries) map { success =>
+
+        cluster.rlog.tryAppend(appendEntries) map { success ⇒
           AppendEntriesResponse(cluster.local.term, success)
         }
       }
@@ -74,31 +73,29 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
 
   override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
     requestVote.term match {
-      case requestTerm if requestTerm < term => Future.successful(RequestVoteResponse(term, false))
-      case requestTerm if requestTerm > term => {
+      case requestTerm if requestTerm < term ⇒ rejectVote(requestVote.memberId, "older term")
+      case requestTerm if requestTerm > term ⇒ {
         stepDown(requestVote.term, None)
         cluster.local on requestVote
       }
-      case requestTerm if requestTerm == term => {
+      case requestTerm if requestTerm == term ⇒ {
         val couldGrantVote = checkGrantVotePolicy(requestVote)
         if (couldGrantVote) {
           if (votedFor.compareAndSet(None, Some(requestVote.memberId)) || votedFor.get().equals(Some(requestVote.memberId))) {
-        	  LOG.debug(s"Granting vote to ${requestVote.memberId} in term[${term}]")
-        	  electionTimeout.restart
-        	  cluster.local.persistState()
-        	  Future.successful(RequestVoteResponse(term, true))
+            log.debug(s"Granting vote to ${requestVote.memberId} in term[${term}]")
+            electionTimeout.restart
+            cluster.local.persistState()
+            Future.successful(RequestVoteResponse(term, true))
           } else {
-              LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term[${term}]. Already voted for ${votedFor.get()}")
-              Future.successful(RequestVoteResponse(term, false))
+            rejectVote(requestVote.memberId, s"already voted for ${votedFor.get()}")
           }
         } else {
-          LOG.debug(s"Rejecting vote to ${requestVote.memberId} in term[${term}]")
-          Future.successful(RequestVoteResponse(term, false))
+          rejectVote(requestVote.memberId, s"not granted vote policy")
         }
       }
     }
   }
-  
+
   private def checkGrantVotePolicy(requestVote: RequestVote) = {
     val vote = votedFor.get()
     (!vote.isDefined || vote.get == requestVote.memberId) && isMuchUpToDate(requestVote)
@@ -110,11 +107,11 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
   }
 
   private def isCurrentTerm(term: Int) = term == cluster.local.term
-  
+
   override def toString = s"Follower[$term]"
-    
+
   override protected def getCluster: Cluster = cluster
-    
+
 }
 
 class ElectionTimeout(cluster: Cluster, term: Int) extends Logging {
@@ -126,13 +123,13 @@ class ElectionTimeout(cluster: Cluster, term: Int) extends Logging {
     stop
     start
   }
-  
+
   private def start = {
-    val electionTimeout =  randomTimeout
-    LOG.trace(s"New timeout is $electionTimeout ms")
-    val task: Runnable = () => {
-    	  LOG.debug("Timeout reached! Time to elect a new leader")
-    	  cluster.local becomeCandidate (term + 1)
+    val electionTimeout = randomTimeout
+    log.trace(s"New timeout is $electionTimeout ms")
+    val task: Runnable = () ⇒ {
+      log.debug("Timeout reached! Time to elect a new leader")
+      cluster.local becomeCandidate (term + 1)
     }
     val future = cluster.scheduledElectionTimeoutExecutor.schedule(task, electionTimeout, TimeUnit.MILLISECONDS)
     val previousFuture = scheduledFuture.getAndSet(future)
@@ -144,12 +141,12 @@ class ElectionTimeout(cluster: Cluster, term: Int) extends Logging {
     val diff = conf.maxElectionTimeout - conf.minElectionTimeout
     conf.minElectionTimeout + random.nextInt(if (diff > 0) diff.toInt else 1)
   }
-  
+
   def stop() = {
     val future = scheduledFuture.get()
     cancel(future)
   }
-  
+
   private def cancel(future: java.util.concurrent.Future[_]) = if (future != null) future.cancel(false)
-  
+
 }

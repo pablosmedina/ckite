@@ -24,10 +24,10 @@ import java.util.concurrent.atomic.AtomicReference
 abstract class State(val term: Int, val leaderPromise: Promise[Member], vote: Option[String] = None) extends Logging {
 
   val votedFor = new AtomicReference[Option[String]](vote)
-  
+
   def begin() = {
   }
-  
+
   def stop(term: Int) = {
   }
 
@@ -36,11 +36,11 @@ abstract class State(val term: Int, val leaderPromise: Promise[Member], vote: Op
   def on(appendEntries: AppendEntries): Future[AppendEntriesResponse]
 
   def on[T](command: Command): Future[T] = throw new UnsupportedOperationException()
-  
+
   def on(jointConsensusCommited: MajorityJointConsensus) = {}
-  
+
   def canTransitionTo(newState: State): Boolean = {
-     newState.term > term
+    newState.term > term
   }
 
   /**
@@ -49,10 +49,10 @@ abstract class State(val term: Int, val leaderPromise: Promise[Member], vote: Op
    */
   def stepDown(term: Int, leaderId: Option[String]): Unit = {
     val cluster = getCluster
-    LOG.debug(s"${cluster.local.id} Step down from being $this")
+    log.debug(s"${cluster.local.id} Step down from being $this")
 
-    leaderId flatMap { lid: String =>
-      cluster.obtainMember(lid) map { leader =>
+    leaderId flatMap { lid: String ⇒
+      cluster.obtainMember(lid) map { leader ⇒
         announceLeader(leader)
         cluster.local.becomeFollower(term = term, leaderPromise = Promise.successful(leader))
       }
@@ -67,16 +67,21 @@ abstract class State(val term: Int, val leaderPromise: Promise[Member], vote: Op
     }
   }
 
+  def rejectVote(candidateRejected: String, reason: String): Future[RequestVoteResponse] = {
+    log.debug(s"Rejecting vote to $candidateRejected due to $reason")
+    Future.successful(RequestVoteResponse(term, false))
+  }
+
   def info(): StateInfo = NonLeaderInfo(getCluster.leader.toString())
-  
+
   protected def getCluster: Cluster
-  
+
   protected def announceLeader(leader: Member) = {
     getCluster.local.currentState.leaderPromise.trySuccess(leader)
   }
-  
+
   protected def leaderAnnounced = getCluster.local.currentState.leaderPromise.isCompleted
-  
+
   def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {}
-  
+
 }

@@ -2,8 +2,6 @@ package ckite
 
 import ckite.example.KVStore
 import ckite.example.Put
-import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
 import org.scalatest._
 import ckite.example.Get
 import ckite.example.Put
@@ -14,13 +12,11 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import java.util.concurrent.TimeoutException
 
-
-@RunWith(classOf[JUnitRunner])
 class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   val Key1 = "key1"
   val Value1 = "value1"
-    
+
   val Member1Address = "localhost:9091"
   val Member2Address = "localhost:9092"
   val Member3Address = "localhost:9093"
@@ -28,7 +24,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   "A single member cluster" should "elect a Leader" in {
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-    						.stateMachine(new KVStore()).bootstrap(true).build
+      .stateMachine(new KVStore()).bootstrap(true).build
     raft start
 
     raft.isLeader should be
@@ -38,11 +34,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   it should "read committed writes" in {
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-    						 .stateMachine(new KVStore()).bootstrap(true).build
+      .stateMachine(new KVStore()).bootstrap(true).build
     raft start
 
     await(raft.write(Put(Key1, Value1)))
-    
+
     val readValue = await(raft.read(Get(Key1)))
 
     readValue should be(Value1)
@@ -54,8 +50,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val dir = someTmpDir
 
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
-    							.compactionThreshold(5 + 1) //5 writes + 1 NoOp
-    							.stateMachine(new KVStore()).bootstrap(true).build
+      .compactionThreshold(5 + 1) //5 writes + 1 NoOp
+      .stateMachine(new KVStore()).bootstrap(true).build
     raft start
 
     await(raft.write(Put("key1", "value1")))
@@ -89,7 +85,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val dir = someTmpDir
 
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
-    							.stateMachine(new KVStore()).bootstrap(true).build
+      .stateMachine(new KVStore()).bootstrap(true).build
     raft start
 
     //It is expected to timeout since Member2 is not up and the configuration must to committed under the new configuration (member1 and member2)
@@ -111,8 +107,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val dir = someTmpDir
 
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
-    							.compactionThreshold(2 + 1) //1 writes + 1 NoOp
-    							.stateMachine(new KVStore()).bootstrap(true).build
+      .compactionThreshold(2 + 1) //1 writes + 1 NoOp
+      .stateMachine(new KVStore()).bootstrap(true).build
     raft start
 
     //It is expected to timeout since 9092 is not up and the configuration need to committed under the new configuration (9091 and 9092)
@@ -135,7 +131,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     members should contain(Member2Address)
   }
 
-  "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members =>
+  "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members ⇒
     val leader = members leader
     val followers = members followers
 
@@ -143,7 +139,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     followers.length should be(2)
   }
 
-  it should "failover Leader" in withThreeMemberCluster { members =>
+  it should "failover Leader" in withThreeMemberCluster { members ⇒
     val originalLeader = members leader
     val followers = members followers
 
@@ -158,31 +154,31 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     newLeader should not be originalLeader
   }
 
-  it should "read committed writes" in withThreeMemberCluster { members =>
+  it should "read committed writes" in withThreeMemberCluster { members ⇒
 
     val leader = members leader
 
     await(leader.write(Put(Key1, Value1)))
 
-    members foreach { member =>
+    members foreach { member ⇒
       await(member.read(Get(Key1))) should be(Value1)
     }
 
   }
 
-  it should "forward writes to the Leader" in withThreeMemberCluster { members =>
+  it should "forward writes to the Leader" in withThreeMemberCluster { members ⇒
 
     val someFollower = (members followers) head
 
     //this write is forwarded to the Leader
     await(someFollower.write(Put(Key1, Value1)))
 
-    members foreach { member =>
+    members foreach { member ⇒
       await(member.read[String](Get(Key1))) should be(Value1)
     }
   }
 
-  it should "maintain quorum when 1 member goes down" in withThreeMemberCluster { members =>
+  it should "maintain quorum when 1 member goes down" in withThreeMemberCluster { members ⇒
 
     val someFollower = (members followers) head
 
@@ -194,12 +190,12 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     //leader still have quorum. this write is going to be committed
     await(leader.write(Put(Key1, Value1)))
 
-    (members diff Seq(someFollower)) foreach { member =>
+    (members diff Seq(someFollower)) foreach { member ⇒
       await(member.read(Get(Key1))) should be(Value1)
     }
   }
 
-  it should "loose quorum when 2 members goes down" in withThreeMemberCluster { members =>
+  it should "loose quorum when 2 members goes down" in withThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -230,9 +226,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     members foreach { _ start }
 
     try {
-      
+
       val leader = members leader
-      
+
       //member3 goes down
       member3.stop
 
@@ -257,7 +253,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     }
   }
 
-  it should "add a new member" in withThreeMemberCluster { members =>
+  it should "add a new member" in withThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -267,7 +263,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     await(leader.addMember(Member4Address))
 
     val member4 = RaftBuilder().listenAddress(Member4Address).members(Seq(Member2Address, Member1Address, Member3Address))
-    							.dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).build
+      .dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).build
     //start member4
     member4.start
 
@@ -286,7 +282,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     member4.stop
   }
 
-  it should "overwrite uncommitted entries on an old Leader" in withThreeMemberCluster { members =>
+  it should "overwrite uncommitted entries on an old Leader" in withThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -296,7 +292,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     followers foreach { _.stop }
 
     //this two writes will timeout since no majority can be reached 
-    for (i <- (1 to 2)) {
+    for (i ← (1 to 2)) {
       intercept[TimeoutException] {
         await(leader.write(Put(Key1, Value1)))
       }
@@ -346,23 +342,23 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   }
 
-  private def withThreeMemberCluster(test: Seq[Raft] => Any) = {
+  private def withThreeMemberCluster(test: Seq[Raft] ⇒ Any) = {
     //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
     val member1 = RaftBuilder().listenAddress(Member1Address)
       .dataDir(someTmpDir).bootstrap(true)
       .stateMachine(new KVStore()).build
 
     val member2 = RaftBuilder().listenAddress(Member2Address).members(Seq(Member1Address))
-//      .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
+      .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
       .dataDir(someTmpDir)
       .stateMachine(new KVStore()).build
 
     val member3 = RaftBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
-//      .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
+      .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
       .dataDir(someTmpDir)
       .stateMachine(new KVStore()).build
     val members = Seq(member1, member2, member3)
-    LOG.info(s"Starting all the members")
+    log.info(s"Starting all the members")
     member1 start
 
     member2 start
@@ -371,10 +367,10 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     waitSomeTimeForElection
     try {
-      LOG.info(s"Running test...")
+      log.info(s"Running test...")
       test(members)
     } finally {
-      LOG.info(s"Stopping all the members")
+      log.info(s"Stopping all the members")
       members foreach { _ stop }
     }
   }
@@ -388,9 +384,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   private def someTmpDir: String = {
     "/tmp/" + System.currentTimeMillis()
   }
-  
+
   private def await[T](future: Future[T]): T = {
     Await.result(future, 3 seconds)
   }
-  
+
 }

@@ -11,9 +11,9 @@ trait PersistentLog {
   def getEntry(index: Long): LogEntry
   def getLastIndex: Long
   def discardEntriesFrom(index: Long)
-//  def discardEntriesUntil(index: Long)
-//  def remove(index: Long)
+  //  def discardEntriesUntil(index: Long)
+  //  def remove(index: Long)
   def size: Long
   def close
-  
+
 }

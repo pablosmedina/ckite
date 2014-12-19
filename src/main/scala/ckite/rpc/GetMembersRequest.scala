@@ -1,3 +1,3 @@
 package ckite.rpc
 
-case class GetMembersRequest
+case class GetMembersRequest()
