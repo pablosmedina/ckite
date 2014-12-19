@@ -7,3 +7,5 @@ target
 *.iml
 *.ipr
 *.iws
+src/main/scala/ckite/rpc/thrift/CKiteService.scala
+src/main/scala/ckite/rpc/thrift/CKiteService.scala
