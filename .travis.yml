@@ -2,3 +2,5 @@ language: scala
 sbt_args: -sbt-version 0.13.7
 scala:
    - 2.11.4
+jdk:
+   - oraclejdk8
