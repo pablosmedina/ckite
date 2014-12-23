@@ -4,7 +4,7 @@ import java.util.concurrent.{ ConcurrentHashMap, Executors, TimeoutException }
 import java.util.concurrent.atomic.AtomicReference
 
 import ckite.exception.LeaderTimeoutException
-import ckite.rlog.Snapshot
+import ckite.rlog.{ PersistentLog, Snapshot }
 import ckite.rpc.{ AppendEntries, AppendEntriesResponse, ClusterConfigurationCommand, Command, JointConfiguration, MajorityJointConsensus, NewConfiguration, ReadCommand, RequestVote, RequestVoteResponse }
 import ckite.statemachine.StateMachine
 import ckite.stats.{ ClusterStatus, LogStatus, Status }
@@ -18,11 +18,11 @@ import scala.concurrent.{ Await, Future, Promise }
 import scala.util.{ Failure, Success, Try }
 import scala.util.control.Breaks.{ break, breakable }
 
-class Cluster(stateMachine: StateMachine, val configuration: Configuration) extends Logging {
+class Cluster(stateMachine: StateMachine, val configuration: Configuration, persistentLog: PersistentLog) extends Logging {
 
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
-  val rlog = new RLog(this, stateMachine)
+  val rlog = new RLog(this, stateMachine, persistentLog)
 
   val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
 

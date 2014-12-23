@@ -20,10 +20,10 @@ import com.twitter.util.FuturePool
 import com.twitter.util.Promise
 
 import ckite.Cluster
-import ckite.rpc.Command
+import ckite.rpc.{ RaftRpcServer, Command }
 import ckite.rpc.thrift.ThriftConverters._
 
-class ThriftServer(cluster: Cluster) {
+class ThriftServer(cluster: Cluster) extends RaftRpcServer {
   var closed = false
   var finagleServer: ListeningServer = _
 

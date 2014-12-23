@@ -1,5 +1,6 @@
 package ckite
 
+import ckite.rlog.{ MapDBLog, PersistentLog }
 import com.typesafe.config.ConfigFactory
 
 import ckite.statemachine.StateMachine
@@ -9,6 +10,7 @@ class RaftBuilder {
 
   private val configuration = new Configuration(ConfigFactory.load())
   private var stateMachine: StateMachine = _
+  private var persistentLog: PersistentLog = _
 
   def minElectionTimeout(minElectionTimeout: Int): RaftBuilder = {
     configuration.withMinElectionTimeout(minElectionTimeout)
@@ -75,8 +77,13 @@ class RaftBuilder {
     RaftBuilder.this
   }
 
+  def log(log: PersistentLog): RaftBuilder = {
+    persistentLog = log
+    RaftBuilder.this
+  }
+
   def build(): Raft = {
-    new Raft(new Cluster(stateMachine, configuration), RaftBuilder.this)
+    new Raft(new Cluster(stateMachine, configuration, Option(persistentLog).getOrElse(MapDBLog(configuration.dataDir))), RaftBuilder.this)
   }
 
 }

@@ -2,6 +2,7 @@ package ckite
 
 import ckite.example.KVStore
 import ckite.example.Put
+import ckite.rlog.MapDBLog
 import org.scalatest._
 import ckite.example.Get
 import ckite.example.Put
@@ -24,7 +25,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   "A single member cluster" should "elect a Leader" in {
     val raft = RaftBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).bootstrap(true).build
+      .stateMachine(new KVStore()).bootstrap(true).log(MapDBLog(someTmpDir)).build
     raft start
 
     raft.isLeader should be

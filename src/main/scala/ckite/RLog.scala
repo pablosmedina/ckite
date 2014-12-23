@@ -10,10 +10,7 @@ import scala.concurrent.Future
 import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
 
-import ckite.rlog.CommandApplier
-import ckite.rlog.LogAppender
-import ckite.rlog.MapDBPersistentLog
-import ckite.rlog.SnapshotManager
+import ckite.rlog._
 import ckite.rpc.AppendEntries
 import ckite.rpc.LogEntry
 import ckite.rpc.ReadCommand
@@ -21,9 +18,7 @@ import ckite.rpc.WriteCommand
 import ckite.statemachine.StateMachine
 import ckite.util.Logging
 
-class RLog(val cluster: Cluster, val stateMachine: StateMachine) extends Logging {
-
-  val persistentLog = new MapDBPersistentLog(cluster.configuration.dataDir, this)
+class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentLog: PersistentLog) extends Logging {
 
   val lastLog = new AtomicLong(0)
 

@@ -5,12 +5,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 import org.mapdb.DBMaker
 
-import ckite.RLog
 import ckite.rpc.LogEntry
 import ckite.util.Logging
 import ckite.util.Serializer
 
-class MapDBPersistentLog(dataDir: String, rlog: RLog) extends PersistentLog with Logging {
+case class MapDBLog(dataDir: String) extends PersistentLog with Logging {
 
   val logDB = DBMaker.newFileDB(file(dataDir)).mmapFileEnable().closeOnJvmShutdown().transactionDisable().cacheDisable().make()
 

@@ -1,9 +1,7 @@
 package ckite.rpc
 
-import scala.util.Try
-import ckite.Member
 import ckite.rlog.Snapshot
-import ckite.RemoteMember
+
 import scala.concurrent.Future
 
 trait Connector {
