@@ -9,9 +9,9 @@ trait Membership {
 
   def allMembers: Seq[Member]
 
-  def allBindings: Seq[String]
+  def allBindings: Seq[String] = allMembers map { member ⇒ member.id }
 
-  def remoteMembers: Seq[RemoteMember]
+  def remoteMembers(): Seq[RemoteMember]
 
   def reachMajority(members: Seq[Member]): Boolean
 
@@ -24,6 +24,22 @@ trait Membership {
   def captureState: MembershipState
 
   def index: Long
+
+  def hasRemoteMembers(): Boolean = {
+    !remoteMembers().isEmpty
+  }
+
+  def obtainMember(memberId: String): Option[Member] = allMembers.find {
+    _.id == memberId
+  }
+
+  def obtainRemoteMember(memberId: String): Option[RemoteMember] = remoteMembers.find {
+    _.id == memberId
+  }
+
+  def isActiveMember(memberId: String): Boolean = allBindings.contains(memberId)
+
+  def getMembers(): List[String] = allBindings.toList
 
 }
 
@@ -51,7 +67,7 @@ class SimpleMembershipState(var bindings: List[String], var index: Long) extends
   def getMembershipFor(cluster: Cluster) = {
     val localOption = if (bindings.contains(cluster.local.id)) Some(cluster.local) else None
     val remoteMembers = (bindings diff Seq(cluster.local.id)).map {
-      binding ⇒ cluster.obtainRemoteMember(binding).getOrElse(new RemoteMember(cluster, binding))
+      binding ⇒ cluster.membership.obtainRemoteMember(binding).getOrElse(new RemoteMember(cluster, binding))
     }.toSeq
     new SimpleConsensus(localOption, remoteMembers, index)
   }
@@ -88,8 +104,6 @@ class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember], id
 
   def allMembers = resultingMembers
 
-  def allBindings = resultingMembers map { member ⇒ member.id }
-
   def remoteMembers: Seq[RemoteMember] = members
 
   def reachMajority(membersRequestingMajority: Seq[Member]): Boolean = membersRequestingMajority.size >= quorum
@@ -118,8 +132,6 @@ object EmptyMembership extends SimpleConsensus(None, Seq(), 0) {
 class JointConsensus(oldMembership: Membership, newMembership: Membership, idx: Long) extends Membership {
 
   def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
-
-  def allBindings = allMembers map { member ⇒ member.id }
 
   def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
 

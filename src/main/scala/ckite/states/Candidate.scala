@@ -1,28 +1,17 @@
 package ckite.states
 
-import java.util.concurrent.{ SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.{ SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 
-import ckite.{ Cluster, Member }
 import ckite.rpc.{ AppendEntries, AppendEntriesResponse, Command, RequestVote, RequestVoteResponse }
 import ckite.util.CKiteConversions._
 import ckite.util.Logging
+import ckite.{ Cluster, Member }
 import com.twitter.concurrent.NamedPoolThreadFactory
 
 import scala.concurrent.{ Future, Promise }
 
-/**
- * •! Increment currentTerm, vote for self
- * •! Reset election timeout
- * •! Send RequestVote RPCs to all other servers, wait for either:
- * •! Votes received from majority of servers: become leader
- * •! AppendEntries RPC received from new leader: step
- * down
- * •! Election timeout elapses without election resolution:
- * increment term, start new election
- * •! Discover higher term: step down (§5.1)
- */
-class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(term, leaderPromise, Some(cluster.local.id)) {
+case class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(Some(cluster.local.id)) {
 
   val election = new Election(cluster)
 
@@ -39,25 +28,25 @@ class Candidate(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) ext
     election.start(term)
   }
 
-  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
+  override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
     if (appendEntries.term < cluster.local.term) {
-      Future.successful(AppendEntriesResponse(cluster.local.term, false))
+      rejectAppendEntries(appendEntries, "old term")
     } else {
-      log.debug("Leader already elected in term[{}]", term)
+      log.debug("Leader already elected in term[{}]", appendEntries.term)
       election.abort
       //warn lock
       stepDown(appendEntries.term, Some(appendEntries.leaderId))
-      cluster.local on appendEntries
+      cluster.local.onAppendEntries(appendEntries)
     }
   }
 
   override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
-    if (requestVote.term <= term) {
-      rejectVote(requestVote.memberId, "being candidate on a term greater or equal than remote candidate")
+    if (requestVote.term == term) {
+      rejectVote(requestVote.memberId, "being candidate on the same term than remote candidate")
     } else {
       election.abort
       stepDown(requestVote.term, None)
-      cluster.local on requestVote
+      cluster.local onRequestVote requestVote
     }
   }
 

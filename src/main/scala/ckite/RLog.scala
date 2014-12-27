@@ -49,13 +49,15 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentL
     log.trace("Try appending {}", appendEntries)
     val canAppend = hasPreviousLogEntry(appendEntries)
     if (canAppend) {
+      log.trace("Has previous log entries. Will try to append.")
       appendAll(appendEntries.entries) map { _ ⇒
         commandApplier.commit(appendEntries.commitIndex)
         applyLogCompactionPolicy
         canAppend
       }
     } else {
-      Promise.successful(canAppend).future
+      log.trace("Rejecting {}", appendEntries)
+      Future.successful(canAppend)
     }
   }
 
@@ -66,8 +68,9 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentL
   }
 
   //Follower appends all these entries and waits for them to be flushed to the persistentLog
-  private def appendAll(entries: List[LogEntry]) = {
+  private def appendAll(entries: List[LogEntry]): Future[List[Long]] = {
     val appendPromises = entries.map { entry ⇒
+      log.trace(s"Try appending $entry")
       if (!containsEntry(entry.index, entry.term)) {
         if (hasIndex(entry.index)) {
           //If an entry is overridden then all the subsequent entries must be removed
@@ -103,6 +106,7 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentL
 
   def logEntry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)
+    log.trace(s"Entry for index $index is: $entry")
     if (entry != null) Some(entry)
     else if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
     else None

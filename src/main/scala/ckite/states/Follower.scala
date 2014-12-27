@@ -26,7 +26,7 @@ import ckite.util.Logging
  * •! Receiving valid AppendEntries RPC, or
  * •! Granting vote to candidate
  */
-class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderPromise: Promise[Member], vote: Option[String]) extends State(term, leaderPromise, vote) with Logging {
+case class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderPromise: Promise[Member], vote: Option[String]) extends State(vote) with Logging {
 
   val electionTimeout = new ElectionTimeout(cluster, term)
 
@@ -44,7 +44,7 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
 
   override def on[T](command: Command): Future[T] = cluster.forwardToLeader[T](command)
 
-  override def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
+  override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
     if (appendEntries.term < term) {
       Future.successful(AppendEntriesResponse(term, false))
     } else {
@@ -52,11 +52,11 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
 
       if (appendEntries.term > term) {
         stepDown(appendEntries.term, Some(appendEntries.leaderId))
-        cluster.local on appendEntries
+        cluster.local onAppendEntries appendEntries
       } else {
 
         if (!leaderPromise.isCompleted) {
-          cluster.obtainMember(appendEntries.leaderId) map { leader ⇒
+          cluster.membership.obtainMember(appendEntries.leaderId) map { leader ⇒
             if (leaderPromise.trySuccess(leader)) {
               log.info("Following {} in term[{}]", cluster.leader, term)
               cluster.local.persistState
@@ -73,10 +73,10 @@ class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leaderProm
 
   override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
     requestVote.term match {
-      case requestTerm if requestTerm < term ⇒ rejectVote(requestVote.memberId, "older term")
+      case requestTerm if requestTerm < term ⇒ rejectVote(requestVote.memberId, "old term")
       case requestTerm if requestTerm > term ⇒ {
         stepDown(requestVote.term, None)
-        cluster.local on requestVote
+        cluster.local onRequestVote requestVote
       }
       case requestTerm if requestTerm == term ⇒ {
         val couldGrantVote = checkGrantVotePolicy(requestVote)

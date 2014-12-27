@@ -2,9 +2,7 @@ package ckite.rlog
 
 import java.io.File
 import java.nio.ByteBuffer
-import java.util.concurrent.SynchronousQueue
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ Executors, SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
@@ -17,6 +15,8 @@ import ckite.rpc.LogEntry
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.Logging
 
+import scala.concurrent.{ ExecutionContext, Future, Promise }
+
 class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging {
 
   val compacting = new AtomicBoolean(false)
@@ -28,6 +28,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
 
   val cluster = rlog.cluster
   val stateMachine = rlog.stateMachine
+  implicit val executor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
   //index - term
   val latestSnapshotCoordinates = new AtomicReference[(Long, Int)]((0, 0))
@@ -83,15 +84,17 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     new Snapshot(stateMachineBytes, latestEntry.index, latestEntry.term, membershipState)
   }
 
-  def installSnapshot(snapshot: Snapshot): Boolean = rlog.exclusive {
-    log.debug(s"Installing $snapshot")
-    snapshot.write(configuration.dataDir)
+  def installSnapshot(snapshot: Snapshot): Future[Boolean] = Future {
+    rlog.exclusive {
+      log.debug(s"Installing $snapshot")
+      snapshot.write(configuration.dataDir)
 
-    stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
-    snapshot.membership.recoverIn(cluster)
+      stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
+      snapshot.membership.recoverIn(cluster)
 
-    log.debug(s"Finished installing $snapshot")
-    true //?
+      log.debug(s"Finished installing $snapshot")
+      true
+    }
   }
 
   def reloadSnapshot: Long = {

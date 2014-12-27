@@ -55,16 +55,22 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     workerPool.awaitTermination(10, TimeUnit.SECONDS)
   }
 
-  def commit(index: Long) = if (lastApplied < index) commitIndexQueue.offer(index)
+  def commit(index: Long) = {
+    log.trace(s"Commit index received: $index")
+    if (lastApplied < index) commitIndexQueue.offer(index)
+  }
 
   private def asyncApplier = {
     log.info(s"Starting applier from index #{}", lastApplied)
     try {
       while (true) {
         val index = next
+        log.trace(s"Dequeued index $index to be applied")
         if (lastApplied < index) {
+          log.trace(s"Dequeued index $index is bigger than lastApplied.")
           val entry = rlog.logEntry(index)
           if (isFromCurrentTerm(entry)) {
+            log.trace(s"Dequeued index $index is from current term.")
             applyUntil(entry.get)
           }
         }
@@ -114,7 +120,6 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     (lastApplied + 1) to entry.index foreach { index ⇒
       entryToApply(index, entry).map { entry ⇒
         updateCommitIndex(index)
-        val command = entry.command
         log.debug("Will apply committed entry {}", entry)
         val result = execute(entry.index, entry.command)
         updateLastAppliedIndex(index)
@@ -150,7 +155,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
   private def isCommitted(index: Long) = index <= commitIndex
 
-  private def execute(index: Long, command: Command) = {
+  private def execute(index: Long, command: Command): Any = {
     command match {
       case jointConf: JointConfiguration ⇒ executeEnterJointConsensus(index, jointConf)
       case newConf: NewConfiguration     ⇒ true
@@ -165,7 +170,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   private def executeEnterJointConsensus(index: Long, c: JointConfiguration) = {
     if (index >= rlog.cluster.membership.index) {
       Future {
-        rlog.cluster.on(MajorityJointConsensus(c.newBindings))
+        rlog.cluster.onMajorityJointConsensusReceived(MajorityJointConsensus(c.newBindings))
       }
     } else {
       log.debug("Skipping old configuration {}", c)

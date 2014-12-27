@@ -2,29 +2,29 @@ package ckite
 
 import java.util.concurrent.atomic.AtomicBoolean
 
+import ckite.rpc.thrift.FinagleThriftServer
 import ckite.rpc.{ ReadCommand, WriteCommand }
-import ckite.rpc.thrift.ThriftServer
 
 import scala.concurrent.Future
 
 class Raft(private[ckite] val cluster: Cluster, private[ckite] val builder: RaftBuilder) {
 
-  private val thrift = ThriftServer(cluster)
+  private val thrift = FinagleThriftServer(cluster)
   private val stopped = new AtomicBoolean(false)
 
-  def write[T](writeCommand: WriteCommand[T]): Future[T] = cluster.on[T](writeCommand)
+  def write[T](writeCommand: WriteCommand[T]): Future[T] = cluster.onCommandReceived[T](writeCommand)
 
-  def read[T](readCommand: ReadCommand[T]): Future[T] = cluster.on[T](readCommand)
+  def read[T](readCommand: ReadCommand[T]): Future[T] = cluster.onCommandReceived[T](readCommand)
 
-  def readLocal[T](readCommand: ReadCommand[T]): T = cluster.onLocal(readCommand)
+  def readLocal[T](readCommand: ReadCommand[T]): T = cluster.onLocalReadReceived(readCommand)
 
-  def addMember(memberBinding: String) = cluster.addMember(memberBinding)
+  def addMember(memberBinding: String) = cluster.onMemberJoinReceived(memberBinding)
 
-  def removeMember(memberBinding: String) = cluster.removeMember(memberBinding)
+  def removeMember(memberBinding: String) = cluster.onMemberLeaveReceived(memberBinding)
 
   def isLeader: Boolean = cluster.isLeader
 
-  def getMembers: List[String] = cluster.getMembers
+  def getMembers: List[String] = cluster.membership.getMembers
 
   def status = cluster.getStatus
 

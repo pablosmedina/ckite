@@ -45,6 +45,7 @@ class LogAppender(rlog: RLog, persistentLog: PersistentLog) extends Logging {
   def append(entry: LogEntry): Future[Long] = append(FollowerAppend(entry))
 
   private def append[T](append: Append[T]): Future[T] = {
+    log.trace(s"Append $append")
     val promise: Promise[T] = append.promise
     queue.offer(append)
     promise.future
@@ -86,6 +87,7 @@ class LogAppender(rlog: RLog, persistentLog: PersistentLog) extends Logging {
   }
 
   private def flush = {
+    log.debug("Flushing log entries...")
     if (syncEnabled) persistentLog.commit
     pendingFlushes.foreach { pendingFlush ⇒
       val logEntry = pendingFlush._1

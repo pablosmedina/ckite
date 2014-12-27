@@ -1,21 +1,17 @@
 package ckite.rpc
 
-import ckite.rlog.Snapshot
-
 import scala.concurrent.Future
 
-trait Connector {
+trait RpcClient {
 
   def send(request: RequestVote): Future[RequestVoteResponse]
 
   def send(appendEntries: AppendEntries): Future[AppendEntriesResponse]
 
-  def send(snapshot: Snapshot): Future[Boolean]
+  def send(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse]
 
   def send[T](command: Command): Future[T]
 
-  def send(joinRequest: JoinRequest): Future[JoinResponse]
-
-  def send(getMembersRequest: GetMembersRequest): Future[GetMembersResponse]
+  def send(joinMember: JoinMember): Future[JoinMemberResponse]
 
 }

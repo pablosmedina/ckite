@@ -5,8 +5,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{ AtomicBoolean, AtomicLong }
 
 import ckite.rlog.Snapshot
-import ckite.rpc.{ AppendEntries, Command, Connector, GetMembersRequest, GetMembersResponse, JoinRequest, JoinResponse, LogEntry, RequestVote }
-import ckite.rpc.thrift.ThriftConnector
+import ckite.rpc._
+import ckite.rpc.thrift.FinagleThriftClient
 import com.twitter.finagle.ChannelWriteException
 
 import scala.Option.option2Iterable
@@ -19,19 +19,19 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val nextLogIndex = new AtomicLong(1)
   val matchIndex = new AtomicLong(0)
-  val connector: Connector = new ThriftConnector(id)
+  val client: RpcClient = new FinagleThriftClient(id)
   val replicationsEnabled = new AtomicBoolean(true)
   val replicationsInProgress = new ConcurrentHashMap[Long, Boolean]()
   private def rlog = cluster.rlog
 
   override def forwardCommand[T](command: Command): Future[T] = {
     log.debug(s"Forward command ${command} to ${id}")
-    connector.send[T](command)
+    client.send[T](command)
   }
 
   def sendAppendEntries(term: Int) = {
     val request = createAppendEntries(term)
-    connector.send(request).map { response ⇒
+    client.send(request).map { response ⇒
       log.trace(s"AppendEntries response ${response} from ${id}")
       if (response.term > term) {
         receivedHigherTerm(response.term, term)
@@ -113,8 +113,8 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     replicationsInProgress.remove(nextLogIndex.intValue())
   }
 
-  def sendSnapshot(snapshot: Snapshot) = {
-    connector.send(snapshot)
+  def sendInstallSnapshot(installSnapshot: InstallSnapshot) = {
+    client.send(installSnapshot)
   }
 
   def setNextLogIndex(index: Long) = nextLogIndex.set(index)
@@ -125,7 +125,7 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   def requestVote(term: Int): Future[Boolean] = {
     log.debug(s"Requesting vote to $id")
     val lastLogEntry = rlog.getLastLogEntry()
-    connector.send(lastLogEntry match {
+    client.send(lastLogEntry match {
       case None        ⇒ RequestVote(localMember.id, term)
       case Some(entry) ⇒ RequestVote(localMember.id, term, entry.index, entry.term)
     }).map { voteResponse ⇒
@@ -153,20 +153,12 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     wasEnabled
   }
 
-  def join(joiningMemberId: String): Future[JoinResponse] = {
+  def join(joiningMemberId: String): Future[JoinMemberResponse] = {
     log.debug(s"Joining with $id")
-    connector.send(JoinRequest(joiningMemberId)).recover {
+    client.send(JoinMember(joiningMemberId)).recover {
       case ChannelWriteException(e: ConnectException) ⇒
         log.debug(s"Can't connect to member $id")
-        JoinResponse(false)
-    }
-  }
-
-  def getMembers(): Future[GetMembersResponse] = {
-    connector.send(GetMembersRequest()).recover {
-      case ChannelWriteException(e: ConnectException) ⇒
-        log.debug(s"Can't connect to member $id")
-        GetMembersResponse(false, Seq())
+        JoinMemberResponse(false)
     }
   }
 

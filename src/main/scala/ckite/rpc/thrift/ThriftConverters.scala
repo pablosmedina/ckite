@@ -3,14 +3,7 @@ package ckite.rpc.thrift
 import java.nio.ByteBuffer
 
 import ckite.rlog.Snapshot
-import ckite.rpc.AppendEntries
-import ckite.rpc.AppendEntriesResponse
-import ckite.rpc.GetMembersResponse
-import ckite.rpc.JoinRequest
-import ckite.rpc.JoinResponse
-import ckite.rpc.LogEntry
-import ckite.rpc.RequestVote
-import ckite.rpc.RequestVoteResponse
+import ckite.rpc._
 import ckite.util.Logging
 import ckite.util.Serializer
 
@@ -71,26 +64,42 @@ object ThriftConverters extends Logging {
     c
   }
 
-  implicit def snapshotToThrift(snapshot: Snapshot): InstallSnapshotST = {
+  implicit def snapshotToThrift(snapshot: Snapshot): SnapshotST = {
     val bb2: ByteBuffer = snapshot.membership
-    val bb: ByteBuffer = snapshot.stateMachineState
-    InstallSnapshotST(bb, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm, bb2)
+    val bb: ByteBuffer = snapshot.stateMachineBytes
+    SnapshotST(bb, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm, bb2)
   }
 
-  implicit def snapshotFromThrift(installSnapshotST: InstallSnapshotST): Snapshot = {
-    new Snapshot(installSnapshotST.stateMachineState, installSnapshotST.lastLogEntryIndex, installSnapshotST.lastLogEntryTerm, installSnapshotST.membershipState)
+  implicit def snapshotFromThrift(snapshotST: SnapshotST): Snapshot = {
+    new Snapshot(snapshotST.stateMachineState, snapshotST.lastLogEntryIndex, snapshotST.lastLogEntryTerm, snapshotST.membershipState)
   }
 
-  implicit def joinRequestToThrift(joinRequest: JoinRequest): JoinRequestST = {
-    JoinRequestST(joinRequest.joiningMemberId)
+  implicit def installSnapshotToThrift(installSnapshot: InstallSnapshot): InstallSnapshotST = {
+    InstallSnapshotST(installSnapshot.snapshot)
   }
 
-  implicit def joinResponseFromThrift(joinResponse: JoinResponseST): JoinResponse = {
-    JoinResponse(joinResponse.success)
+  implicit def installSnapshotFromThrift(installSnapshotST: InstallSnapshotST): InstallSnapshot = {
+    new InstallSnapshot(installSnapshotST.snapshot)
   }
 
-  implicit def getMembersResponseFromThrift(getMembersResponse: GetMembersResponseST): GetMembersResponse = {
-    GetMembersResponse(getMembersResponse.success, getMembersResponse.members)
+  implicit def installSnapshotResponseFromThrift(installSnapshotResponseST: InstallSnapshotResponseST): InstallSnapshotResponse = {
+    InstallSnapshotResponse(installSnapshotResponseST.success)
+  }
+
+  implicit def installSnapshotResponseToThrift(installSnapshotResponse: InstallSnapshotResponse): InstallSnapshotResponseST = {
+    InstallSnapshotResponseST(installSnapshotResponse.success)
+  }
+
+  implicit def joinMemberToThrift(joinRequest: JoinMember): JoinMemberST = {
+    JoinMemberST(joinRequest.memberId)
+  }
+
+  implicit def joinMemberResponseToThrift(joinResponse: JoinMemberResponse): JoinMemberResponseST = {
+    JoinMemberResponseST(joinResponse.success)
+  }
+
+  implicit def joinMemberResponseFromThrift(joinResponse: JoinMemberResponseST): JoinMemberResponse = {
+    JoinMemberResponse(joinResponse.success)
   }
 
 }

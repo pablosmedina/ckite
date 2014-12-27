@@ -32,24 +32,27 @@ struct RequestVoteResponseST {
 	2: required bool granted;
 }
 
-struct InstallSnapshotST {
+struct SnapshotST {
 	1: required binary stateMachineState;
 	2: required i64 lastLogEntryIndex;
 	3: required i32 lastLogEntryTerm;
 	4: required binary membershipState;
 }
 
-struct JoinRequestST {
+struct InstallSnapshotST {
+	1: required SnapshotST snapshot;
+}
+
+struct InstallSnapshotResponseST {
+	1: required bool success;
+}
+
+struct JoinMemberST {
 	1: required string memberId;
 }
 
-struct JoinResponseST {
+struct JoinMemberResponseST {
 	1: required bool success;
-}
-
-struct GetMembersResponseST {
-	1: required bool success;
-	2: required list<string> members;
 }
 
 service CKiteService {
@@ -58,12 +61,10 @@ service CKiteService {
 
 	AppendEntriesResponseST sendAppendEntries(1:AppendEntriesST appendEntries);
 	
-	binary forwardCommand(1:binary command);
+	binary sendCommand(1:binary command);
 	
-	bool installSnapshot(1:InstallSnapshotST installSnapshot);
+	InstallSnapshotResponseST sendInstallSnapshot(1:InstallSnapshotST installSnapshot);
 	
-	JoinResponseST join(1:JoinRequestST memberId);
+	JoinMemberResponseST sendJoinMember(1:JoinMemberST memberId);
 	
-	GetMembersResponseST getMembers();
-
 }

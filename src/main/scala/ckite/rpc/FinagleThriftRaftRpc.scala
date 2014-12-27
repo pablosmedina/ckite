@@ -1,10 +1,10 @@
 package ckite.rpc
 
 import ckite.Cluster
-import ckite.rpc.thrift.{ ThriftServer, ThriftConnector }
+import ckite.rpc.thrift.{ FinagleThriftClient, FinagleThriftServer }
 
-class FinagleThriftRaftRpc extends RaftRpc {
-  override def createServer(cluster: Cluster): RaftRpcServer = new ThriftServer(cluster)
+class FinagleThriftRaftRpc extends Rpc {
+  override def createServer(cluster: Cluster): RpcServer = new FinagleThriftServer(cluster)
 
-  override def createConnector(binding: String): Connector = new ThriftConnector(binding)
+  override def createConnector(binding: String): RpcClient = new FinagleThriftClient(binding)
 }

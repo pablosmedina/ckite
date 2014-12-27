@@ -20,7 +20,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val lock = new ReentrantLock()
 
-  def becomeLeader(term: Int) = become(new Leader(cluster, term, currentLeaderPromise), term)
+  def becomeLeader(term: Int) = become(Leader(cluster, term, currentLeaderPromise), term)
 
   private def currentLeaderPromise = {
     currentState.leaderPromise
@@ -53,7 +53,7 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   private def changeState(current: State, newState: State) = state.compareAndSet(current, newState)
 
-  def becomeCandidate(term: Int) = become(new Candidate(cluster, term, currentLeaderPromiseForCandidate), term)
+  def becomeCandidate(term: Int) = become(Candidate(cluster, term, currentLeaderPromiseForCandidate), term)
 
   private def currentLeaderPromiseForCandidate = {
     val promise = currentLeaderPromise
@@ -67,19 +67,21 @@ class LocalMember(cluster: Cluster, binding: String) extends Member(binding) {
   def becomeStarter = changeState(Starter, Starter)
 
   //must operate on a fixed term and give at most one vote per term
-  def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
+  def onRequestVote(requestVote: RequestVote): Future[RequestVoteResponse] = {
     if (requestVote.term < term) {
-      log.debug(s"Rejecting vote to old candidate: ${requestVote}")
-      return Future.successful(RequestVoteResponse(term, false))
+      return currentState.rejectVote(requestVote.memberId, "old term")
+    }
+    if (!cluster.membership.isActiveMember(requestVote.memberId)) {
+      return currentState.rejectVote(requestVote.memberId, "unknown member")
     }
     currentState on requestVote
   }
 
   def term(): Int = currentState.term
 
-  def on(appendEntries: AppendEntries): Future[AppendEntriesResponse] = currentState on appendEntries
+  def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = currentState.onAppendEntries(appendEntries)
 
-  def on(jointConsensusCommitted: MajorityJointConsensus) = currentState on jointConsensusCommitted
+  def onMajorityJointConsensus(jointConsensusCommitted: MajorityJointConsensus) = currentState on jointConsensusCommitted
 
   override def forwardCommand[T](command: Command): Future[T] = on(command)
 

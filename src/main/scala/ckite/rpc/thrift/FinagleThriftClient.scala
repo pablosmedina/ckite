@@ -1,29 +1,18 @@
 package ckite.rpc.thrift
 
-import scala.util.Try
-import ckite.Member
-import ckite.rpc._
-import ckite.util.Logging
-import com.twitter.finagle.Thrift
-import com.twitter.util.Future
-import scala.concurrent.{ Future ⇒ ScalaFuture }
-import scala.util.Success
-import java.nio.ByteBuffer
-import com.twitter.util.Duration
 import java.util.concurrent.TimeUnit
-import scala.util.Failure
-import ckite.rpc.thrift.ThriftConverters._
-import scala.collection.concurrent.TrieMap
-import com.twitter.finagle.builder.ClientBuilder
-import com.twitter.finagle.thrift.ThriftClientFramedCodec
-import com.twitter.conversions.time._
-import com.twitter.finagle.service.RetryPolicy
-import com.twitter.util.Throw
-import ckite.rlog.Snapshot
-import ckite.RemoteMember
-import scala.concurrent.Promise
 
-class ThriftConnector(binding: String) extends Connector with Logging {
+import ckite.rpc._
+import ckite.rpc.thrift.ThriftConverters._
+import ckite.util.Logging
+import com.twitter.finagle.builder.ClientBuilder
+import com.twitter.finagle.service.RetryPolicy
+import com.twitter.finagle.thrift.ThriftClientFramedCodec
+import com.twitter.util.{ Duration, Future }
+
+import scala.concurrent.{ Promise, Future ⇒ ScalaFuture }
+
+class FinagleThriftClient(binding: String) extends RpcClient with Logging {
 
   val client = new CKiteService.FinagledClient(ClientBuilder().hosts(binding)
     .retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)
@@ -48,29 +37,24 @@ class ThriftConnector(binding: String) extends Connector with Logging {
   }
 
   override def send[T](command: Command): ScalaFuture[T] = {
-    val future = client.forwardCommand(command)
+    val future = client.sendCommand(command)
     val promise = Promise[T]()
     future.onSuccess(value ⇒ promise.success(value))
     future.onFailure(e ⇒ promise.failure(e))
     promise.future
   }
 
-  override def send(snapshot: Snapshot) = {
-    val future: Future[Boolean] = client.installSnapshot(snapshot)
-    future
-  }
-
-  override def send(joinRequest: JoinRequest): ScalaFuture[JoinResponse] = {
-    val future = client.join(joinRequest)
-    val promise = Promise[JoinResponse]()
+  override def send(installSnapshot: InstallSnapshot): ScalaFuture[InstallSnapshotResponse] = {
+    val future = client.sendInstallSnapshot(installSnapshot)
+    val promise = Promise[InstallSnapshotResponse]()
     future.onSuccess(value ⇒ promise.success(value))
     future.onFailure(e ⇒ promise.failure(e))
     promise.future
   }
 
-  override def send(getMembersRequest: GetMembersRequest): ScalaFuture[GetMembersResponse] = {
-    val future = client.getMembers()
-    val promise = Promise[GetMembersResponse]()
+  override def send(joinRequest: JoinMember): ScalaFuture[JoinMemberResponse] = {
+    val future = client.sendJoinMember(joinRequest)
+    val promise = Promise[JoinMemberResponse]()
     future.onSuccess(value ⇒ promise.success(value))
     future.onFailure(e ⇒ promise.failure(e))
     promise.future
