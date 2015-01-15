@@ -7,8 +7,7 @@ import ckite.{ Cluster, Member, RemoteMember }
 import ckite.rpc._
 import ckite.stats.{ FollowerInfo, LeaderInfo, StateInfo }
 import ckite.util.CKiteConversions.fromFunctionToRunnable
-import ckite.util.Logging
-import com.twitter.concurrent.NamedPoolThreadFactory
+import ckite.util.{ CustomThreadFactory, Logging }
 
 import scala.collection.JavaConversions.mapAsScalaConcurrentMap
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -208,13 +207,13 @@ case class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) e
 
 class Heartbeater(cluster: Cluster) extends Logging {
 
-  val scheduledHeartbeatsPool = new ScheduledThreadPoolExecutor(1, new NamedPoolThreadFactory("Heartbeater", true))
+  val scheduledHeartbeatsPool = new ScheduledThreadPoolExecutor(1, CustomThreadFactory("Heartbeater", true))
 
   def start(term: Int) = {
     log.debug("Start Heartbeater")
 
     val task: Runnable = () ⇒ {
-      log.trace("Heartbeater running")
+      log.trace(s"Leader[$term] broadcasting hearbeats")
       cluster.broadcastAppendEntries(term)
     }
     scheduledHeartbeatsPool.scheduleAtFixedRate(task, 0, cluster.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)

@@ -10,15 +10,13 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.concurrent.Promise
 
-import com.twitter.concurrent.NamedPoolThreadFactory
-
 import ckite.RLog
 import ckite.rpc.ClusterConfigurationCommand
 import ckite.rpc.Command
 import ckite.rpc.LogEntry
 import ckite.rpc.WriteCommand
 import ckite.util.CKiteConversions.fromFunctionToRunnable
-import ckite.util.Logging
+import ckite.util.{ CustomThreadFactory, Logging }
 
 class LogAppender(rlog: RLog, persistentLog: PersistentLog) extends Logging {
 
@@ -28,7 +26,7 @@ class LogAppender(rlog: RLog, persistentLog: PersistentLog) extends Logging {
   val syncEnabled = rlog.cluster.configuration.syncEnabled
 
   val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("LogAppender-worker", true))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), CustomThreadFactory("LogAppender-worker", true))
   val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
 
   def start = asyncExecutionContext.execute(asyncAppend _)

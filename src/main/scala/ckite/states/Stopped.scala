@@ -10,9 +10,9 @@ case object Stopped extends State {
 
   override def begin() = {}
 
-  override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = Future.successful(AppendEntriesResponse(appendEntries.term, false))
+  override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = Future.successful(AppendEntriesResponse(appendEntries.term, success = false))
 
-  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = Future.successful(RequestVoteResponse(requestVote.term, false))
+  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = Future.successful(RequestVoteResponse(requestVote.term, granted = false))
 
   override def canTransitionTo(state: State): Boolean = false
 

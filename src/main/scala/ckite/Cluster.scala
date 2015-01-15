@@ -1,30 +1,29 @@
 package ckite
 
 import java.util.concurrent.atomic.AtomicReference
-import java.util.concurrent.{ ConcurrentHashMap, Executors, TimeoutException }
+import java.util.concurrent.{ConcurrentHashMap, Executors, TimeoutException}
 
 import ckite.exception.LeaderTimeoutException
 import ckite.rlog.PersistentLog
 import ckite.rpc._
 import ckite.statemachine.StateMachine
-import ckite.stats.{ ClusterStatus, LogStatus, Status }
-import ckite.util.Logging
-import com.twitter.concurrent.NamedPoolThreadFactory
+import ckite.stats.{ClusterStatus, LogStatus, Status}
+import ckite.util.{CustomThreadFactory, Logging}
 
 import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration.{ DurationInt, DurationLong }
-import scala.concurrent.{ Await, Future, Promise }
-import scala.util.control.Breaks.{ break, breakable }
-import scala.util.{ Failure, Success, Try }
+import scala.concurrent.duration.{DurationInt, DurationLong}
+import scala.concurrent.{Await, Future, Promise}
+import scala.util.control.Breaks.{break, breakable}
+import scala.util.{Failure, Success, Try}
 
-class Cluster(stateMachine: StateMachine, val configuration: Configuration, persistentLog: PersistentLog) extends Logging {
+class Cluster(stateMachine: StateMachine, val rpc: Rpc, val configuration: Configuration, persistentLog: PersistentLog) extends RpcService with Logging {
 
   val local = new LocalMember(this, configuration.localBinding)
   val consensusMembership = new AtomicReference[Membership](EmptyMembership)
   val rlog = new RLog(this, stateMachine, persistentLog)
 
-  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, new NamedPoolThreadFactory("ElectionTimeout-worker", true))
+  val scheduledElectionTimeoutExecutor = Executors.newScheduledThreadPool(1, CustomThreadFactory(s"ElectionTimeout-worker-${local.id}", true))
 
   val waitForLeaderTimeout = configuration.waitForLeaderTimeout millis
 
@@ -91,7 +90,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration, pers
   private def isEmptyConfiguration = consensusMembership.get() == EmptyMembership
 
   def stop = {
-    log.info("Stopping CKite...")
+    log.info(s"Stopping CKite ${local.id}...")
 
     shutdownPools
 
@@ -141,7 +140,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration, pers
     }
   }
 
-  def onMemberLeaveReceived(memberBinding: String) = {
+  def onMemberLeaveReceived(memberBinding: String): Future[Boolean] = {
     log.info("The member {} is going to be removed from the cluster", memberBinding)
     val newMemberBindings = membership.allBindings diff Seq(memberBinding)
     changeClusterConfiguration(newMemberBindings)
@@ -171,8 +170,8 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration, pers
         case Success((member, vote)) ⇒ {
           vote map { granted ⇒
             votes.put(member, granted)
-            val grantedVotes = votes.asScala.filter { tuple ⇒ tuple._2 }.keySet.toSeq
-            val rejectedVotes = votes.asScala.filterNot { tuple ⇒ tuple._2 }.keySet.toSeq
+            val grantedVotes = votes.asScala.filter { tuple ⇒ tuple._2}.keySet.toSeq
+            val rejectedVotes = votes.asScala.filterNot { tuple ⇒ tuple._2}.keySet.toSeq
             if (membership.reachMajority(grantedVotes) ||
               membership.reachAnyMajority(rejectedVotes) ||
               membership.allMembers.size == votes.size())
@@ -187,7 +186,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration, pers
     Try {
       Await.result(promise.future, configuration.collectVotesTimeout millis) //TODO: Refactor me
     } getOrElse {
-      votes.asScala.filter { tuple ⇒ tuple._2 }.keySet.toSeq
+      votes.asScala.filter { tuple ⇒ tuple._2}.keySet.toSeq
     }
   }
 
@@ -234,7 +233,7 @@ class Cluster(stateMachine: StateMachine, val configuration: Configuration, pers
     val localOption = if (bindings.contains(local.id)) Some(local) else None
     val bindingsWithoutLocal = bindings diff Seq(local.id).toSet.toSeq
 
-    SimpleConsensus(localOption, bindingsWithoutLocal.map { binding ⇒ membership.obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding)) }, index)
+    SimpleConsensus(localOption, bindingsWithoutLocal.map { binding ⇒ membership.obtainRemoteMember(binding).getOrElse(new RemoteMember(this, binding))}, index)
   }
 
   def anyLeader = leader != None

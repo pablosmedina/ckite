@@ -12,7 +12,7 @@ import com.twitter.util.{ Duration, Future }
 
 import scala.concurrent.{ Promise, Future ⇒ ScalaFuture }
 
-class FinagleThriftClient(binding: String) extends RpcClient with Logging {
+case class FinagleThriftClient(binding: String) extends RpcClient with Logging {
 
   val client = new CKiteService.FinagledClient(ClientBuilder().hosts(binding)
     .retryPolicy(NoRetry).codec(ThriftClientFramedCodec()).failFast(false)

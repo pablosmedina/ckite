@@ -6,14 +6,12 @@ import java.util.concurrent.{ Executors, SynchronousQueue, ThreadPoolExecutor, T
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-import com.twitter.concurrent.NamedPoolThreadFactory
-
 import ckite.Configuration
 import ckite.RLog
 import ckite.rpc.CompactedEntry
 import ckite.rpc.LogEntry
 import ckite.util.CKiteConversions.fromFunctionToRunnable
-import ckite.util.Logging
+import ckite.util.{ CustomThreadFactory, Logging }
 
 import scala.concurrent.{ ExecutionContext, Future, Promise }
 
@@ -23,7 +21,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   val logCompactionExecutor = new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS,
     new SynchronousQueue[Runnable](),
-    new NamedPoolThreadFactory("LogCompaction-worker", true))
+    CustomThreadFactory("LogCompaction-worker", true))
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(configuration.logCompactionThreshold)
 
   val cluster = rlog.cluster

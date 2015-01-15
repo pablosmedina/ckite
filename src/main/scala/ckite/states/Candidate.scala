@@ -5,9 +5,8 @@ import java.util.concurrent.{ SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 
 import ckite.rpc.{ AppendEntries, AppendEntriesResponse, Command, RequestVote, RequestVoteResponse }
 import ckite.util.CKiteConversions._
-import ckite.util.Logging
+import ckite.util.{ CustomThreadFactory, Logging }
 import ckite.{ Cluster, Member }
-import com.twitter.concurrent.NamedPoolThreadFactory
 
 import scala.concurrent.{ Future, Promise }
 
@@ -65,7 +64,7 @@ class Election(cluster: Cluster) extends Logging {
   val executor = new ThreadPoolExecutor(1, 1,
     60L, TimeUnit.SECONDS,
     new SynchronousQueue[Runnable](),
-    new NamedPoolThreadFactory("CandidateElection-worker", true))
+    CustomThreadFactory(s"CandidateElection-worker-${cluster.local.id}", true))
   val electionFutureTask = new AtomicReference[java.util.concurrent.Future[_]]()
 
   def start(inTerm: Int) = {

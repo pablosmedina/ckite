@@ -49,7 +49,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentL
     log.trace("Try appending {}", appendEntries)
     val canAppend = hasPreviousLogEntry(appendEntries)
     if (canAppend) {
-      log.trace("Has previous log entries. Will try to append.")
       appendAll(appendEntries.entries) map { _ ⇒
         commandApplier.commit(appendEntries.commitIndex)
         applyLogCompactionPolicy
@@ -106,7 +105,6 @@ class RLog(val cluster: Cluster, val stateMachine: StateMachine, val persistentL
 
   def logEntry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = persistentLog.getEntry(index)
-    log.trace(s"Entry for index $index is: $entry")
     if (entry != null) Some(entry)
     else if (allowCompactedEntry && snapshotManager.isInSnapshot(index)) Some(snapshotManager.compactedEntry)
     else None

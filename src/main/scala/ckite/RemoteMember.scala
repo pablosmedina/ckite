@@ -1,13 +1,9 @@
 package ckite
 
-import java.net.ConnectException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{ AtomicBoolean, AtomicLong }
 
-import ckite.rlog.Snapshot
 import ckite.rpc._
-import ckite.rpc.thrift.FinagleThriftClient
-import com.twitter.finagle.ChannelWriteException
 
 import scala.Option.option2Iterable
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -19,9 +15,10 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
 
   val nextLogIndex = new AtomicLong(1)
   val matchIndex = new AtomicLong(0)
-  val client: RpcClient = new FinagleThriftClient(id)
+  val client: RpcClient = cluster.rpc.createClient(id)
   val replicationsEnabled = new AtomicBoolean(true)
   val replicationsInProgress = new ConcurrentHashMap[Long, Boolean]()
+
   private def rlog = cluster.rlog
 
   override def forwardCommand[T](command: Command): Future[T] = {
@@ -41,7 +38,11 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
     }.recover {
       case e: Exception ⇒
         log.trace("Error sending appendEntries {}", e.getMessage())
-    }.map { _ ⇒ request.entries foreach { markAsReplicated(_) } }
+    }.map { _ ⇒
+      request.entries foreach {
+        markAsReplicated(_)
+      }
+    }
   }
 
   def markAsReplicated(entry: LogEntry): Unit = replicationsInProgress.remove(entry.index)
@@ -132,11 +133,8 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
       log.debug(s"Got $voteResponse from $id")
       voteResponse.granted && voteResponse.currentTerm == term
     } recover {
-      case ChannelWriteException(e: ConnectException) ⇒
-        log.debug(s"Can't connect to member $id")
-        false
-      case e: Exception ⇒
-        log.error(s"Requesting vote: ${e.getMessage()}")
+      case reason: Throwable ⇒
+        log.debug(s"Error requesting vote: ${reason.getMessage()}")
         false
     }
   }
@@ -156,8 +154,8 @@ class RemoteMember(cluster: Cluster, binding: String) extends Member(binding) {
   def join(joiningMemberId: String): Future[JoinMemberResponse] = {
     log.debug(s"Joining with $id")
     client.send(JoinMember(joiningMemberId)).recover {
-      case ChannelWriteException(e: ConnectException) ⇒
-        log.debug(s"Can't connect to member $id")
+      case reason: Throwable ⇒
+        log.warn(s"Can't join to member $id", reason)
         JoinMemberResponse(false)
     }
   }

@@ -6,6 +6,7 @@ import scala.collection.JavaConverters._
 
 class Configuration(var config: Config) {
 
+  val Id = "ckite.id"
   val Bootstrap = "ckite.bootstrap"
 
   val MinElectionTimeout = "ckite.election.min-timeout"
@@ -18,16 +19,24 @@ class Configuration(var config: Config) {
   val HeartbeatsPeriod = "ckite.append-entries.period"
   val AppendEntriesWorkers = "ckite.append-entries.workers"
 
-  val ListenAddress = "ckite.listen-address"
   val Members = "ckite.members"
   val LeaderTimeout = "ckite.leader-timeout"
 
-  val ThriftWorkers = "ckite.thrift.workers"
+  val ListenAddress = "ckite.finagle.listen-address"
+  val ThriftWorkers = "ckite.finagle.thrift.workers"
 
   val CompactionThreshold = "ckite.log.compaction-threshold"
   val FlushSize = "ckite.log.flush-size"
   val Sync = "ckite.log.sync"
   val DataDir = "ckite.datadir"
+
+  def withId(memberId: String) = {
+    config = config.withValue(Id, ConfigValueFactory.fromAnyRef(memberId))
+  }
+
+  def id(): String = {
+    config.getString(Id)
+  }
 
   def withMinElectionTimeout(minElectionTimeout: Int) = {
     config = config.withValue(MinElectionTimeout, ConfigValueFactory.fromAnyRef(minElectionTimeout))

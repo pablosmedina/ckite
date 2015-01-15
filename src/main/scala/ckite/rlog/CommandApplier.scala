@@ -1,32 +1,15 @@
 package ckite.rlog
 
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.SynchronousQueue
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
-
-import scala.concurrent.ExecutionContext
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Promise
-import scala.concurrent.Future
-
-import com.twitter.concurrent.NamedPoolThreadFactory
+import java.util.concurrent.{ LinkedBlockingQueue, SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 
 import ckite.RLog
-import ckite.exception.WriteTimeoutException
-import ckite.rpc.ClusterConfigurationCommand
-import ckite.rpc.Command
-import ckite.rpc.JointConfiguration
-import ckite.rpc.LogEntry
-import ckite.rpc.MajorityJointConsensus
-import ckite.rpc.NewConfiguration
-import ckite.rpc.NoOp
-import ckite.rpc.ReadCommand
-import ckite.rpc.WriteCommand
-import ckite.statemachine.CommandExecutor
-import ckite.statemachine.StateMachine
+import ckite.rpc.{ ClusterConfigurationCommand, Command, JointConfiguration, LogEntry, MajorityJointConsensus, NewConfiguration, NoOp, ReadCommand, WriteCommand }
+import ckite.statemachine.{ CommandExecutor, StateMachine }
 import ckite.util.CKiteConversions.fromFunctionToRunnable
-import ckite.util.Logging
+import ckite.util.{ CustomThreadFactory, Logging }
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ Future, Promise }
 
 class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
 
@@ -34,7 +17,7 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   val commitIndexQueue = new LinkedBlockingQueue[Long]()
 
   val workerPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), new NamedPoolThreadFactory("CommandApplier-worker", true))
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), CustomThreadFactory("CommandApplier-worker", true))
 
   @volatile
   var commitIndex: Long = 0
@@ -56,7 +39,6 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
   }
 
   def commit(index: Long) = {
-    log.trace(s"Commit index received: $index")
     if (lastApplied < index) commitIndexQueue.offer(index)
   }
 
@@ -65,12 +47,9 @@ class CommandApplier(rlog: RLog, stateMachine: StateMachine) extends Logging {
     try {
       while (true) {
         val index = next
-        log.trace(s"Dequeued index $index to be applied")
         if (lastApplied < index) {
-          log.trace(s"Dequeued index $index is bigger than lastApplied.")
           val entry = rlog.logEntry(index)
           if (isFromCurrentTerm(entry)) {
-            log.trace(s"Dequeued index $index is from current term.")
             applyUntil(entry.get)
           }
         }

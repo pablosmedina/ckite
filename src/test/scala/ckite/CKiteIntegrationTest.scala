@@ -1,17 +1,14 @@
 package ckite
 
-import ckite.example.KVStore
-import ckite.example.Put
-import ckite.rlog.MapDBLog
-import org.scalatest._
-import ckite.example.Get
-import ckite.example.Put
-import ckite.exception.WriteTimeoutException
-import ckite.util.Logging
-import scala.concurrent.Await
-import scala.concurrent.Future
-import scala.concurrent.duration._
 import java.util.concurrent.TimeoutException
+
+import ckite.example.{Get, KVStore, Put}
+import ckite.rlog.MapDBLog
+import ckite.util.Logging
+import org.scalatest._
+
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
 
 class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
@@ -24,82 +21,82 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   val Member4Address = "localhost:9094"
 
   "A single member cluster" should "elect a Leader" in {
-    val raft = RaftBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).bootstrap(true).log(MapDBLog(someTmpDir)).build
-    raft start
+    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
+      .stateMachine(new KVStore()).bootstrap(true).log(MapDBLog(someTmpDir)).rpc(TestRpc).build.asInstanceOf[CKiteClient]
+    ckite start
 
-    raft.isLeader should be
+    ckite.isLeader should be
 
-    raft stop
+    ckite stop
   }
 
   it should "read committed writes" in {
-    val raft = RaftBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).bootstrap(true).build
-    raft start
+    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
+      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    ckite start
 
-    await(raft.write(Put(Key1, Value1)))
+    await(ckite.write(Put(Key1, Value1)))
 
-    val readValue = await(raft.read(Get(Key1)))
+    val readValue = await(ckite.read(Get(Key1)))
 
     readValue should be(Value1)
 
-    raft stop
+    ckite stop
   }
 
   it should "compact a log & reload snapshot" in {
     val dir = someTmpDir
 
-    val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
+    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
       .compactionThreshold(5 + 1) //5 writes + 1 NoOp
-      .stateMachine(new KVStore()).bootstrap(true).build
-    raft start
+      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    ckite start
 
-    await(raft.write(Put("key1", "value1")))
-    await(raft.write(Put("key2", "value2")))
-    await(raft.write(Put("key3", "value3")))
-    await(raft.write(Put("key4", "value4")))
-    await(raft.write(Put("key5", "value5")))
+    await(ckite.write(Put("key1", "value1")))
+    await(ckite.write(Put("key2", "value2")))
+    await(ckite.write(Put("key3", "value3")))
+    await(ckite.write(Put("key4", "value4")))
+    await(ckite.write(Put("key5", "value5")))
 
     //log should be compacted at this point
 
-    await(raft.write(Put("key6", "value6")))
+    await(ckite.write(Put("key6", "value6")))
 
     waitSomeTimeForElection
 
-    raft stop
+    ckite stop
 
-    val raftRestarted = rebuild(raft)
+    val ckiteRestarted = rebuild(ckite)
 
-    raftRestarted.start
+    ckiteRestarted.start
 
-    await(raftRestarted.read(Get("key1"))) should be("value1")
-    await(raftRestarted.read(Get("key2"))) should be("value2")
-    await(raftRestarted.read(Get("key3"))) should be("value3")
-    await(raftRestarted.read(Get("key4"))) should be("value4")
-    await(raftRestarted.read(Get("key5"))) should be("value5")
+    await(ckiteRestarted.read(Get("key1"))) should be("value1")
+    await(ckiteRestarted.read(Get("key2"))) should be("value2")
+    await(ckiteRestarted.read(Get("key3"))) should be("value3")
+    await(ckiteRestarted.read(Get("key4"))) should be("value4")
+    await(ckiteRestarted.read(Get("key5"))) should be("value5")
 
-    raftRestarted.stop
+    ckiteRestarted.stop
   }
 
   it should "restore latest cluster configuration from Log" in {
     val dir = someTmpDir
 
-    val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
-      .stateMachine(new KVStore()).bootstrap(true).build
-    raft start
+    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
+      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    ckite start
 
     //It is expected to timeout since Member2 is not up and the configuration must to committed under the new configuration (member1 and member2)
     //TODO: What if two subsequent JointConfiguration ???
     intercept[TimeoutException] {
-      await(raft.addMember(Member2Address))
+      await(ckite.addMember(Member2Address))
     }
 
-    raft stop
+    ckite stop
 
-    val raftRestarted = rebuild(raft)
+    val ckiteRestarted = rebuild(ckite)
 
-    val members = raftRestarted.getMembers
+    val members = ckiteRestarted.getMembers
 
     members should contain(Member2Address)
   }
@@ -107,27 +104,27 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   it should "restore latest cluster configuration from Snapshot" in {
     val dir = someTmpDir
 
-    val raft = RaftBuilder().listenAddress(Member1Address).dataDir(dir)
+    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
       .compactionThreshold(2 + 1) //1 writes + 1 NoOp
-      .stateMachine(new KVStore()).bootstrap(true).build
-    raft start
+      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    ckite start
 
     //It is expected to timeout since 9092 is not up and the configuration need to committed under the new configuration (9091 and 9092)
     //TODO: What if two subsequent EnterJointConsensus ???
     intercept[TimeoutException] {
-      await(raft.addMember(Member2Address))
+      await(ckite.addMember(Member2Address))
     }
 
     //This will force the Snapshot. Again, it is expected to timeout.
     intercept[TimeoutException] {
-      await(raft.write(Put(Key1, Value1)))
+      await(ckite.write(Put(Key1, Value1)))
     }
 
-    raft.stop
+    ckite.stop
 
-    val raftRestarted = rebuild(raft)
+    val ckiteRestarted = rebuild(ckite)
 
-    val members = raftRestarted.getMembers
+    val members = ckiteRestarted.getMembers
 
     members should contain(Member2Address)
   }
@@ -201,7 +198,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val leader = members leader
 
     //all the followers goes down
-    (members followers) foreach { _.stop }
+    (members followers) foreach {
+      _.stop
+    }
 
     //leader no longer have quorum. this write is going to be rejected
     intercept[TimeoutException] {
@@ -211,20 +210,22 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   it should "replicate missing commands on restarted member" in {
 
-    val member1 = RaftBuilder().listenAddress(Member1Address)
-      .dataDir(someTmpDir).stateMachine(new KVStore()).bootstrap(true).build
+    val member1 = CKiteBuilder().listenAddress(Member1Address)
+      .dataDir(someTmpDir).stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
 
-    val member2 = RaftBuilder().listenAddress(Member2Address).members(Seq(Member1Address, Member3Address))
+    val member2 = CKiteBuilder().listenAddress(Member2Address).members(Seq(Member1Address, Member3Address))
       .minElectionTimeout(1000).maxElectionTimeout(1000).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).build
+      .stateMachine(new KVStore()).rpc(TestRpc).build
 
-    val member3 = RaftBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
+    val member3 = CKiteBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
       .minElectionTimeout(2000).maxElectionTimeout(2000).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).build
+      .stateMachine(new KVStore()).rpc(TestRpc).build
 
     val members = Seq(member1, member2, member3)
 
-    members foreach { _ start }
+    members foreach {
+      _ start
+    }
 
     try {
 
@@ -263,8 +264,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     //add member4 to the cluster
     await(leader.addMember(Member4Address))
 
-    val member4 = RaftBuilder().listenAddress(Member4Address).members(Seq(Member2Address, Member1Address, Member3Address))
-      .dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).build
+    val member4 = CKiteBuilder().listenAddress(Member4Address).members(Seq(Member2Address, Member1Address, Member3Address))
+      .dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).rpc(TestRpc).build.asInstanceOf[CKiteClient]
     //start member4
     member4.start
 
@@ -290,7 +291,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val followers = (members followers)
 
     //stop the followers
-    followers foreach { _.stop }
+    followers foreach {
+      _.stop
+    }
 
     //this two writes will timeout since no majority can be reached 
     for (i ← (1 to 2)) {
@@ -304,8 +307,12 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     leader.stop
 
     //followers came back
-    val rebuiltFollowers = followers map { rebuild(_) }
-    rebuiltFollowers foreach { _.start }
+    val rebuiltFollowers = followers map {
+      rebuild(_)
+    }
+    rebuiltFollowers foreach {
+      _.start
+    }
     val livemembers = rebuiltFollowers
 
     waitSomeTimeForElection
@@ -323,41 +330,48 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     await(newleader.read(Get(Key1))) should be(null)
 
     oldleader.stop
-    rebuiltFollowers foreach { _.stop }
+    rebuiltFollowers foreach {
+      _.stop
+    }
 
   }
 
-  implicit def membersSequence(members: Seq[Raft]): RaftSequence = {
-    new RaftSequence(members)
+  implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
+    new CKiteSequence(members)
   }
 
-  class RaftSequence(members: Seq[Raft]) {
+  class CKiteSequence(members: Seq[CKite]) {
 
-    def followers = members filterNot { _ isLeader }
+    def followers = members filterNot {
+      _.asInstanceOf[CKiteClient].isLeader
+    }
+
     def leader = {
       val leaders = (members diff followers)
       val theLeader = leaders.head
-      withClue("Not unique Leader") { leaders diff Seq(theLeader) should be('empty) }
+      withClue("Not unique Leader") {
+        leaders diff Seq(theLeader) should be('empty)
+      }
       theLeader
     }
 
   }
 
-  private def withThreeMemberCluster(test: Seq[Raft] ⇒ Any) = {
+  private def withThreeMemberCluster(test: Seq[CKite] ⇒ Any) = {
     //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
-    val member1 = RaftBuilder().listenAddress(Member1Address)
+    val member1 = CKiteBuilder().listenAddress(Member1Address)
       .dataDir(someTmpDir).bootstrap(true)
-      .stateMachine(new KVStore()).build
+      .stateMachine(new KVStore()).rpc(TestRpc).build
 
-    val member2 = RaftBuilder().listenAddress(Member2Address).members(Seq(Member1Address))
+    val member2 = CKiteBuilder().listenAddress(Member2Address).members(Seq(Member1Address))
       .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
       .dataDir(someTmpDir)
-      .stateMachine(new KVStore()).build
+      .stateMachine(new KVStore()).rpc(TestRpc).build
 
-    val member3 = RaftBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
+    val member3 = CKiteBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
       .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
       .dataDir(someTmpDir)
-      .stateMachine(new KVStore()).build
+      .stateMachine(new KVStore()).rpc(TestRpc).build
     val members = Seq(member1, member2, member3)
     log.info(s"Starting all the members")
     member1 start
@@ -372,11 +386,15 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       test(members)
     } finally {
       log.info(s"Stopping all the members")
-      members foreach { _ stop }
+      members foreach {
+        _ stop
+      }
     }
   }
 
-  private def rebuild(raft: Raft) = raft.builder.stateMachine(new KVStore).bootstrap(false).build
+  private def rebuild(ckite: CKite): CKiteClient = {
+    ckite.asInstanceOf[CKiteClient].builder.stateMachine(new KVStore).bootstrap(false).build.asInstanceOf[CKiteClient]
+  }
 
   private def waitSomeTimeForElection = Thread.sleep(2000)
 

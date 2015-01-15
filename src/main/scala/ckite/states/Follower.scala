@@ -65,7 +65,7 @@ case class Follower(cluster: Cluster, passive: Boolean = false, term: Int, leade
         }
 
         cluster.rlog.tryAppend(appendEntries) map { success ⇒
-          AppendEntriesResponse(cluster.local.term, success)
+          AppendEntriesResponse(term, success)
         }
       }
     }

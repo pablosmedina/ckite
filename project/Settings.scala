@@ -30,6 +30,29 @@ object Settings {
       "-language:implicitConversions",
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
+    )) ++ sonatypeSettings
+
+  lazy val scroogeSettings = Seq(
+    scalaVersion := ScalaVersion,
+    organization := "io.ckite",
+    version := "0.2.0-SNAPSHOT",
+    fork in(Test, run) := true,
+    javacOptions := Seq(
+      "-source", "1.8", "-target", "1.8"
+    ),
+    scalacOptions := Seq(
+      "-encoding",
+      "utf8",
+      "-g:vars",
+      "-feature",
+      "-unchecked",
+      "-optimise",
+      "-deprecation",
+      "-target:jvm-1.8",
+      "-language:postfixOps",
+      "-language:implicitConversions",
+      "-language:reflectiveCalls",
+      "-Xlog-reflective-calls"
     )) ++ sonatypeSettings ++ com.twitter.scrooge.ScroogeSBT.newSettings
 
   lazy val sonatypeSettings = Seq(
