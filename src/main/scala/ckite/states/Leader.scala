@@ -1,227 +1,266 @@
 package ckite.states
 
 import java.lang.Boolean
-import java.util.concurrent.{ ConcurrentHashMap, ScheduledThreadPoolExecutor, TimeUnit }
+import java.util.concurrent.TimeUnit
 
-import ckite.{ Cluster, Member, RemoteMember }
+import ckite._
+import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
-import ckite.stats.{ FollowerInfo, LeaderInfo, StateInfo }
 import ckite.util.CKiteConversions.fromFunctionToRunnable
-import ckite.util.{ CustomThreadFactory, Logging }
+import ckite.util.ConcurrencySupport
 
-import scala.collection.JavaConversions.mapAsScalaConcurrentMap
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{ Future, Promise }
-import scala.concurrent.duration.DurationLong
+import scala.concurrent.Future
+import scala.concurrent.duration._
 
-case class Leader(cluster: Cluster, term: Int, leaderPromise: Promise[Member]) extends State(Some(cluster.local.id)) {
+case class Leader(consensus: Consensus, membership: Membership, log: RLog, term: Term, leaderAnnouncer: LeaderAnnouncer) extends State(Some(membership.myId)) with ConcurrencySupport {
 
-  val ReplicationTimeout = cluster.configuration.appendEntriesTimeout
-  val startTime = System.currentTimeMillis()
-
-  val heartbeater = new Heartbeater(cluster)
-  val followersInfo = new ConcurrentHashMap[String, Long]()
-
-  val appendEntriesTimeout = cluster.configuration.appendEntriesTimeout millis
+  private val ReplicationTimeout = consensus.configuration.appendEntriesTimeout
+  private val AppendEntriesTimeout = consensus.configuration.appendEntriesTimeout millis
+  private val scheduledHeartbeatsPool = scheduler("HeartbeatThread")
 
   override def begin() = {
-    if (term < cluster.local.term) {
-      log.debug(s"Cant be a Leader of term $term. Current term is ${cluster.local.term}")
-      cluster.local.becomeFollower(cluster.local.term)
+    if (term < consensus.term) {
+      logger.debug(s"Can't be a Leader of term $term. Current term is ${consensus.term}")
+      consensus.becomeFollower(consensus.term)
     } else {
-      resetLastLog()
+      resetLastIndex()
       resetNextAndMatchIndexes()
-      resetFollowerInfo()
-      heartbeater start term
-      appendNoOp
-      log.info(s"Start being $this")
-      leaderPromise.success(cluster.local)
-      cluster.local.persistState
+      startBroadcasting()
+      appendNoOp()
+      announceLeadership()
     }
   }
 
-  private def appendNoOp = {
-    if (cluster.rlog.lastLog.longValue() == 0) {
-      log.info("Will set a configuration with just myself: {}", cluster.local.id)
-      on[Boolean](NewConfiguration(List(cluster.local.id))) //the initial configuration must be saved in the log
+  def startBroadcasting() {
+    logger.debug("Start broadcasting...")
+    scheduledHeartbeatsPool.scheduleAtFixedRate(() ⇒ {
+      broadcast()
+    }, 0, consensus.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)
+  }
+
+  private def broadcast(): Unit = {
+    logger.trace(s"Leader[$term] broadcasting AppendEntries")
+    membership.remoteMembers foreach { member ⇒ sendAppendEntries(member) }
+  }
+
+  private def sendAppendEntries(member: RemoteMember): Future[Unit] = Future {
+    val request = createAppendEntriesFor(member)
+    if (!request.entries.isEmpty) {
+      logger.trace("Sending {} entries to {}", request.entries.size, member.id)
+    }
+    member.sendAppendEntries(request).map { response ⇒
+      logger.trace(s"AppendEntries response ${response} from ${member.id}")
+      if (response.term > term) {
+        receivedHigherTerm(response.term)
+      } else {
+        receivedAppendEntriesResponse(member, request, response)
+      }
+    }.recover {
+      case e: Exception ⇒
+        logger.trace("Error sending appendEntries {}", e.getMessage())
+        if (!request.entries.isEmpty) {
+          member.markReplicationsNotInProgress(request.entries.map(_.index))
+        }
+    }
+  }
+
+  private def createAppendEntriesFor(member: RemoteMember) = toReplicateEntriesOf(member) match {
+    case head :: list ⇒ replication(head, list)
+    case Nil          ⇒ heartbeat()
+  }
+
+  private def receivedHigherTerm(higherTerm: Int) = {
+    val currentTerm = consensus.term
+    if (higherTerm > currentTerm) {
+      logger.debug("Detected a term {} higher than current term {}. Step down", higherTerm, currentTerm)
+      stepDown(higherTerm)
+    }
+  }
+
+  private def replication(head: LogEntry, tail: List[LogEntry]) = {
+    val entries = head :: tail
+    log.getPreviousLogEntry(head) match {
+      case Some(previous) ⇒ normalReplication(previous, entries)
+      case None           ⇒ firstReplication(entries)
+    }
+  }
+
+  private def normalReplication(previous: LogEntry, entries: List[LogEntry]) = {
+    AppendEntries(term, membership.myId, log.commitIndex, previous.index, previous.term, entries)
+  }
+
+  private def firstReplication(entries: List[LogEntry]) = {
+    AppendEntries(term, membership.myId, log.commitIndex, entries = entries)
+  }
+
+  private def heartbeat() = AppendEntries(term, membership.myId, log.commitIndex)
+
+  private def toReplicateEntriesOf(member: RemoteMember): List[LogEntry] = {
+    val index = member.nextLogIndex.longValue()
+    val entries = for (
+      entry ← log.entry(index) if (member.canReplicateIndex(index))
+    ) yield entry
+    List(entries).flatten
+  }
+
+  def stopBroadcasting() = {
+    logger.debug("Stop broadcasting")
+    scheduledHeartbeatsPool.shutdownNow()
+  }
+
+  private def announceLeadership() = {
+    logger.info(s"Start being $this")
+    leaderAnnouncer.announce(membership.myId)
+  }
+
+  private def appendNoOp() = {
+    if (log.isEmpty) {
+      logger.info("Log is empty. First Leader. Appending initial cluster configuration")
+      onCommand[Boolean](NewConfiguration(Set(membership.myId))) //the initial configuration must go through the log
     } else {
-      log.debug("Append a NoOp as part of Leader initialization")
-      on[Unit](NoOp())
+      logger.debug("Append a NoOp as part of Leader initialization")
+      onCommand[Unit](NoOp())
     }
   }
 
-  private def resetLastLog() = cluster.rlog.resetLastLog()
+  private def resetLastIndex() = log.resetLastIndex()
 
   private def resetNextAndMatchIndexes() = {
-    val nextIndex = cluster.rlog.lastLog.longValue() + 1
-    cluster.membership.remoteMembers.foreach { member ⇒ member.setNextLogIndex(nextIndex); member.resetMatchIndex }
+    val nextIndex = log.lastIndex + 1
+    membership.remoteMembers.foreach { member ⇒ member.setNextLogIndex(nextIndex); member.resetMatchIndex }
   }
 
   override def stop(stopTerm: Int) = {
     if (stopTerm > term) {
-      heartbeater stop
-
-      log.debug("Stop being Leader")
+      stopBroadcasting()
+      logger.debug("Stop being Leader")
     }
   }
 
-  override def on[T](command: Command): Future[T] = {
+  override def onCommand[T](command: Command): Future[T] = {
     command match {
-      case w: WriteCommand[T] ⇒ onWriteCommand[T](w)
-      case r: ReadCommand[T]  ⇒ onReadCommand[T](r)
+      case write: WriteCommand[T] ⇒ onWriteCommand[T](write)
+      case read: ReadCommand[T]   ⇒ onReadCommand[T](read)
     }
   }
 
   private def onWriteCommand[T](write: WriteCommand[T]): Future[T] = {
-    cluster.rlog.append[T](write) flatMap { tuple ⇒
+    log.append[T](term, write) flatMap { tuple ⇒
       val logEntry = tuple._1
       val valuePromise = tuple._2
-      replicate(logEntry)
+      broadcast(logEntry)
       valuePromise.future
     }
   }
 
-  private def replicate(logEntry: LogEntry) = {
-    if (cluster.membership.hasRemoteMembers()) {
-      cluster.broadcastAppendEntries(logEntry.term)
+  private def broadcast(logEntry: LogEntry): Unit = {
+    if (membership.hasRemoteMembers) {
+      broadcast()
     } else {
-      log.debug("No member to replicate")
-      cluster.rlog commit logEntry.index
+      logger.debug("No member to broadcast")
+      log.commit(logEntry.index)
     }
   }
 
   private def onReadCommand[T](command: ReadCommand[T]): Future[T] = Future {
-    cluster.rlog execute command
+    log.execute(command)
   }
 
   override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
     if (appendEntries.term < term) {
-      rejectAppendEntries(appendEntries, "old term")
+      rejectOldLeader(appendEntries)
     } else {
-      stepDown(appendEntries.term, Some(appendEntries.leaderId))
-      cluster.local.onAppendEntries(appendEntries)
+      stepDownAndPropagate(appendEntries)
     }
   }
 
-  override def on(requestVote: RequestVote): Future[RequestVoteResponse] = {
+  override def onRequestVote(requestVote: RequestVote): Future[RequestVoteResponse] = {
     if (requestVote.term <= term) {
       rejectVote(requestVote.memberId, s"being Leader in term $term")
     } else {
-      stepDown(requestVote.term, None)
-      cluster.local onRequestVote requestVote
+      stepDownAndPropagate(requestVote)
     }
   }
 
-  override def on(jointConsensusCommited: MajorityJointConsensus) = {
-    log.debug(s"JointConfiguration is committed... will switch to NewConfiguration")
-    cluster.onCommandReceived[Boolean](NewConfiguration(jointConsensusCommited.newBindings))
+  override def onJointConfigurationCommitted(jointConfiguration: JointConfiguration) = {
+    logger.debug(s"JointConfiguration is committed... will use and broadcast a NewConfiguration")
+    onCommand[Boolean](NewConfiguration(jointConfiguration.newMembers))
   }
 
-  override protected def getCluster: Cluster = cluster
-
-  override def toString = s"Leader[$term]"
-
-  override def info(): StateInfo = {
-    val now = System.currentTimeMillis()
-    val followers = followersInfo.map {
-      tuple ⇒
-        val member = cluster.membership.obtainRemoteMember(tuple._1).get
-        (tuple._1, FollowerInfo(lastAck(tuple._2, now), member.matchIndex.intValue(), member.nextLogIndex.intValue()))
-    }
-    LeaderInfo(leaderUptime.toString, followers.toMap)
+  override def onInstallSnapshot(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse] = {
+    Future.successful(InstallSnapshotResponse(false))
   }
 
-  private def leaderUptime = System.currentTimeMillis() - startTime millis
-
-  private def lastAck(ackTime: Long, now: Long) = if (ackTime > 0) (now - ackTime millis).toString else "Never"
-
-  private def resetFollowerInfo() = {
-    cluster.membership.remoteMembers.foreach { member ⇒ followersInfo.put(member.id, -1) }
-  }
-
-  override def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
-    val time = System.currentTimeMillis()
+  private def receivedAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
     if (!request.entries.isEmpty) {
-      onAppendEntriesResponseUpdateNextLogIndex(member, request, response)
+      updateNextLogIndex(member, request, response)
     }
     val nextIndex = member.nextLogIndex.intValue()
     if (isLogEntryInSnapshot(nextIndex)) {
       val wasEnabled = member.disableReplications()
       if (wasEnabled) {
-        log.debug(s"Next LogIndex #$nextIndex to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
+        logger.debug(s"Next LogIndex #$nextIndex to be sent to ${member} is contained in a Snapshot. An InstallSnapshot will be sent.")
         sendInstallSnapshot(member)
       }
     }
-    followersInfo.put(member.id, time)
   }
 
-  private def onAppendEntriesResponseUpdateNextLogIndex(member: RemoteMember, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
+  private def updateNextLogIndex(member: RemoteMember, appendEntries: AppendEntries, appendEntriesResponse: AppendEntriesResponse) = {
     val lastIndexSent = appendEntries.entries.last.index
     if (appendEntriesResponse.success) {
-      member.ackLogEntry(lastIndexSent)
-      log.debug(s"Member ${member} ack - index sent #$lastIndexSent - next index #${member.nextLogIndex}")
+      member.acknowledgeIndex(lastIndexSent)
+      logger.debug(s"Member ${member} ack - index sent #$lastIndexSent - next index #${member.nextLogIndex}")
       tryToCommitEntries(lastIndexSent)
     } else {
       member.decrementNextLogIndex()
-      log.debug(s"Member ${member} reject - index sent #$lastIndexSent - next index is #${member.nextLogIndex}")
+      if (!appendEntries.entries.isEmpty) {
+        member.markReplicationsNotInProgress(appendEntries.entries.map(_.index))
+      }
+      logger.debug(s"Member ${member} reject - index sent #$lastIndexSent - next index is #${member.nextLogIndex}")
     }
   }
 
   private def tryToCommitEntries(lastEntrySent: Long) = {
-    val currentCommitIndex = cluster.rlog.commitIndex.longValue()
+    val currentCommitIndex = log.commitIndex
     (currentCommitIndex + 1) to lastEntrySent foreach { index ⇒
-      if (reachMajority(index)) {
-        cluster.rlog commit index
+      if (reachQuorum(index)) {
+        log.commit(index)
       }
     }
   }
 
-  private def reachMajority(index: Long) = cluster.membership.reachMajority(membersHavingAtLeast(index) :+ cluster.local)
+  private def reachQuorum(index: Index) = membership.reachQuorum(membersHavingAtLeast(index) + membership.myId)
 
-  private def membersHavingAtLeast(index: Long): Seq[RemoteMember] = {
-    cluster.membership.remoteMembers.filter { remoteMember ⇒ remoteMember.matchIndex.longValue() >= index }
+  private def membersHavingAtLeast(index: Long): Set[String] = {
+    membership.remoteMembers.filter { remoteMember ⇒ remoteMember.matchIndex.longValue() >= index } map {
+      _.id
+    }
   }
 
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
-    cluster.rlog.snapshotManager.isInSnapshot(logIndex)
+    log.snapshotManager.isInSnapshot(logIndex)
   }
 
   def sendInstallSnapshot(member: RemoteMember) = {
-    cluster.rlog.snapshotManager.latestSnapshot map { snapshot ⇒
-      val installSnapshot = InstallSnapshot(snapshot)
-      log.debug(s"Sending $installSnapshot to ${member}")
+    log.snapshotManager.latestSnapshot map { snapshot ⇒
+      val installSnapshot = InstallSnapshot(term, membership.myId, snapshot)
+      logger.debug(s"Sending $installSnapshot to ${member}")
       member.sendInstallSnapshot(installSnapshot).map { response ⇒
         if (response.success) {
-          log.debug("Successful InstallSnapshot")
-          member.ackLogEntry(snapshot.lastLogEntryIndex)
-          tryToCommitEntries(snapshot.lastLogEntryIndex)
+          logger.debug("Successful InstallSnapshot")
+          member.acknowledgeIndex(snapshot.index)
+          tryToCommitEntries(snapshot.index)
         } else {
-          log.debug("Failed InstallSnapshot")
+          logger.debug("Failed InstallSnapshot")
         }
         member.enableReplications()
       }
 
     }
   }
+
+  override def toString = s"Leader[$term]"
+
 }
 
-class Heartbeater(cluster: Cluster) extends Logging {
-
-  val scheduledHeartbeatsPool = new ScheduledThreadPoolExecutor(1, CustomThreadFactory("Heartbeater", true))
-
-  def start(term: Int) = {
-    log.debug("Start Heartbeater")
-
-    val task: Runnable = () ⇒ {
-      log.trace(s"Leader[$term] broadcasting hearbeats")
-      cluster.broadcastAppendEntries(term)
-    }
-    scheduledHeartbeatsPool.scheduleAtFixedRate(task, 0, cluster.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)
-
-  }
-
-  def stop() = {
-    log.debug("Stop Heartbeater")
-    scheduledHeartbeatsPool.shutdownNow()
-  }
-}

@@ -2,8 +2,9 @@ package ckite.states
 
 import java.util.concurrent.atomic.AtomicReference
 
-import ckite.{ Cluster, Member, RemoteMember }
-import ckite.rpc.{ AppendEntries, AppendEntriesResponse, Command, MajorityJointConsensus, RequestVote, RequestVoteResponse }
+import ckite._
+import ckite.rpc.LogEntry.Term
+import ckite.rpc._
 import ckite.stats.{ NonLeaderInfo, StateInfo }
 import ckite.util.Logging
 
@@ -13,72 +14,75 @@ abstract class State(vote: Option[String] = None) extends Logging {
 
   val votedFor = new AtomicReference[Option[String]](vote)
 
-  def term: Int
+  private val GRANTED = true
+  private val REJECTED = false
 
-  def leaderPromise: Promise[Member]
+  def leaderAnnouncer: LeaderAnnouncer
+  def term: Term
+  protected def membership: Membership
+  protected def consensus: Consensus
 
   def begin() = {
   }
 
-  def stop(term: Int) = {
+  def stop(term: Term) = {
   }
 
-  def on(requestVote: RequestVote): Future[RequestVoteResponse]
+  def onRequestVote(requestVote: RequestVote): Future[RequestVoteResponse]
 
   def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse]
 
-  def on[T](command: Command): Future[T] = throw new UnsupportedOperationException()
+  def onCommand[T](command: Command): Future[T] = throw new UnsupportedOperationException()
 
-  def on(jointConsensusCommitted: MajorityJointConsensus) = {}
+  def onJointConfigurationCommitted(jointConfiguration: JointConfiguration) = {}
 
-  def canTransitionTo(newState: State): Boolean = {
-    newState.term > term
-  }
+  def onInstallSnapshot(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse]
+
+  def canTransitionTo(newState: State): Boolean = newState.term > term
 
   /**
-   * Step down from being either Candidate or Leader and start following the given Leader
-   * on the given Term
+   * Step down and become Follower in the given Term
    */
-  def stepDown(term: Int, leaderId: Option[String]): Unit = {
-    val cluster = getCluster
-    log.debug(s"${cluster.local.id} Step down from being $this")
-
-    leaderId flatMap { lid: String ⇒
-      cluster.membership.obtainMember(lid) map { leader ⇒
-        announceLeader(leader)
-        cluster.local.becomeFollower(term = term, leaderPromise = Promise.successful(leader))
-      }
-    } orElse {
-      if (!leaderAnnounced) {
-        //propagate leader promise
-        cluster.local becomeFollower (term = term, leaderPromise = cluster.local.currentState.leaderPromise)
-      } else {
-        cluster.local becomeFollower term
-      }
-      None
-    }
+  protected def stepDown(term: Term): Unit = {
+    logger.debug(s"${membership.myId} Step down from being $this")
+    consensus.becomeFollower(term = term, leaderAnnouncer = leaderAnnouncer.onStepDown)
   }
 
-  def rejectVote(candidateRejected: String, reason: String): Future[RequestVoteResponse] = {
-    log.debug(s"Rejecting vote to $candidateRejected due to $reason")
-    Future.successful(RequestVoteResponse(term, false))
+  protected def stepDownAndPropagate(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
+    stepDown(appendEntries.term)
+    consensus.onAppendEntries(appendEntries)
   }
 
-  def rejectAppendEntries(appendEntries: AppendEntries, reason: String): Future[AppendEntriesResponse] = {
-    log.debug(s"Rejecting $AppendEntries due to $reason")
-    Future.successful(AppendEntriesResponse(term, false))
+  protected def stepDownAndPropagate(requestVote: RequestVote): Future[RequestVoteResponse] = {
+    stepDown(requestVote.term)
+    consensus.onRequestVote(requestVote)
   }
 
-  def info(): StateInfo = NonLeaderInfo(getCluster.leader.toString())
-
-  protected def getCluster: Cluster
-
-  protected def announceLeader(leader: Member) = {
-    getCluster.local.currentState.leaderPromise.trySuccess(leader)
+  protected def rejectVote(candidateRejected: String, reason: String): Future[RequestVoteResponse] = {
+    logger.debug(s"Rejecting vote to $candidateRejected due to $reason")
+    Future.successful(RequestVoteResponse(term, REJECTED))
   }
 
-  protected def leaderAnnounced = getCluster.local.currentState.leaderPromise.isCompleted
+  protected def rejectOldCandidate(candidateRejected: String) = {
+    rejectVote(candidateRejected, "old Candidate term")
+  }
 
-  def onAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {}
+  protected def rejectOldLeader(appendEntries: AppendEntries) = {
+    rejectAppendEntries(appendEntries, "old Leader term")
+  }
 
+  protected def grantVote() = {
+    Future.successful(RequestVoteResponse(term, GRANTED))
+  }
+
+  protected def rejectAppendEntries(appendEntries: AppendEntries, reason: String): Future[AppendEntriesResponse] = {
+    logger.debug(s"Rejecting $AppendEntries due to $reason")
+    Future.successful(AppendEntriesResponse(term, REJECTED))
+  }
+
+  protected def rejectInstallSnapshot() = Future.successful(InstallSnapshotResponse(REJECTED))
+
+  def isLeader = {
+    leaderAnnouncer.awaitLeader.id() == membership.myId
+  }
 }

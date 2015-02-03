@@ -1,16 +1,14 @@
 package ckite.rpc
 
-import com.esotericsoftware.kryo.KryoSerializable
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.io.Output
-import com.esotericsoftware.kryo.io.Input
+import com.esotericsoftware.kryo.{ Kryo, KryoSerializable }
+import com.esotericsoftware.kryo.io.{ Input, Output }
 
-case class NewConfiguration(var bindings: List[String]) extends WriteCommand[Boolean] with KryoSerializable with ClusterConfigurationCommand {
+case class NewConfiguration(var bindings: Set[String]) extends ClusterConfigurationCommand with KryoSerializable {
   def write(kryo: Kryo, output: Output) = {
     output.writeString(bindings.mkString(","))
   }
 
   def read(kryo: Kryo, input: Input) = {
-    bindings = input.readString().split(",").toList
+    bindings = input.readString().split(",").toSet
   }
 }

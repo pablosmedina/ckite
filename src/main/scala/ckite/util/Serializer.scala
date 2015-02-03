@@ -48,7 +48,7 @@ class KryoSerializer(hintedClasses: List[Class[_]] = List.empty) extends Logging
       val bytes = outputStream.toByteArray()
       bytes
     } catch {
-      case e: Exception ⇒ log.trace("serialization error", e); throw e
+      case e: Exception ⇒ logger.trace("serialization error", e); throw e
     } finally {
       pool.release(kryo)
     }
@@ -67,7 +67,7 @@ class KryoSerializer(hintedClasses: List[Class[_]] = List.empty) extends Logging
     try {
       kryo.readClassAndObject(input).asInstanceOf[T]
     } catch {
-      case e: Exception ⇒ log.trace("deserialization error", e); throw e
+      case e: Exception ⇒ logger.trace("deserialization error", e); throw e
     } finally {
       pool.release(kryo)
     }

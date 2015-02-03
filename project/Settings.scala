@@ -30,7 +30,7 @@ object Settings {
       "-language:implicitConversions",
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
-    )) ++ sonatypeSettings
+    ))
 
   lazy val scroogeSettings = Seq(
     scalaVersion := ScalaVersion,
@@ -53,7 +53,7 @@ object Settings {
       "-language:implicitConversions",
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
-    )) ++ sonatypeSettings ++ com.twitter.scrooge.ScroogeSBT.newSettings
+    )) ++ com.twitter.scrooge.ScroogeSBT.newSettings
 
   lazy val sonatypeSettings = Seq(
     publishMavenStyle := true,

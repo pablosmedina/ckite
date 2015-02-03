@@ -1,6 +1,6 @@
 package ckite.rpc
 
-import ckite.rpc.thrift.{FinagleThriftClient, FinagleThriftServer}
+import ckite.rpc.thrift.{ FinagleThriftClient, FinagleThriftServer }
 import com.typesafe.config.ConfigFactory
 
 object FinagleThriftRpc extends Rpc {

@@ -1,18 +1,17 @@
 package ckite
 
-import ckite.rlog.{ MapDBLog, PersistentLog }
+import ckite.rlog.{ MemoryStorage, Storage }
 import ckite.rpc.Rpc
-import com.typesafe.config.ConfigFactory
-
 import ckite.statemachine.StateMachine
 import ckite.statemachine.j.StateMachineWrapper
+import com.typesafe.config.ConfigFactory
 
 class CKiteBuilder {
 
   private val configuration = new Configuration(ConfigFactory.load())
   private var stateMachine: StateMachine = _
-  private var persistentLog: PersistentLog = _
   private var rpc: Rpc = _
+  private var storage: Storage = MemoryStorage()
 
   def id(memberId: String): CKiteBuilder = {
     configuration.withId(memberId)
@@ -36,11 +35,6 @@ class CKiteBuilder {
 
   def listenAddress(localBinding: String): CKiteBuilder = {
     configuration.withLocalBinding(localBinding)
-    CKiteBuilder.this
-  }
-
-  def dataDir(dataDir: String): CKiteBuilder = {
-    configuration.withDataDir(dataDir)
     CKiteBuilder.this
   }
 
@@ -69,23 +63,8 @@ class CKiteBuilder {
     CKiteBuilder.this
   }
 
-  def flushSize(flushSize: Long): CKiteBuilder = {
-    configuration.withFlushSize(flushSize)
-    CKiteBuilder.this
-  }
-
-  def sync(enabled: Boolean): CKiteBuilder = {
-    configuration.withSyncEnabled(enabled)
-    CKiteBuilder.this
-  }
-
   def bootstrap(enabled: Boolean): CKiteBuilder = {
     configuration.bootstrap(enabled)
-    CKiteBuilder.this
-  }
-
-  def log(log: PersistentLog): CKiteBuilder = {
-    persistentLog = log
     CKiteBuilder.this
   }
 
@@ -94,9 +73,14 @@ class CKiteBuilder {
     CKiteBuilder.this
   }
 
-  def build(): CKite = {
+  def storage(storageImpl: Storage): CKiteBuilder = {
+    storage = storageImpl
+    CKiteBuilder.this
+  }
+
+  def build: CKite = {
     if (rpc == null) throw new IllegalStateException("Rpc implementation is required")
-    val cluster = new Cluster(stateMachine, rpc, configuration, Option(persistentLog).getOrElse(MapDBLog(configuration.dataDir)))
+    val cluster = new Raft(stateMachine, rpc, storage, configuration)
     new CKiteClient(cluster, rpc.createServer(cluster), CKiteBuilder.this)
   }
 

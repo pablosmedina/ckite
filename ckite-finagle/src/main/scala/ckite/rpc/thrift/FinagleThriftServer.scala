@@ -1,19 +1,19 @@
 package ckite.rpc.thrift
 
 import java.nio.ByteBuffer
-import java.util.concurrent.{SynchronousQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{ SynchronousQueue, ThreadPoolExecutor, TimeUnit }
 
 import ckite.rpc.thrift.ThriftConverters._
-import ckite.rpc.{RpcServer, RpcService}
+import ckite.rpc.{ RpcServer, RpcService }
 import ckite.util.CustomThreadFactory
-import com.twitter.finagle.{ListeningServer, Thrift}
-import com.twitter.util.{Future, FuturePool, Promise}
+import com.twitter.finagle.{ ListeningServer, Thrift }
+import com.twitter.util.{ Future, FuturePool, Promise }
 import com.typesafe.config.Config
 import org.apache.thrift.protocol.TBinaryProtocol
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Future => ScalaFuture}
-import scala.util.{Failure, Success}
+import scala.concurrent.{ Future ⇒ ScalaFuture }
+import scala.util.{ Failure, Success }
 
 case class FinagleThriftServer(rpcService: RpcService, config: Config) extends RpcServer {
   var closed = false
@@ -28,7 +28,7 @@ case class FinagleThriftServer(rpcService: RpcService, config: Config) extends R
     val promise = Promise[T]
     scalaFuture.onComplete {
       case Success(value) ⇒ promise.setValue(value)
-      case Failure(t) ⇒ promise.raise(t)
+      case Failure(t)     ⇒ promise.raise(t)
     }
     promise
   }

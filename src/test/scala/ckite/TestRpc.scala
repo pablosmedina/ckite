@@ -13,7 +13,7 @@ object TestRpc extends Rpc {
 
   val servers = new ConcurrentHashMap[String, TestServer]()
 
-  def server(binding: String): Cluster = {
+  def server(binding: String): Raft = {
     val server = servers.get(binding)
     if (server == null || server.isStopped()) {
       throw new IOException("Connection refused")
@@ -22,15 +22,15 @@ object TestRpc extends Rpc {
   }
 
   override def createServer(service: RpcService): RpcServer = {
-    val testServer: TestServer = new TestServer(service.asInstanceOf[Cluster])
-    servers.put(service.asInstanceOf[Cluster].local.id, testServer)
+    val testServer: TestServer = new TestServer(service.asInstanceOf[Raft])
+    servers.put(service.asInstanceOf[Raft].membership.myId, testServer)
     testServer
   }
 
   override def createClient(binding: String): RpcClient = new TestClient(binding)
 }
 
-class TestServer(val cluster: Cluster) extends RpcServer {
+class TestServer(val cluster: Raft) extends RpcServer {
   val stopped = new AtomicBoolean()
 
   override def start(): Unit = {

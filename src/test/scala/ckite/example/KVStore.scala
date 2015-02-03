@@ -14,7 +14,7 @@ class KVStore extends StateMachine with Logging {
 
   def applyWrite = {
     case (index, Put(key: String, value: String)) ⇒ {
-      log.debug(s"Put $key=$value")
+      logger.debug(s"Put $key=$value")
       map.put(key, value);
       lastIndex = index
       value
@@ -23,7 +23,7 @@ class KVStore extends StateMachine with Logging {
 
   def applyRead = {
     case Get(key) ⇒ {
-      log.debug(s"Get $key")
+      logger.debug(s"Get $key")
       map.get(key)
     }
   }

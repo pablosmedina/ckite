@@ -1,18 +1,16 @@
 package ckite.rpc
 
-import com.esotericsoftware.kryo.Kryo
-import ckite.util.KryoSerializer
-import com.esotericsoftware.kryo.io.Output
-import com.esotericsoftware.kryo.io.Input
-import com.esotericsoftware.kryo.KryoSerializable
+import com.esotericsoftware.kryo.{ Kryo, KryoSerializable }
+import com.esotericsoftware.kryo.io.{ Input, Output }
 
-case class JointConfiguration(var oldBindings: List[String], var newBindings: List[String]) extends WriteCommand[Boolean] with KryoSerializable with ClusterConfigurationCommand {
+case class JointConfiguration(var oldMembers: Set[String], var newMembers: Set[String]) extends ClusterConfigurationCommand with KryoSerializable {
   def write(kryo: Kryo, output: Output) = {
-    output.writeString(oldBindings.mkString(","))
-    output.writeString(newBindings.mkString(","))
+    output.writeString(oldMembers.mkString(","))
+    output.writeString(newMembers.mkString(","))
   }
+
   def read(kryo: Kryo, input: Input) = {
-    oldBindings = input.readString().split(",").toList
-    newBindings = input.readString().split(",").toList
+    oldMembers = input.readString().split(",").toSet
+    newMembers = input.readString().split(",").toSet
   }
 }

@@ -3,7 +3,7 @@ package ckite.util
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.atomic.AtomicInteger
 
-case class CustomThreadFactory(name: String, makeDaemons: Boolean) extends ThreadFactory {
+case class CustomThreadFactory(name: String, makeDaemons: Boolean = true) extends ThreadFactory {
   def this(name: String) = this(name, false)
 
   val group = new ThreadGroup(Thread.currentThread().getThreadGroup(), name)

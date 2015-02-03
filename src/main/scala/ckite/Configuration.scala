@@ -106,8 +106,8 @@ class Configuration(var config: Config) {
     config.getMilliseconds(LeaderTimeout)
   }
 
-  def memberBindings: Seq[String] = {
-    config.getStringList(Members).asScala
+  def memberBindings: Set[String] = {
+    config.getStringList(Members).asScala.toSet
   }
 
   def bootstrap: Boolean = {

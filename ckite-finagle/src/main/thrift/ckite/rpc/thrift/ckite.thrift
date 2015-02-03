@@ -40,7 +40,9 @@ struct SnapshotST {
 }
 
 struct InstallSnapshotST {
-	1: required SnapshotST snapshot;
+	1: required i32 term;
+	2: required string leaderId;
+	3: required SnapshotST snapshot;
 }
 
 struct InstallSnapshotResponseST {

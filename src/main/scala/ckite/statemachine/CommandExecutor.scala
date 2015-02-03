@@ -14,7 +14,7 @@ class CommandExecutor(stateMachine: StateMachine) extends Logging {
     val params = (index, write)
     if (writeFunction.isDefinedAt(params)) writeFunction(params).asInstanceOf[T]
     else {
-      log.warn(s"No handler for ${write} is available in the StateMachine")
+      logger.warn(s"No handler for ${write} is available in the StateMachine")
       throw new IllegalStateException(s"No handler for ${write}")
     }
   }
@@ -22,7 +22,7 @@ class CommandExecutor(stateMachine: StateMachine) extends Logging {
   def applyRead[T](read: ReadCommand[T]): T = {
     if (readFunction.isDefinedAt(read)) readFunction(read).asInstanceOf[T]
     else {
-      log.warn(s"No handler for ${read} is available in the StateMachine")
+      logger.warn(s"No handler for ${read} is available in the StateMachine")
       throw new IllegalStateException(s"No handler for ${read}")
     }
   }

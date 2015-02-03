@@ -19,7 +19,7 @@ case class FinagleThriftClient(binding: String) extends RpcClient with Logging {
     .hostConnectionLimit(10).hostConnectionCoresize(1).requestTimeout(Duration(60, TimeUnit.SECONDS)).build())
 
   override def send(request: RequestVote): ScalaFuture[RequestVoteResponse] = {
-    log.debug(s"Sending $request to $binding")
+    logger.debug(s"Sending $request to $binding")
     val f = client.sendRequestVote(request)
     val promise = Promise[RequestVoteResponse]()
     f.onSuccess(value ⇒ promise.success(value))
@@ -28,7 +28,7 @@ case class FinagleThriftClient(binding: String) extends RpcClient with Logging {
   }
 
   override def send(appendEntries: AppendEntries): ScalaFuture[AppendEntriesResponse] = {
-    log.trace(s"Sending $appendEntries to $binding")
+    logger.trace(s"Sending $appendEntries to $binding")
     val f = client.sendAppendEntries(appendEntries)
     val promise = Promise[AppendEntriesResponse]()
     f.onSuccess(value ⇒ promise.success(value))

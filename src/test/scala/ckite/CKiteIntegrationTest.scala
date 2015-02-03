@@ -2,12 +2,12 @@ package ckite
 
 import java.util.concurrent.TimeoutException
 
-import ckite.example.{Get, KVStore, Put}
-import ckite.rlog.MapDBLog
+import ckite.example.{ Get, KVStore, Put }
+import ckite.rlog.MemoryStorage
 import ckite.util.Logging
 import org.scalatest._
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{ Await, Future }
 import scala.concurrent.duration._
 
 class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
@@ -15,14 +15,16 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   val Key1 = "key1"
   val Value1 = "value1"
 
+  val BOOTSTRAP = true
+
   val Member1Address = "localhost:9091"
   val Member2Address = "localhost:9092"
   val Member3Address = "localhost:9093"
   val Member4Address = "localhost:9094"
 
   "A single member cluster" should "elect a Leader" in {
-    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).bootstrap(true).log(MapDBLog(someTmpDir)).rpc(TestRpc).build.asInstanceOf[CKiteClient]
+    val ckite = CKiteBuilder().listenAddress(Member1Address)
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).storage(MemoryStorage()).rpc(TestRpc).build.asInstanceOf[CKiteClient]
     ckite start
 
     ckite.isLeader should be
@@ -31,8 +33,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   }
 
   it should "read committed writes" in {
-    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(someTmpDir)
-      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    val ckite = CKiteBuilder().listenAddress(Member1Address)
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).rpc(TestRpc).build
     ckite start
 
     await(ckite.write(Put(Key1, Value1)))
@@ -45,11 +47,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   }
 
   it should "compact a log & reload snapshot" in {
-    val dir = someTmpDir
-
-    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
+    val ckite = CKiteBuilder().listenAddress(Member1Address)
       .compactionThreshold(5 + 1) //5 writes + 1 NoOp
-      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).rpc(TestRpc).build
     ckite start
 
     await(ckite.write(Put("key1", "value1")))
@@ -66,9 +66,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     ckite stop
 
-    val ckiteRestarted = rebuild(ckite)
-
-    ckiteRestarted.start
+    val ckiteRestarted = restart(ckite)
 
     await(ckiteRestarted.read(Get("key1"))) should be("value1")
     await(ckiteRestarted.read(Get("key2"))) should be("value2")
@@ -80,10 +78,8 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   }
 
   it should "restore latest cluster configuration from Log" in {
-    val dir = someTmpDir
-
-    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
-      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+    val ckite = CKiteBuilder().listenAddress(Member1Address)
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).rpc(TestRpc).build
     ckite start
 
     //It is expected to timeout since Member2 is not up and the configuration must to committed under the new configuration (member1 and member2)
@@ -94,19 +90,19 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     ckite stop
 
-    val ckiteRestarted = rebuild(ckite)
+    val ckiteRestarted = restart(ckite)
 
-    val members = ckiteRestarted.getMembers
+    val members = ckiteRestarted.members
 
     members should contain(Member2Address)
+
+    ckiteRestarted.stop
   }
 
   it should "restore latest cluster configuration from Snapshot" in {
-    val dir = someTmpDir
-
-    val ckite = CKiteBuilder().listenAddress(Member1Address).dataDir(dir)
+    val ckite = CKiteBuilder().listenAddress(Member1Address)
       .compactionThreshold(2 + 1) //1 writes + 1 NoOp
-      .stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).rpc(TestRpc).build
     ckite start
 
     //It is expected to timeout since 9092 is not up and the configuration need to committed under the new configuration (9091 and 9092)
@@ -120,13 +116,17 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       await(ckite.write(Put(Key1, Value1)))
     }
 
+    waitSomeTimeForAppendEntries
+
     ckite.stop
 
-    val ckiteRestarted = rebuild(ckite)
+    val ckiteRestarted = restart(ckite)
 
-    val members = ckiteRestarted.getMembers
+    val members = ckiteRestarted.members
 
     members should contain(Member2Address)
+
+    ckiteRestarted.stop
   }
 
   "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members ⇒
@@ -211,14 +211,14 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   it should "replicate missing commands on restarted member" in {
 
     val member1 = CKiteBuilder().listenAddress(Member1Address)
-      .dataDir(someTmpDir).stateMachine(new KVStore()).bootstrap(true).rpc(TestRpc).build
+      .stateMachine(new KVStore()).bootstrap(BOOTSTRAP).rpc(TestRpc).build
 
     val member2 = CKiteBuilder().listenAddress(Member2Address).members(Seq(Member1Address, Member3Address))
-      .minElectionTimeout(1000).maxElectionTimeout(1000).dataDir(someTmpDir)
+      .minElectionTimeout(1000).maxElectionTimeout(1000)
       .stateMachine(new KVStore()).rpc(TestRpc).build
 
     val member3 = CKiteBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
-      .minElectionTimeout(2000).maxElectionTimeout(2000).dataDir(someTmpDir)
+      .minElectionTimeout(2000).maxElectionTimeout(2000)
       .stateMachine(new KVStore()).rpc(TestRpc).build
 
     val members = Seq(member1, member2, member3)
@@ -238,8 +238,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       await(leader.write(Put(Key1, Value1)))
 
       //member3 is back
-      val restartedMember3 = rebuild(member3)
-      restartedMember3.start
+      val restartedMember3 = restart(member3)
 
       //wait some time (> heartbeatsInterval) for missing appendEntries to arrive
       waitSomeTimeForAppendEntries
@@ -265,7 +264,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     await(leader.addMember(Member4Address))
 
     val member4 = CKiteBuilder().listenAddress(Member4Address).members(Seq(Member2Address, Member1Address, Member3Address))
-      .dataDir(someTmpDir).minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).rpc(TestRpc).build.asInstanceOf[CKiteClient]
+      .minElectionTimeout(2000).maxElectionTimeout(3000).stateMachine(new KVStore()).rpc(TestRpc).build.asInstanceOf[CKiteClient]
     //start member4
     member4.start
 
@@ -308,11 +307,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     //followers came back
     val rebuiltFollowers = followers map {
-      rebuild(_)
+      restart(_)
     }
-    rebuiltFollowers foreach {
-      _.start
-    }
+
     val livemembers = rebuiltFollowers
 
     waitSomeTimeForElection
@@ -321,8 +318,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     val newleader = livemembers leader
 
     //old leader came back
-    val oldleader = rebuild(leader)
-    oldleader.start
+    val oldleader = restart(leader)
 
     waitSomeTimeForAppendEntries
 
@@ -360,20 +356,19 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
   private def withThreeMemberCluster(test: Seq[CKite] ⇒ Any) = {
     //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
     val member1 = CKiteBuilder().listenAddress(Member1Address)
-      .dataDir(someTmpDir).bootstrap(true)
+      .bootstrap(true)
       .stateMachine(new KVStore()).rpc(TestRpc).build
 
     val member2 = CKiteBuilder().listenAddress(Member2Address).members(Seq(Member1Address))
       .minElectionTimeout(1250).maxElectionTimeout(1500) //higher election timeout
-      .dataDir(someTmpDir)
+
       .stateMachine(new KVStore()).rpc(TestRpc).build
 
     val member3 = CKiteBuilder().listenAddress(Member3Address).members(Seq(Member2Address, Member1Address))
       .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
-      .dataDir(someTmpDir)
       .stateMachine(new KVStore()).rpc(TestRpc).build
     val members = Seq(member1, member2, member3)
-    log.info(s"Starting all the members")
+    logger.info(s"Starting all the members")
     member1 start
 
     member2 start
@@ -382,27 +377,25 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
     waitSomeTimeForElection
     try {
-      log.info(s"Running test...")
+      logger.info(s"Running test...")
       test(members)
     } finally {
-      log.info(s"Stopping all the members")
+      logger.info(s"Stopping all the members")
       members foreach {
         _ stop
       }
     }
   }
 
-  private def rebuild(ckite: CKite): CKiteClient = {
-    ckite.asInstanceOf[CKiteClient].builder.stateMachine(new KVStore).bootstrap(false).build.asInstanceOf[CKiteClient]
+  private def restart(ckite: CKite): CKiteClient = {
+    val clonedCKite = ckite.asInstanceOf[CKiteClient].builder.stateMachine(new KVStore).bootstrap(false).build.asInstanceOf[CKiteClient]
+    clonedCKite.start()
+    clonedCKite
   }
 
-  private def waitSomeTimeForElection = Thread.sleep(2000)
+  private def waitSomeTimeForElection() = Thread.sleep(3000)
 
-  private def waitSomeTimeForAppendEntries = Thread.sleep(2000)
-
-  private def someTmpDir: String = {
-    "/tmp/" + System.currentTimeMillis()
-  }
+  private def waitSomeTimeForAppendEntries() = Thread.sleep(5000)
 
   private def await[T](future: Future[T]): T = {
     Await.result(future, 3 seconds)

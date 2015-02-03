@@ -65,21 +65,21 @@ object ThriftConverters extends Logging {
   }
 
   implicit def snapshotToThrift(snapshot: Snapshot): SnapshotST = {
-    val bb2: ByteBuffer = snapshot.membership
-    val bb: ByteBuffer = snapshot.stateMachineBytes
-    SnapshotST(bb, snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm, bb2)
+    val bb2: ByteBuffer = snapshot.clusterConfiguration
+    val bb: ByteBuffer = snapshot.stateMachineSerialized
+    SnapshotST(bb, snapshot.index, snapshot.term, bb2)
   }
 
   implicit def snapshotFromThrift(snapshotST: SnapshotST): Snapshot = {
-    new Snapshot(snapshotST.stateMachineState, snapshotST.lastLogEntryIndex, snapshotST.lastLogEntryTerm, snapshotST.membershipState)
+    Snapshot(snapshotST.lastLogEntryTerm, snapshotST.lastLogEntryIndex, snapshotST.membershipState, snapshotST.stateMachineState)
   }
 
   implicit def installSnapshotToThrift(installSnapshot: InstallSnapshot): InstallSnapshotST = {
-    InstallSnapshotST(installSnapshot.snapshot)
+    InstallSnapshotST(installSnapshot.term, installSnapshot.leaderId, installSnapshot.snapshot)
   }
 
   implicit def installSnapshotFromThrift(installSnapshotST: InstallSnapshotST): InstallSnapshot = {
-    new InstallSnapshot(installSnapshotST.snapshot)
+    InstallSnapshot(installSnapshotST.term, installSnapshotST.leaderId, installSnapshotST.snapshot)
   }
 
   implicit def installSnapshotResponseFromThrift(installSnapshotResponseST: InstallSnapshotResponseST): InstallSnapshotResponse = {

@@ -1,157 +1,116 @@
 package ckite
 
-import com.esotericsoftware.kryo.KryoSerializable
-import com.esotericsoftware.kryo.io.Output
-import com.esotericsoftware.kryo.Kryo
-import com.esotericsoftware.kryo.io.Input
+import java.util.concurrent.atomic.AtomicReference
 
-trait Membership {
+import ckite.rpc.LogEntry.Index
+import ckite.rpc.{ Rpc, ClusterConfigurationCommand, JointConfiguration, NewConfiguration }
+import ckite.util.Logging
 
-  def allMembers: Seq[Member]
+trait ClusterConfiguration {
+  /** The index in the Log where this ClusterConfiguration is located */
+  def index: Index
 
-  def allBindings: Seq[String] = allMembers map { member ⇒ member.id }
+  /** All the members included in this ClusterConfiguration. This can includes both new and old members */
+  def members: Set[String]
 
-  def remoteMembers(): Seq[RemoteMember]
+  /** Checks if the given members forms a quorum in this ClusterConfiguration. */
+  def reachQuorum(someMembers: Set[String]): Boolean
 
-  def reachMajority(members: Seq[Member]): Boolean
-
-  def reachAnyMajority(members: Seq[Member]): Boolean
-
-  def majority: String
-
-  def majoritiesMap: Map[Seq[Member], Int]
-
-  def captureState: MembershipState
-
-  def index: Long
-
-  def hasRemoteMembers(): Boolean = {
-    !remoteMembers().isEmpty
-  }
-
-  def obtainMember(memberId: String): Option[Member] = allMembers.find {
-    _.id == memberId
-  }
-
-  def obtainRemoteMember(memberId: String): Option[RemoteMember] = remoteMembers.find {
-    _.id == memberId
-  }
-
-  def isActiveMember(memberId: String): Boolean = allBindings.contains(memberId)
-
-  def getMembers(): List[String] = allBindings.toList
-
+  /** Checks if the given members forms SOME quorum. Useful in the case of JointClusterConfiguration */
+  def reachSomeQuorum(someMembers: Set[String]): Boolean
 }
 
-trait MembershipState {
-  def recoverIn(cluster: Cluster)
-  def getMembershipFor(cluster: Cluster): Membership
+case class SingleClusterConfiguration(members: Set[String], index: Index = -1) extends ClusterConfiguration {
+  private val quorum = (members.size / 2) + 1
+
+  def reachQuorum(someMembers: Set[String]) = someMembers.intersect(members).size >= quorum
+
+  def reachSomeQuorum(someMembers: Set[String]) = reachQuorum(someMembers)
 }
 
-class SimpleMembershipState(var bindings: List[String], var index: Long) extends MembershipState with KryoSerializable {
-  def write(kryo: Kryo, output: Output) = {
-    output.writeString(bindings.mkString(","))
-    output.writeLong(index)
-  }
+case class JointClusterConfiguration(cold: SingleClusterConfiguration, cnew: SingleClusterConfiguration, index: Index) extends ClusterConfiguration {
+  val members = cold.members ++ cnew.members
 
-  def read(kryo: Kryo, input: Input) = {
-    bindings = input.readString().split(",").toList
-    index = input.readLong()
-  }
+  def reachQuorum(someMembers: Set[String]) = cold.reachQuorum(someMembers) && cnew.reachQuorum(someMembers)
 
-  def recoverIn(cluster: Cluster) = {
-    val membership = getMembershipFor(cluster)
-    cluster.consensusMembership.set(membership)
-  }
+  def reachSomeQuorum(someMembers: Set[String]) = cold.reachQuorum(someMembers) || cnew.reachQuorum(someMembers)
 
-  def getMembershipFor(cluster: Cluster) = {
-    val localOption = if (bindings.contains(cluster.local.id)) Some(cluster.local) else None
-    val remoteMembers = (bindings diff Seq(cluster.local.id)).map {
-      binding ⇒ cluster.membership.obtainRemoteMember(binding).getOrElse(new RemoteMember(cluster, binding))
-    }.toSeq
-    new SimpleConsensus(localOption, remoteMembers, index)
+  override def toString = s"JointClusterConfiguration(cold=${cold.members}, cnew=${cnew.members}, index= $index)"
+}
+
+object JointClusterConfiguration {
+  implicit def fromMembersSetToSimpleClusterConfiguration(members: Set[String]): SingleClusterConfiguration = {
+    SingleClusterConfiguration(members)
   }
 }
 
-class JointMembershipState(var oldBindings: MembershipState, var newBindings: MembershipState, var index: Long) extends MembershipState with KryoSerializable {
-  def write(kryo: Kryo, output: Output) = {
-    kryo.writeClassAndObject(output, oldBindings)
-    kryo.writeClassAndObject(output, newBindings)
-    output.writeLong(index)
+object EmptyClusterConfiguration extends SingleClusterConfiguration(Set())
+
+case class Membership(localMember: LocalMember, rpc: Rpc, configuration: Configuration) extends Logging {
+
+  import ckite.JointClusterConfiguration._
+
+  private val currentClusterConfiguration = new AtomicReference[ClusterConfiguration](EmptyClusterConfiguration)
+  private val currentKnownMembers = new AtomicReference[Map[String, RemoteMember]](Map())
+
+  register(configuration.memberBindings)
+
+  def clusterConfiguration = currentClusterConfiguration.get()
+
+  private def knownMembers = currentKnownMembers.get()
+
+  def members = clusterConfiguration.members
+  def remoteMembers = (clusterConfiguration.members - localMember.id()).map(member ⇒ knownMembers(member))
+  def hasRemoteMembers = !remoteMembers.isEmpty
+
+  def reachQuorum(someMembers: Set[String]) = clusterConfiguration.reachQuorum(someMembers)
+
+  def reachSomeQuorum(someMembers: Set[String]) = clusterConfiguration.reachSomeQuorum(someMembers)
+
+  def get(member: String): Option[RemoteMember] = knownMembers.get(member)
+
+  def changeConfiguration(index: Index, clusterConfiguration: ClusterConfigurationCommand) = {
+    if (happensBefore(index)) {
+      clusterConfiguration match {
+        case JointConfiguration(oldMembers, newMembers) ⇒ {
+          //JointConfiguration received. Switch membership to JointClusterConfiguration
+          transitionTo(JointClusterConfiguration(oldMembers, newMembers, index))
+        }
+        case NewConfiguration(members) ⇒ {
+          //NewConfiguration received. A new membership has been set. Switch to SimpleClusterConfiguration or shutdown If no longer part of the cluster.
+          transitionTo(SingleClusterConfiguration(members, index))
+        }
+      }
+    }
   }
 
-  def read(kryo: Kryo, input: Input) = {
-    oldBindings = kryo.readClassAndObject(input).asInstanceOf[MembershipState]
-    newBindings = kryo.readClassAndObject(input).asInstanceOf[MembershipState]
-    index = input.readLong()
+  def transitionTo(newClusterConfiguration: ClusterConfiguration) = {
+    val newMembers = newClusterConfiguration.members.filterNot(member ⇒ knownMembers.contains(member) || member == myId)
+
+    register(newMembers)
+    currentClusterConfiguration.set(newClusterConfiguration)
+    logger.info("Cluster Configuration changed to {}", clusterConfiguration)
   }
-  def recoverIn(cluster: Cluster) = {
-    cluster.consensusMembership.set(getMembershipFor(cluster))
+
+  def register(newMembers: Set[String]) {
+    currentKnownMembers.set(knownMembers ++ newMembers.map(id ⇒ (id, createRemoteMember(id))))
   }
-  def getMembershipFor(cluster: Cluster): Membership = {
-    val oldMembership = oldBindings.getMembershipFor(cluster)
-    val newMembership = newBindings.getMembershipFor(cluster)
-    new JointConsensus(oldMembership, newMembership, index)
+
+  def happensBefore(index: Index) = clusterConfiguration.index < index
+
+  def isCurrent(index: Index) = index == clusterConfiguration.index
+
+  def contains(member: String) = members.contains(member)
+
+  def myId = localMember.id()
+
+  def bootstrap() = {
+    //validate empty log and no snapshot
+    transitionTo(SingleClusterConfiguration(Set(myId), 1))
   }
+
+  def createRemoteMember(id: String): RemoteMember = new RemoteMember(rpc, id)
+
+  def isInitialized = clusterConfiguration != EmptyClusterConfiguration
 }
 
-class SimpleConsensus(local: Option[LocalMember], members: Seq[RemoteMember], idx: Long) extends Membership {
-
-  val resultingMembers = (if (local.isDefined) (members :+ local.get) else members).toSet[Member].toList
-  val quorum = (resultingMembers.size / 2) + 1
-
-  val innerMajoritiesMap: Map[Seq[Member], Int] = Map(resultingMembers -> quorum)
-
-  def allMembers = resultingMembers
-
-  def remoteMembers: Seq[RemoteMember] = members
-
-  def reachMajority(membersRequestingMajority: Seq[Member]): Boolean = membersRequestingMajority.size >= quorum
-
-  def reachAnyMajority(members: Seq[Member]): Boolean = reachMajority(members)
-
-  def majority: String = s"$quorum"
-
-  def majoritiesMap: Map[Seq[Member], Int] = innerMajoritiesMap
-
-  def captureState = new SimpleMembershipState(allMembers.map { _.id }, idx)
-
-  def index = idx
-
-  override def toString(): String = s"(${allMembers.mkString(",")})"
-
-}
-
-object SimpleConsensus {
-  def apply(local: Option[LocalMember], members: Seq[RemoteMember], index: Long) = new SimpleConsensus(local, members, index)
-}
-
-object EmptyMembership extends SimpleConsensus(None, Seq(), 0) {
-}
-
-class JointConsensus(oldMembership: Membership, newMembership: Membership, idx: Long) extends Membership {
-
-  def allMembers = (oldMembership.allMembers.toSet ++ newMembership.allMembers.toSet).toSet.toSeq
-
-  def remoteMembers: Seq[RemoteMember] = (oldMembership.remoteMembers.toSeq ++ newMembership.remoteMembers.toSeq).toSet.toSeq
-
-  def reachMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) && newMembership.reachMajority(members)
-
-  def reachAnyMajority(members: Seq[Member]): Boolean = oldMembership.reachMajority(members) || newMembership.reachMajority(members)
-
-  def majority: String = s"compound majority of [${oldMembership.majority},${newMembership.majority}]"
-
-  def majoritiesMap: Map[Seq[Member], Int] = oldMembership.majoritiesMap ++: newMembership.majoritiesMap
-
-  def captureState = new JointMembershipState(oldMembership.captureState, newMembership.captureState, idx)
-
-  def index: Long = idx
-
-  override def toString(): String = {
-    s"[Cold=${oldMembership}, Cnew=${newMembership}]"
-  }
-}
-
-object JointConsensus {
-  def apply(oldMembership: Membership, newMembership: Membership, index: Long) = new JointConsensus(oldMembership, newMembership, index)
-}

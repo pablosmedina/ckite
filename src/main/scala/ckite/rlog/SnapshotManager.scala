@@ -1,21 +1,17 @@
 package ckite.rlog
 
-import java.io.File
-import java.nio.ByteBuffer
+import java.util.concurrent.atomic.{ AtomicBoolean, AtomicReference }
 import java.util.concurrent.{ Executors, SynchronousQueue, ThreadPoolExecutor, TimeUnit }
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
-import ckite.Configuration
-import ckite.RLog
-import ckite.rpc.CompactedEntry
-import ckite.rpc.LogEntry
+import ckite.rpc.LogEntry.{ Index, Term }
+import ckite.rpc.{ CompactedEntry, LogEntry }
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.{ CustomThreadFactory, Logging }
+import ckite.{ Configuration, Membership, RLog }
 
-import scala.concurrent.{ ExecutionContext, Future, Promise }
+import scala.concurrent.{ ExecutionContext, Future }
 
-class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging {
+class SnapshotManager(membership: Membership, replicatedLog: RLog, storage: Storage, configuration: Configuration) extends Logging {
 
   val compacting = new AtomicBoolean(false)
   val logCompactionExecutor = new ThreadPoolExecutor(0, 1,
@@ -24,15 +20,13 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     CustomThreadFactory("LogCompaction-worker", true))
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(configuration.logCompactionThreshold)
 
-  val cluster = rlog.cluster
-  val stateMachine = rlog.stateMachine
+  val stateMachine = replicatedLog.stateMachine
   implicit val executor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
-  //index - term
-  val latestSnapshotCoordinates = new AtomicReference[(Long, Int)]((0, 0))
+  val latestSnapshotCoordinates = new AtomicReference[(Index, Term)]((0, 0))
 
   def applyLogCompactionPolicy = {
-    if (logCompactionPolicy.applies(rlog.persistentLog, rlog.stateMachine)) {
+    if (logCompactionPolicy.applies(replicatedLog.log, replicatedLog.stateMachine)) {
       asyncCompact
     }
   }
@@ -41,7 +35,7 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
     val wasCompacting = compacting.getAndSet(true)
     if (!wasCompacting) {
       logCompactionExecutor.execute(() ⇒ {
-        log.debug(s"Log compaction is required")
+        logger.debug(s"Log compaction is required")
         compact
         compacting.set(false)
       })
@@ -51,94 +45,78 @@ class SnapshotManager(rlog: RLog, configuration: Configuration) extends Logging 
   private def compact = {
     val snapshot = takeSnapshot
     save(snapshot)
-    rollLog(snapshot.lastLogEntryIndex)
+    //rolls the log up to the given logIndex
+    replicatedLog.rollLog(snapshot.index)
     updateLatestSnapshotCoordinates(snapshot)
   }
 
   private def updateLatestSnapshotCoordinates(snapshot: Snapshot) = {
-    latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
+    latestSnapshotCoordinates.set((snapshot.index, snapshot.term))
   }
 
   private def save(snapshot: Snapshot) = {
-    log.debug(s"Saving Snapshot $snapshot")
+    logger.debug(s"Saving Snapshot $snapshot")
 
-    snapshot.write(configuration.dataDir)
+    storage.saveSnapshot(snapshot)
 
-    log.debug(s"Finished saving Snapshot ${snapshot}")
+    logger.debug(s"Finished saving Snapshot ${snapshot}")
   }
 
-  //rolls the current log up to the given logIndex
-  private def rollLog(logIndex: Long) = rlog.exclusive {
-    rlog.persistentLog.rollLog(logIndex)
-  }
-
-  private def takeSnapshot: Snapshot = rlog.exclusive {
+  private def takeSnapshot: Snapshot = replicatedLog.exclusive {
     // During compaction the following actions must be blocked: 1. add log entries  2. execute commands in the state machine
-    val commitIndex = rlog.commitIndex
-    val membershipState = rlog.cluster.membership.captureState
-    val latestEntry = rlog.logEntry(commitIndex).get
-    val stateMachineBytes = rlog.serializeStateMachine
+    val latestEntry = replicatedLog.entry(replicatedLog.commitIndex).get
+    val clusterConfiguration = membership.clusterConfiguration
+    val stateMachineSerialized = replicatedLog.serializeStateMachine
 
-    new Snapshot(stateMachineBytes, latestEntry.index, latestEntry.term, membershipState)
+    Snapshot(latestEntry.term, latestEntry.index, clusterConfiguration, stateMachineSerialized)
   }
 
-  def installSnapshot(snapshot: Snapshot): Future[Boolean] = Future {
-    rlog.exclusive {
-      log.debug(s"Installing $snapshot")
-      snapshot.write(configuration.dataDir)
+  def installSnapshot(snapshot: Snapshot): Future[Unit] = Future {
+    replicatedLog.exclusive {
+      logger.debug(s"Installing $snapshot")
+      storage.saveSnapshot(snapshot)
 
-      stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
-      snapshot.membership.recoverIn(cluster)
+      stateMachine.deserialize(snapshot.stateMachineSerialized)
 
-      log.debug(s"Finished installing $snapshot")
-      true
+      membership.transitionTo(snapshot.clusterConfiguration)
+
+      logger.debug(s"Finished installing $snapshot")
     }
   }
 
-  def reloadSnapshot: Long = {
-    latestSnapshot map { snapshot ⇒
-      log.info(s"Reloading $snapshot")
-      stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
-      snapshot.membership.recoverIn(cluster)
-      latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
-      log.info(s"Finished reloading $snapshot")
-      snapshot.lastLogEntryIndex + 1
-    } getOrElse {
-      1 //no snapshot to reload. start from index #1
-    }
-  }
+  //  def reloadSnapshot: Long = {
+  //    latestSnapshot map { snapshot ⇒
+  //      LOG.info(s"Reloading $snapshot")
+  //      stateMachine.deserialize(snapshot.stateMachineSerialized)
+  //      consensus.membership.transitionTo(snapshot.clusterConfiguration)
+  //      latestSnapshotCoordinates.set((snapshot.index, snapshot.term))
+  //      LOG.info(s"Finished reloading $snapshot")
+  //      snapshot.index + 1
+  //    } getOrElse {
+  //      1 //no snapshot to reload. start from index #1
+  //    }
+  //  }
 
   def reload(snapshot: Snapshot) = {
-    log.info(s"Reloading $snapshot")
-    stateMachine.deserialize(ByteBuffer.wrap(snapshot.stateMachineBytes))
-    log.info("Restoring cluster configuration from Snapshot...")
-    snapshot.membership.recoverIn(cluster)
-    latestSnapshotCoordinates.set((snapshot.lastLogEntryIndex, snapshot.lastLogEntryTerm))
-    log.info(s"Finished reloading $snapshot")
+    logger.info(s"Reloading $snapshot")
+    stateMachine.deserialize(snapshot.stateMachineSerialized)
+    membership.transitionTo(snapshot.clusterConfiguration)
+    latestSnapshotCoordinates.set((snapshot.index, snapshot.term))
+    logger.info(s"Finished reloading $snapshot")
   }
 
   def latestSnapshot: Option[Snapshot] = {
-    latestSnapshotFile map { snapshotFile ⇒
-      Snapshot.read(snapshotFile)
-    }
+    storage.retrieveLatestSnapshot()
   }
 
-  def latestSnapthotIndex = latestSnapshotCoordinates.get()._1
+  def latestSnapshotIndex = latestSnapshotCoordinates.get()._1
 
-  private def latestSnapshotFile: Option[File] = {
-    val snapshotDir = Option(new File(s"${configuration.dataDir}/snapshots"))
-    snapshotDir.filter(dir ⇒ dir.exists()).map { dir ⇒
-      dir.list().toList.filter(fileName ⇒ fileName.startsWith("snapshot"))
-        .sorted.headOption.map(fileName ⇒ new File(s"${configuration.dataDir}/snapshots/$fileName"))
-    }.flatten
-  }
-
-  def isInSnapshot(index: Long, term: Int): Boolean = {
+  def isInSnapshot(index: Index, term: Term): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._2 >= term && coordinates._1 >= index
   }
 
-  def isInSnapshot(index: Long): Boolean = {
+  def isInSnapshot(index: Index): Boolean = {
     val coordinates = latestSnapshotCoordinates.get()
     coordinates._1 >= index
   }

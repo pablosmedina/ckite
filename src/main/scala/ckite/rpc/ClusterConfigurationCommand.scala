@@ -1,3 +1,3 @@
 package ckite.rpc
 
-trait ClusterConfigurationCommand
+trait ClusterConfigurationCommand extends WriteCommand[Boolean]
