@@ -4,8 +4,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import ckite.rpc.{ ReadCommand, RpcServer, WriteCommand }
 
-import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 class CKiteClient(raft: Raft, rpcServer: RpcServer, private[ckite] val builder: CKiteBuilder) extends CKite {
 
@@ -25,6 +25,8 @@ class CKiteClient(raft: Raft, rpcServer: RpcServer, private[ckite] val builder: 
 
   private[ckite] def members: Set[String] = raft.membership.members
 
+  private[ckite] def id(): String = raft.membership.myId
+
   def start() = {
     rpcServer.start()
     raft.start()
@@ -35,5 +37,11 @@ class CKiteClient(raft: Raft, rpcServer: RpcServer, private[ckite] val builder: 
       rpcServer.stop()
       raft.stop()
     }
+  }
+}
+
+object CKiteClient {
+  def apply(raft: Raft, rpcServer: RpcServer, builder: CKiteBuilder) = {
+    new CKiteClient(raft, rpcServer, builder)
   }
 }

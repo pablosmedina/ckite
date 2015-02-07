@@ -21,7 +21,7 @@ case class MapDBPersistentLog(dataDir: String) extends Log with FileSupport with
     entries.put(entry.index, Serializer.serialize(entry))
     cachedSize.incrementAndGet()
     lastIndex.set(entry.index)
-    commit
+    commit()
   }
 
   def getEntry(index: Long): LogEntry = {
@@ -49,8 +49,7 @@ case class MapDBPersistentLog(dataDir: String) extends Log with FileSupport with
 
   def close() = logDB.close()
 
-  private def commit = logDB.commit()
-
+  private def commit() = logDB.commit()
 
   private def firstIndex: Long = if (!entries.isEmpty) entries.firstKey else 1
 

@@ -11,6 +11,7 @@ import ckite.util.{ ConcurrencySupport, Logging }
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+import scala.util.Try
 
 case class Follower(consensus: Consensus, membership: Membership, log: RLog, term: Int, leaderAnnouncer: LeaderAnnouncer, vote: Option[String]) extends State(vote) with Logging {
 
@@ -37,9 +38,13 @@ case class Follower(consensus: Consensus, membership: Membership, log: RLog, ter
   }
 
   private def receivedAppendEntriesFromLeader(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {
-    resetElectionTimeout() //Leader is alive. God save the Leader!
-    announceLeader(appendEntries.leaderId)
-    append(appendEntries)
+    Try {
+      resetElectionTimeout() //Leader is alive. God save the Leader!
+      announceLeader(appendEntries.leaderId)
+      append(appendEntries)
+    }.recover {
+      case reason: Exception ⇒ rejectAppendEntries(appendEntries, reason.getMessage)
+    }.get
   }
 
   private def analyzeRequestVote(requestVote: RequestVote): Future[RequestVoteResponse] = {
@@ -71,9 +76,9 @@ case class Follower(consensus: Consensus, membership: Membership, log: RLog, ter
 
   override def onInstallSnapshot(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse] = {
     installSnapshot.term match {
-      case leaderTerm if leaderTerm < term  ⇒ Future.successful(InstallSnapshotResponse(false))
+      case leaderTerm if leaderTerm < term  ⇒ Future.successful(InstallSnapshotResponse(REJECTED))
       case leaderTerm if leaderTerm > term  ⇒ stepDownAndPropagate(installSnapshot)
-      case leaderTerm if leaderTerm == term ⇒ log.snapshotManager.installSnapshot(installSnapshot.snapshot).map(_ ⇒ InstallSnapshotResponse(true))
+      case leaderTerm if leaderTerm == term ⇒ log.installSnapshot(installSnapshot.snapshot).map(_ ⇒ InstallSnapshotResponse(ACCEPTED))
     }
   }
 

@@ -33,6 +33,9 @@ case class LeaderAnnouncer(membership: Membership, configuration: Configuration)
 
   def awaitLeader: Member = {
     try {
+      if (!promise.isCompleted) {
+        logger.info("Waiting for a Leader to be announced...")
+      }
       Await.result(promise.future, waitForLeaderTimeout)
     } catch {
       case e: TimeoutException ⇒ {

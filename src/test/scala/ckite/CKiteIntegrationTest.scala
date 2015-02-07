@@ -3,7 +3,7 @@ package ckite
 import java.util.concurrent.TimeoutException
 
 import ckite.example.{ Get, KVStore, Put }
-import ckite.rlog.MemoryStorage
+import ckite.storage.MemoryStorage
 import ckite.util.Logging
 import org.scalatest._
 
@@ -129,7 +129,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     ckiteRestarted.stop
   }
 
-  "A 3 member cluster" should "elect a single Leader" in withThreeMemberCluster { members ⇒
+  "A 3 member cluster" should "elect a single Leader" in withStartedThreeMemberCluster { members ⇒
     val leader = members leader
     val followers = members followers
 
@@ -137,7 +137,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     followers.length should be(2)
   }
 
-  it should "failover Leader" in withThreeMemberCluster { members ⇒
+  it should "failover Leader" in withStartedThreeMemberCluster { members ⇒
     val originalLeader = members leader
     val followers = members followers
 
@@ -152,7 +152,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     newLeader should not be originalLeader
   }
 
-  it should "read committed writes" in withThreeMemberCluster { members ⇒
+  it should "read committed writes" in withStartedThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -164,7 +164,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   }
 
-  it should "forward writes to the Leader" in withThreeMemberCluster { members ⇒
+  it should "forward writes to the Leader" in withStartedThreeMemberCluster { members ⇒
 
     val someFollower = (members followers) head
 
@@ -176,7 +176,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     }
   }
 
-  it should "maintain quorum when 1 member goes down" in withThreeMemberCluster { members ⇒
+  it should "maintain quorum when 1 member goes down" in withStartedThreeMemberCluster { members ⇒
 
     val someFollower = (members followers) head
 
@@ -193,7 +193,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     }
   }
 
-  it should "loose quorum when 2 members goes down" in withThreeMemberCluster { members ⇒
+  it should "loose quorum when 2 members goes down" in withStartedThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -206,6 +206,23 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     intercept[TimeoutException] {
       await(leader.write(Put(Key1, Value1)))
     }
+  }
+
+  it should "forward join on restarted member" in withStartedThreeMemberCluster { members ⇒
+
+    val leader = members leader
+
+    //all the followers goes down
+    val follower = members.followers.head
+
+    follower.stop()
+
+    val seeds = Set(Member1Address, Member2Address, Member3Address) - id(leader) - (id(follower))
+    builder(follower).storage(MemoryStorage()).members(seeds.toSeq)
+
+    restart(follower)
+
+    waitSomeTimeForAppendEntries()
   }
 
   it should "replicate missing commands on restarted member" in {
@@ -237,6 +254,9 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       //still having a quorum. This write is committed.
       await(leader.write(Put(Key1, Value1)))
 
+      val seeds = Set(Member1Address, Member2Address, Member3Address) - id(leader) - (id(member3))
+      builder(member3).storage(MemoryStorage()).members(seeds.toSeq)
+
       //member3 is back
       val restartedMember3 = restart(member3)
 
@@ -254,7 +274,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     }
   }
 
-  it should "add a new member" in withThreeMemberCluster { members ⇒
+  it should "add a new member" in withStartedThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -283,7 +303,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     member4.stop
   }
 
-  it should "overwrite uncommitted entries on an old Leader" in withThreeMemberCluster { members ⇒
+  it should "overwrite uncommitted entries on an old Leader" in withStartedThreeMemberCluster { members ⇒
 
     val leader = members leader
 
@@ -353,7 +373,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   }
 
-  private def withThreeMemberCluster(test: Seq[CKite] ⇒ Any) = {
+  private def withThreeMemberCluster(block: Seq[CKite] ⇒ Any) = {
     //member1 has default election timeout (500ms - 700ms). It is intended to be the first to start an election and raise as the leader.
     val member1 = CKiteBuilder().listenAddress(Member1Address)
       .bootstrap(true)
@@ -368,12 +388,18 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       .minElectionTimeout(1750).maxElectionTimeout(2000) //higher election timeout
       .stateMachine(new KVStore()).rpc(TestRpc).build
     val members = Seq(member1, member2, member3)
+    try {
+      block(members)
+    } finally {
+      members.foreach { member ⇒
+        try { member.stop() }
+      }
+    }
+  }
+
+  private def withStartedThreeMemberCluster(test: Seq[CKite] ⇒ Any) = withThreeMemberCluster { members ⇒
     logger.info(s"Starting all the members")
-    member1 start
-
-    member2 start
-
-    member3 start
+    members.foreach(_.start())
 
     waitSomeTimeForElection
     try {
@@ -382,10 +408,14 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     } finally {
       logger.info(s"Stopping all the members")
       members foreach {
-        _ stop
+        try { _ stop }
       }
     }
   }
+
+  private def builder(ckite: CKite) = ckite.asInstanceOf[CKiteClient].builder
+
+  private def id(ckite: CKite): String = ckite.asInstanceOf[CKiteClient].id()
 
   private def restart(ckite: CKite): CKiteClient = {
     val clonedCKite = ckite.asInstanceOf[CKiteClient].builder.stateMachine(new KVStore).bootstrap(false).build.asInstanceOf[CKiteClient]

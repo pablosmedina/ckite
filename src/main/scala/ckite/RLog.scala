@@ -4,48 +4,49 @@ import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicLong
 
 import ckite.rlog._
-import ckite.rpc.LogEntry.{ Term, Index }
+import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
 import ckite.statemachine.StateMachine
 import ckite.util.{ CustomThreadFactory, LockSupport, Logging }
-
+import ckite.util.CKiteConversions._
 import scala.Option.option2Iterable
 import scala.collection.immutable.NumericRange
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ ExecutionContext, Future, Promise }
-import ckite.util.CKiteConversions._
 
-case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, configuration: Configuration) extends Logging with LockSupport {
+case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, configuration: Configuration) extends LockSupport with Logging {
 
   private def consensus = raft.consensus
+
   private def membership = raft.membership
 
-  val log = storage.log()
-  private val lastIndexAtomic = new AtomicLong(0)
+  private val _lastIndex = new AtomicLong(0)
 
-  val applyPromises = new ConcurrentHashMap[Long, Promise[_]]()
-  val snapshotManager = new SnapshotManager(membership, this, storage, configuration)
-  val asyncPool = new ThreadPoolExecutor(0, 1,
+  val log = storage.log()
+
+  private val snapshotManager = SnapshotManager(membership, this, storage, configuration)
+  private val asyncPool = new ThreadPoolExecutor(0, 1,
     10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), CustomThreadFactory("LogAppender-worker"))
-  val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
+  private val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
+
   private val appendsQueue = new LinkedBlockingQueue[Append[_]]()
 
+  val applyPromises = new ConcurrentHashMap[Long, Promise[_]]()
   private val commandApplier = new CommandApplier(consensus, this, stateMachine)
 
   def bootstrap() = {
-    assertEmptyLog
-    assertNoSnapshot
+    assertEmptyLog()
+    assertNoSnapshot()
   }
 
-  //Leader append
+  //Leader append path
   def append[T](term: Term, write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = {
-    val appendFuture = leaderAppend[T](term, write)
-    applyLogCompactionPolicy
-    appendFuture
+    val future = append(LeaderAppend[T](term, write))
+    applyLogCompactionPolicy()
+    future
   }
 
-  //Follower append
+  //Follower append path
   def tryAppend(appendEntries: AppendEntries): Future[Boolean] = {
     logger.trace("Try appending {}", appendEntries)
     val canAppend = hasPreviousLogEntry(appendEntries)
@@ -79,7 +80,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
             log.discardEntriesFrom(entry.index)
           }
         }
-        Some(followerAppend(entry))
+        Some(append(FollowerAppend(entry)))
       } else {
         logger.debug("Discarding append of a duplicate entry {}", entry)
         None
@@ -129,7 +130,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   private def isZeroEntry(index: Long, term: Int): Boolean = index == -1 && term == -1
 
-  def resetLastIndex() = lastIndexAtomic.set(findLastLogIndex)
+  def resetLastIndex() = _lastIndex.set(findLastLogIndex)
 
   def findLastLogIndex(): Long = {
     val lastIndex = log.getLastIndex
@@ -138,7 +139,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   def commitIndex: Long = commandApplier.commitIndex
 
-  def nextLogIndex() = lastIndexAtomic.incrementAndGet()
+  def nextLogIndex() = _lastIndex.incrementAndGet()
 
   def size() = log.size
 
@@ -150,28 +151,26 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   def serializeStateMachine = stateMachine.serialize()
 
-  def assertEmptyLog = {
+  def assertEmptyLog() = {
     if (log.size > 0) throw new IllegalStateException("Log is not empty")
   }
 
-  def assertNoSnapshot = {
+  def assertNoSnapshot() = {
     if (snapshotManager.latestSnapshotIndex > 0) throw new IllegalStateException("A Snapshot was found")
   }
 
   def initialize() = {
-    logger.info("Initializing...")
+    logger.info("Initializing the Log...")
 
-    restoreLatestClusterConfiguration
+    restoreLatestClusterConfiguration()
+    replay()
+    startAppender()
 
-    replay
-
-    startAppender
-
-    logger.info("Done initializing")
+    logger.info("Done initializing the Log")
   }
 
-  def replay {
-    val lastAppliedIndex: Long = reloadSnapshot
+  def replay() = {
+    val lastAppliedIndex = reloadSnapshot
 
     commandApplier.start(lastAppliedIndex)
 
@@ -198,7 +197,13 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
     lastAppliedIndex
   }
 
-  def restoreLatestClusterConfiguration {
+  def installSnapshot(snapshot: Snapshot) = snapshotManager.installSnapshot(snapshot)
+
+  def isInSnapshot(index: Index) = snapshotManager.isInSnapshot(index)
+
+  def latestSnapshot() = snapshotManager.latestSnapshot
+
+  def restoreLatestClusterConfiguration() = {
     val latestClusterConfigurationEntry = findLatestClusterConfiguration
     latestClusterConfigurationEntry foreach { entry ⇒
       logger.info("Found cluster configuration in the log: {}", entry.command)
@@ -222,22 +227,16 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
     log.rollLog(index)
   }
 
-  def lastIndex(): Index = lastIndexAtomic.longValue()
+  def lastIndex(): Index = _lastIndex.longValue()
 
   def isEmpty: Boolean = lastIndex == 0
 
-  def startAppender = asyncExecutionContext.execute(asyncAppend _)
+  def startAppender() = asyncExecutionContext.execute(asyncAppend _)
 
-  def stopAppender = {
+  def stopAppender() = {
     asyncPool.shutdownNow()
     asyncPool.awaitTermination(10, TimeUnit.SECONDS)
   }
-
-  //leader append
-  def leaderAppend[T](term: Int, write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = append(LeaderAppend[T](term, write))
-
-  //follower append
-  def followerAppend(entry: LogEntry): Future[Long] = append(FollowerAppend(entry))
 
   private def append[T](append: Append[T]): Future[T] = {
     logger.trace(s"Append $append")

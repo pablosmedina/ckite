@@ -14,8 +14,8 @@ abstract class State(vote: Option[String] = None) extends Logging {
 
   val votedFor = new AtomicReference[Option[String]](vote)
 
-  private val GRANTED = true
-  private val REJECTED = false
+  protected val GRANTED, ACCEPTED = true
+  protected val REJECTED = false
 
   def leaderAnnouncer: LeaderAnnouncer
   def term: Term
@@ -40,9 +40,6 @@ abstract class State(vote: Option[String] = None) extends Logging {
 
   def canTransitionTo(newState: State): Boolean = newState.term > term
 
-  /**
-   * Step down and become Follower in the given Term
-   */
   protected def stepDown(term: Term): Unit = {
     logger.debug(s"${membership.myId} Step down from being $this")
     consensus.becomeFollower(term = term, leaderAnnouncer = leaderAnnouncer.onStepDown)
@@ -83,6 +80,6 @@ abstract class State(vote: Option[String] = None) extends Logging {
   protected def rejectInstallSnapshot() = Future.successful(InstallSnapshotResponse(REJECTED))
 
   def isLeader = {
-    leaderAnnouncer.awaitLeader.id() == membership.myId
+    leaderAnnouncer.awaitLeader.id().equals(membership.myId)
   }
 }

@@ -1,14 +1,15 @@
-package ckite.rlog
+package ckite.storage
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
+import ckite.rlog.{ Log, Snapshot, Storage, Vote }
 import ckite.rpc.LogEntry
 import ckite.util.Logging
 
 import scala.annotation.tailrec
-import scala.concurrent.Future
 import scala.collection.JavaConverters._
+import scala.concurrent.Future
 
 case class MemoryStorage() extends Storage {
 

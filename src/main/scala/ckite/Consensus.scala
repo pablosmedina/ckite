@@ -24,18 +24,18 @@ case class Consensus(raft: Raft, storage: Storage, configuration: Configuration)
 
   private def state = currentState.get()
 
-  def bootstrap() = {
+  def startAsBootstrapper() = {
     becomeFollower(ZERO_TERM)
   }
 
-  def start() = {
+  def startAsFollower() = {
     storage.retrieveLatestVote() match {
       case Some(Vote(term, member)) ⇒ becomeFollower(term = term, vote = Option(member))
       case None                     ⇒ becomeFollower(ZERO_TERM)
     }
   }
 
-  def startJoiner = {
+  def startAsJoiner() = {
     //no configuration. will try to join an existing cluster
     logger.info("Start as Joiner. Using seeds: {}", configuration.memberBindings)
 
@@ -83,6 +83,7 @@ case class Consensus(raft: Raft, storage: Storage, configuration: Configuration)
     if (!membership.contains(member)) {
       onCommand[Boolean](JointConfiguration(membership.members, membership.members + member)).map(JoinMemberResponse(_))
     } else {
+      logger.info(s"$member is already part of the cluster")
       Future.successful(JoinMemberResponse(true))
     }
   }
@@ -126,9 +127,9 @@ case class Consensus(raft: Raft, storage: Storage, configuration: Configuration)
     while (current.canTransitionTo(newState)) {
       if (changeState(current, newState)) {
         logger.debug(s"Transition from $current to $newState")
-        persistState
-        current stop newState.term
-        newState begin
+        persistState()
+        current.stop(newState.term)
+        newState.begin()
       }
       current = state
     }

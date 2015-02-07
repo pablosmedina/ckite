@@ -1,16 +1,17 @@
 package ckite
 
-import ckite.rlog.{ MemoryStorage, Storage }
+import ckite.rlog.Storage
 import ckite.rpc.Rpc
 import ckite.statemachine.StateMachine
 import ckite.statemachine.j.StateMachineWrapper
+import ckite.storage.MemoryStorage
 import com.typesafe.config.ConfigFactory
 
 class CKiteBuilder {
 
   private val configuration = new Configuration(ConfigFactory.load())
-  private var stateMachine: StateMachine = _
-  private var rpc: Rpc = _
+  private var stateMachine: Option[StateMachine] = None
+  private var rpc: Option[Rpc] = None
   private var storage: Storage = MemoryStorage()
 
   def id(memberId: String): CKiteBuilder = {
@@ -54,12 +55,12 @@ class CKiteBuilder {
   }
 
   def stateMachine(stateMachine: StateMachine): CKiteBuilder = {
-    CKiteBuilder.this.stateMachine = stateMachine
+    CKiteBuilder.this.stateMachine = Some(stateMachine)
     CKiteBuilder.this
   }
 
   def stateMachine(stateMachine: ckite.statemachine.j.StateMachine): CKiteBuilder = {
-    CKiteBuilder.this.stateMachine = new StateMachineWrapper(stateMachine)
+    CKiteBuilder.this.stateMachine = Some(new StateMachineWrapper(stateMachine))
     CKiteBuilder.this
   }
 
@@ -68,28 +69,35 @@ class CKiteBuilder {
     CKiteBuilder.this
   }
 
-  def rpc(rpcImpl: Rpc): CKiteBuilder = {
-    rpc = rpcImpl
+  def rpc(someRpc: Rpc): CKiteBuilder = {
+    rpc = Some(someRpc)
     CKiteBuilder.this
   }
 
-  def storage(storageImpl: Storage): CKiteBuilder = {
-    storage = storageImpl
+  def storage(someStorage: Storage): CKiteBuilder = {
+    storage = someStorage
     CKiteBuilder.this
+  }
+
+  private def configuredStateMachine() = {
+    stateMachine.getOrElse(throw new IllegalStateException("StateMachine required"))
+  }
+
+  private def configuredRpc() = {
+    rpc.getOrElse(throw new IllegalStateException("RPC required"))
   }
 
   def build: CKite = {
-    if (rpc == null) throw new IllegalStateException("Rpc implementation is required")
-    val cluster = new Raft(stateMachine, rpc, storage, configuration)
-    new CKiteClient(cluster, rpc.createServer(cluster), CKiteBuilder.this)
+    val stateMachine = configuredStateMachine()
+    val rpc = configuredRpc()
+    val raft = Raft(stateMachine, rpc, storage, configuration)
+    CKiteClient(raft, rpc.createServer(raft), CKiteBuilder.this)
   }
 
 }
 
 object CKiteBuilder {
-
   def apply() = {
     new CKiteBuilder()
   }
-
 }

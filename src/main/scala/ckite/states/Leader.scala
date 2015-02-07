@@ -239,11 +239,11 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
   }
 
   private def isLogEntryInSnapshot(logIndex: Int): Boolean = {
-    log.snapshotManager.isInSnapshot(logIndex)
+    log.isInSnapshot(logIndex)
   }
 
   def sendInstallSnapshot(member: RemoteMember) = {
-    log.snapshotManager.latestSnapshot map { snapshot ⇒
+    log.latestSnapshot map { snapshot ⇒
       val installSnapshot = InstallSnapshot(term, membership.myId, snapshot)
       logger.debug(s"Sending $installSnapshot to ${member}")
       member.sendInstallSnapshot(installSnapshot).map { response ⇒

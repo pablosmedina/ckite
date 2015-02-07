@@ -8,6 +8,6 @@ trait RpcService {
   def onAppendEntriesReceived(appendEntries: AppendEntries): Future[AppendEntriesResponse]
   def onCommandReceived[T](command: Command): Future[T]
   def onInstallSnapshotReceived(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse]
-  def onMemberJoinReceived(memberBinding: String): Future[JoinMemberResponse]
+  def onMemberJoinReceived(memberId: String): Future[JoinMemberResponse]
 
 }

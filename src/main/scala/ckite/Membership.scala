@@ -67,7 +67,12 @@ case class Membership(localMember: LocalMember, rpc: Rpc, configuration: Configu
 
   def reachSomeQuorum(someMembers: Set[String]) = clusterConfiguration.reachSomeQuorum(someMembers)
 
-  def get(member: String): Option[RemoteMember] = knownMembers.get(member)
+  def get(member: String): Option[RemoteMember] = {
+    knownMembers.get(member).orElse {
+      register(Set(member))
+      knownMembers.get(member)
+    }
+  }
 
   def changeConfiguration(index: Index, clusterConfiguration: ClusterConfigurationCommand) = {
     if (happensBefore(index)) {

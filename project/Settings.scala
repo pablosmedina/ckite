@@ -12,10 +12,10 @@ object Settings {
   lazy val basicSettings = Seq(
     scalaVersion := ScalaVersion,
     organization := "io.ckite",
-    version := "0.2.0-SNAPSHOT",
+    version := "0.2.0-LOCAL",
     fork in(Test, run) := true,
     javacOptions := Seq(
-      "-source", "1.8", "-target", "1.8"
+      "-source", "1.7", "-target", "1.7"
     ),
     scalacOptions := Seq(
       "-encoding",
@@ -25,40 +25,29 @@ object Settings {
       "-unchecked",
       "-optimise",
       "-deprecation",
-      "-target:jvm-1.8",
+      "-target:jvm-1.7",
       "-language:postfixOps",
       "-language:implicitConversions",
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
     ))
 
-  lazy val scroogeSettings = Seq(
-    scalaVersion := ScalaVersion,
-    organization := "io.ckite",
-    version := "0.2.0-SNAPSHOT",
-    fork in(Test, run) := true,
-    javacOptions := Seq(
-      "-source", "1.8", "-target", "1.8"
-    ),
-    scalacOptions := Seq(
-      "-encoding",
-      "utf8",
-      "-g:vars",
-      "-feature",
-      "-unchecked",
-      "-optimise",
-      "-deprecation",
-      "-target:jvm-1.8",
-      "-language:postfixOps",
-      "-language:implicitConversions",
-      "-language:reflectiveCalls",
-      "-Xlog-reflective-calls"
-    )) ++ com.twitter.scrooge.ScroogeSBT.newSettings
+  lazy val scroogeSettings = com.twitter.scrooge.ScroogeSBT.newSettings
 
   lazy val sonatypeSettings = Seq(
     publishMavenStyle := true,
     publishArtifact in Test := true,
     pomIncludeRepository := { x => false},
+    crossPaths := false,
+    publishTo := {
+      val nexus = "https://oss.sonatype.org/"
+      if (version.value.trim.endsWith("SNAPSHOT"))
+        Some("snapshots" at nexus + "content/repositories/snapshots")
+      else if (version.value.trim.endsWith("LOCAL"))
+        Some(Resolver.file("file",  new File(Path.userHome.absolutePath+"/.m2/repository")))
+      else
+        Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+    },
     pomExtra := {
       <url>http://ckite.io</url>
         <licenses>

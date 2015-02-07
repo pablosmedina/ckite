@@ -44,7 +44,7 @@ class RemoteMember(rpc: Rpc, binding: String) extends Member(binding) {
 
   def acknowledgeIndex(index: Long) = {
     updateMatchIndex(index)
-    updateNextLogIndex
+    updateNextLogIndex(index)
     markAsReplicated(index)
   }
 
@@ -59,7 +59,7 @@ class RemoteMember(rpc: Rpc, binding: String) extends Member(binding) {
     }
   }
 
-  private def updateNextLogIndex = nextLogIndex.set(matchIndex.longValue() + 1)
+  private def updateNextLogIndex(index: Long) = nextLogIndex.set(index + 1)
 
   def decrementNextLogIndex() = {
     val currentIndex = nextLogIndex.decrementAndGet()

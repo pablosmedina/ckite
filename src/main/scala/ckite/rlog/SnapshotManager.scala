@@ -11,7 +11,7 @@ import ckite.{ Configuration, Membership, RLog }
 
 import scala.concurrent.{ ExecutionContext, Future }
 
-class SnapshotManager(membership: Membership, replicatedLog: RLog, storage: Storage, configuration: Configuration) extends Logging {
+case class SnapshotManager(membership: Membership, rlog: RLog, storage: Storage, configuration: Configuration) extends Logging {
 
   val compacting = new AtomicBoolean(false)
   val logCompactionExecutor = new ThreadPoolExecutor(0, 1,
@@ -20,13 +20,13 @@ class SnapshotManager(membership: Membership, replicatedLog: RLog, storage: Stor
     CustomThreadFactory("LogCompaction-worker", true))
   val logCompactionPolicy = new FixedSizeLogCompactionPolicy(configuration.logCompactionThreshold)
 
-  val stateMachine = replicatedLog.stateMachine
+  val stateMachine = rlog.stateMachine
   implicit val executor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
   val latestSnapshotCoordinates = new AtomicReference[(Index, Term)]((0, 0))
 
   def applyLogCompactionPolicy = {
-    if (logCompactionPolicy.applies(replicatedLog.log, replicatedLog.stateMachine)) {
+    if (logCompactionPolicy.applies(rlog.log, rlog.stateMachine)) {
       asyncCompact
     }
   }
@@ -46,7 +46,7 @@ class SnapshotManager(membership: Membership, replicatedLog: RLog, storage: Stor
     val snapshot = takeSnapshot
     save(snapshot)
     //rolls the log up to the given logIndex
-    replicatedLog.rollLog(snapshot.index)
+    rlog.rollLog(snapshot.index)
     updateLatestSnapshotCoordinates(snapshot)
   }
 
@@ -62,17 +62,17 @@ class SnapshotManager(membership: Membership, replicatedLog: RLog, storage: Stor
     logger.debug(s"Finished saving Snapshot ${snapshot}")
   }
 
-  private def takeSnapshot: Snapshot = replicatedLog.exclusive {
+  private def takeSnapshot: Snapshot = rlog.exclusive {
     // During compaction the following actions must be blocked: 1. add log entries  2. execute commands in the state machine
-    val latestEntry = replicatedLog.entry(replicatedLog.commitIndex).get
+    val latestEntry = rlog.entry(rlog.commitIndex).get
     val clusterConfiguration = membership.clusterConfiguration
-    val stateMachineSerialized = replicatedLog.serializeStateMachine
+    val stateMachineSerialized = rlog.serializeStateMachine
 
     Snapshot(latestEntry.term, latestEntry.index, clusterConfiguration, stateMachineSerialized)
   }
 
   def installSnapshot(snapshot: Snapshot): Future[Unit] = Future {
-    replicatedLog.exclusive {
+    rlog.exclusive {
       logger.debug(s"Installing $snapshot")
       storage.saveSnapshot(snapshot)
 

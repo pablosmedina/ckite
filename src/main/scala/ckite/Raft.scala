@@ -7,38 +7,43 @@ import ckite.util.{ ConcurrencySupport, Logging }
 
 import scala.concurrent.Future
 
-class Raft(stateMachine: StateMachine, rpc: Rpc, storage: Storage, configuration: Configuration) extends RpcService with Logging with ConcurrencySupport {
+class Raft(stateMachine: StateMachine, rpc: Rpc, storage: Storage, configuration: Configuration) extends RpcService with ConcurrencySupport with Logging {
 
   val consensus = Consensus(this, storage, configuration)
   val membership = Membership(LocalMember(this, configuration), rpc, configuration)
   val log = RLog(this, stateMachine, storage, configuration)
 
   def start() = {
-    logger.info("Starting CKite...")
-
-    log.initialize()
-
+    logger.info(s"Starting CKite ${membership.myId}...")
+    initializeLog()
     if (configuration.bootstrap) {
-      startBootstrap
+      bootstrapStart()
     } else if (!isInitialized) {
-      consensus.startJoiner
+      joinStart()
     } else {
-      startNormal
+      normalStart()
     }
   }
 
-  private def startNormal = {
-    //start as a normal follower
-    logger.info("Existing configuration. Start normal")
-    consensus.start()
+  def initializeLog() = log.initialize()
+
+  def joinStart() = {
+    logger.info("CKite not initialized. Join start")
+    consensus.startAsJoiner()
   }
 
-  private def startBootstrap = {
+  private def normalStart() = {
+    logger.info("CKite already initialized. Simple start")
+    consensus.startAsFollower()
+  }
+
+  private def bootstrapStart() = {
     logger.info("Bootstrapping a new CKite consensus cluster...")
 
     membership.bootstrap()
-    consensus.bootstrap()
     log.bootstrap()
+
+    consensus.startAsBootstrapper()
 
     consensus.leaderAnnouncer.awaitLeader
   }
@@ -89,4 +94,10 @@ class Raft(stateMachine: StateMachine, rpc: Rpc, storage: Storage, configuration
     consensus.isLeader
   }
 
+}
+
+object Raft {
+  def apply(stateMachine: StateMachine, rpc: Rpc, storage: Storage, configuration: Configuration) = {
+    new Raft(stateMachine, rpc, storage, configuration)
+  }
 }
