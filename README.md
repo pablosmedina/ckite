@@ -3,11 +3,18 @@ CKite - JVM Raft [![Build Status](https://api.travis-ci.org/pablosmedina/ckite.p
 
 ## Overview
 
-A __JVM__ implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a consensus library with an easy to use api intended to be used by distributed applications needing consensus agreement. 
+A __JVM__ implementation of the [Raft distributed consensus algorithm](http://raftconsensus.github.io/) written in Scala. CKite is a `consensus library` with an easy to use API intended to be used by distributed applications needing consensus agreement.
+
+It is designed to be agnostic of both the mechanism used to exchange messages between members `(RPC)` and the medium to store the Log `(Storage)`. CKite has a modular architecture with pluggable `RPC` and `Storage` implementations. Custom RPCs and Storages can be easily implemented and configured to be used by CKite. 
 
 ## Status
 
-CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. Checkout the latest __Release 0.1.6__ following the instructions detailed below to start playing with it. 
+CKite covers all the major topics of Raft including leader election, log replication, log compaction and cluster membership changes. It currently has two implemented modules:
+
+* ckite-finagle: Finagle based RPC module
+* ckite-mapdb: MapDB based Storage module
+
+Checkout the latest __Release 0.1.6__ following the instructions detailed below to start playing with it. 
 
 ## Features
 
@@ -15,8 +22,18 @@ CKite covers all the major topics of Raft including leader election, log replica
 * Log Replication
 * Cluster Membership Changes
 * Log Compaction
-* Finagle based Thrift RPC between members
+* Twitter Finagle integration
+* MapDB integration
 
+## Architecture
+
+* ckite - The core of the library. It implements the Raft consensus protocol. It can be configured with RPCs and Storages.
+
+* ckite-finagle - Twitter Finagle based RPC implementation. It uses a Thrift protocol to exchange Raft messages between members. 
+
+* ckite-mapdb - MapDB based storage implementation. MapDB provides concurrent Maps, Sets and Queues backed by disk storage or off-heap-memory. It is a fast and easy to use embedded Java database engine.
+
+Comming soon: ckite-chronicle, ckite-akka.
 
 ## Getting started (Scala)
 
@@ -170,6 +187,7 @@ val raft = RaftBuilder().listenAddress("node1:9091")
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
                           .build
 ```
+
 ## Implementation details
 
   * Built in Scala.
