@@ -1,10 +1,10 @@
 package ckite.mapdb
 
-import java.io.{DataOutput, DataInput, File}
+import java.io.{ DataOutput, DataInput, File }
 import java.nio.ByteBuffer
 
 import ckite.rlog._
-import org.mapdb.{Serializer, DBMaker}
+import org.mapdb.{ Serializer, DBMaker }
 
 class MapDBStorage(dataDir: String) extends Storage with FileSupport {
 
@@ -14,11 +14,11 @@ class MapDBStorage(dataDir: String) extends Storage with FileSupport {
 
   override val log: Log = new MapDBPersistentLog(logDir)
 
-  val stateDB = DBMaker.newFileDB(file(stateDir,"ckite-mapdb-state")).make()
-  private val voteTerm = stateDB.createAtomicInteger("term",0)
-  private val voteMember = stateDB.createAtomicString("memberId","")
+  val stateDB = DBMaker.newFileDB(file(stateDir, "ckite-mapdb-state")).make()
+  private val voteTerm = stateDB.createAtomicInteger("term", 0)
+  private val voteMember = stateDB.createAtomicString("memberId", "")
 
-  private val snapshotsDB = DBMaker.newFileDB(file(snapshotsDir,"ckite-mapdb-snapshots")).mmapFileEnable().make()
+  private val snapshotsDB = DBMaker.newFileDB(file(snapshotsDir, "ckite-mapdb-snapshots")).mmapFileEnable().make()
   private val snapshotsMap = snapshotsDB.getHashMap[String, ByteBuffer]("snapshotsMap")
 
   override def retrieveLatestSnapshot(): Option[Snapshot] = {

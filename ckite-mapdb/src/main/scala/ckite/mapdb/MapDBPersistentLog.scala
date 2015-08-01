@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import ckite.rlog.Log
 import ckite.rpc.LogEntry
-import ckite.util.{Logging, Serializer}
+import ckite.util.{ Logging, Serializer }
 import org.mapdb.DBMaker
 
 import scala.concurrent.Future
@@ -32,7 +32,7 @@ case class MapDBPersistentLog(dataDir: String) extends Log with FileSupport with
   def rollLog(upToIndex: Long) = {
     val range = firstIndex to upToIndex
     logger.debug(s"Compacting ${range.size} LogEntries")
-    range foreach { index ⇒ remove(index)}
+    range foreach { index ⇒ remove(index) }
     logger.debug(s"Finished compaction")
   }
 

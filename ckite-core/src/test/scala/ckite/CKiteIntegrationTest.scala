@@ -392,7 +392,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       block(members)
     } finally {
       members.foreach { member ⇒
-        try { member.stop() }
+        try { member.stop() } finally {}
       }
     }
   }

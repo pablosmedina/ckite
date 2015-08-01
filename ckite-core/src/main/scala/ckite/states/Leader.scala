@@ -263,4 +263,3 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
   override def toString = s"Leader[$term]"
 
 }
-
