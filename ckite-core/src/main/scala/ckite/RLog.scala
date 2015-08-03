@@ -6,15 +6,18 @@ import java.util.concurrent.atomic.AtomicLong
 import ckite.rlog._
 import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
-import ckite.statemachine.StateMachine
-import ckite.util.{ CustomThreadFactory, LockSupport, Logging }
+import ckite.statemachine.{ CommandExecutor, StateMachine }
 import ckite.util.CKiteConversions._
+import ckite.util.{ CustomThreadFactory, Logging }
+
 import scala.Option.option2Iterable
 import scala.collection.immutable.NumericRange
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{ ExecutionContext, Future, Promise }
+import scala.concurrent.{ Future, Promise }
 
-case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, configuration: Configuration) extends LockSupport with Logging {
+case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, configuration: Configuration) extends Logging {
+
+  val log = storage.log()
 
   private def consensus = raft.consensus
 
@@ -22,17 +25,23 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   private val _lastIndex = new AtomicLong(0)
 
-  val log = storage.log()
-
   private val snapshotManager = SnapshotManager(membership, this, storage, configuration)
-  private val asyncPool = new ThreadPoolExecutor(0, 1,
-    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), CustomThreadFactory("LogAppender-worker"))
-  private val asyncExecutionContext = ExecutionContext.fromExecutor(asyncPool)
+
+  private val logWorker = new ThreadPoolExecutor(0, 1,
+    10L, TimeUnit.SECONDS, new SynchronousQueue[Runnable](), CustomThreadFactory("Log-worker"))
 
   private val appendsQueue = new LinkedBlockingQueue[Append[_]]()
 
-  val applyPromises = new ConcurrentHashMap[Long, Promise[_]]()
-  private val commandApplier = new CommandApplier(consensus, this, stateMachine)
+  private val commandExecutor = new CommandExecutor(stateMachine)
+
+  private val messageQueue = new LinkedBlockingQueue[Message]()
+
+  @volatile
+  var commitIndex: Long = 0
+  @volatile
+  var lastApplied: Long = stateMachine.getLastAppliedIndex
+
+  private val applyPromises = new ConcurrentHashMap[Long, Promise[_]]()
 
   def bootstrap() = {
     assertEmptyLog()
@@ -41,9 +50,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   //Leader append path
   def append[T](term: Term, write: WriteCommand[T]): Future[(LogEntry, Promise[T])] = {
-    val future = append(LeaderAppend[T](term, write))
-    applyLogCompactionPolicy()
-    future
+    append(LeaderAppend[T](term, write))
   }
 
   //Follower append path
@@ -52,8 +59,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
     val canAppend = hasPreviousLogEntry(appendEntries)
     if (canAppend) {
       appendAll(appendEntries.entries) map { _ ⇒
-        commandApplier.commit(appendEntries.commitIndex)
-        applyLogCompactionPolicy()
+        commit(appendEntries.commitIndex)
         canAppend
       }
     } else {
@@ -61,8 +67,6 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
       Future.successful(canAppend)
     }
   }
-
-  private def applyLogCompactionPolicy() = snapshotManager.applyLogCompactionPolicy
 
   private def hasPreviousLogEntry(appendEntries: AppendEntries) = {
     containsEntry(appendEntries.prevLogIndex, appendEntries.prevLogTerm)
@@ -72,19 +76,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
   private def appendAll(entries: List[LogEntry]): Future[List[Index]] = {
     val appendPromises = entries.map { entry ⇒
       logger.trace(s"Try appending $entry")
-      if (!containsEntry(entry.index, entry.term)) {
-        if (hasIndex(entry.index)) {
-          //If an entry is overridden then all the subsequent entries must be removed
-          logger.debug("Will discard inconsistent entries starting from index #{} to follow Leader's log", entry.index)
-          shared {
-            log.discardEntriesFrom(entry.index)
-          }
-        }
-        Some(append(FollowerAppend(entry)))
-      } else {
-        logger.debug("Discarding append of a duplicate entry {}", entry)
-        None
-      }
+      Some(append(FollowerAppend(entry)))
     }
     composeFutures(appendPromises)
   }
@@ -99,11 +91,13 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   private def hasIndex(index: Long) = log.getLastIndex >= index
 
-  def commit(index: Long): Unit = commandApplier.commit(index)
+  def commit(index: Long) = {
+    if (lastApplied < index) {
+      messageQueue.offer(WriteCommitMessage(index))
+    }
+  }
 
-  def commit(logEntry: LogEntry): Unit = commit(logEntry.index)
-
-  def execute[T](command: ReadCommand[T]) = commandApplier.applyRead(command)
+  def execute[T](command: ReadCommand[T]) = applyRead(command)
 
   def entry(index: Long, allowCompactedEntry: Boolean = false): Option[LogEntry] = {
     val entry = log.getEntry(index)
@@ -113,7 +107,7 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
   }
 
   def lastEntry: Option[LogEntry] = {
-    val lastLogIndex = findLastLogIndex
+    val lastLogIndex = findLastLogIndex()
     if (snapshotManager.isInSnapshot(lastLogIndex)) {
       Some(snapshotManager.compactedEntry)
     } else {
@@ -123,72 +117,68 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   def getPreviousLogEntry(logEntry: LogEntry): Option[LogEntry] = entry(logEntry.index - 1, true)
 
-  def containsEntry(index: Long, term: Int) = {
+  private def containsEntry(index: Long, term: Int) = {
     val logEntryOption = entry(index)
     if (logEntryOption.isDefined) logEntryOption.get.term == term else (isZeroEntry(index, term) || snapshotManager.isInSnapshot(index, term))
   }
 
   private def isZeroEntry(index: Long, term: Int): Boolean = index == -1 && term == -1
 
-  def resetLastIndex() = _lastIndex.set(findLastLogIndex)
+  def resetLastIndex() = _lastIndex.set(findLastLogIndex())
 
-  def findLastLogIndex(): Long = {
+  private def findLastLogIndex(): Long = {
     val lastIndex = log.getLastIndex
     if (lastIndex > 0) lastIndex else snapshotManager.latestSnapshotIndex
   }
 
-  def commitIndex: Long = commandApplier.commitIndex
-
-  def nextLogIndex() = _lastIndex.incrementAndGet()
+  private def nextLogIndex() = _lastIndex.incrementAndGet()
 
   def size() = log.size
 
   def stop() = {
-    stopAppender
-    commandApplier.stop
+    logWorker.shutdownNow()
+    logWorker.awaitTermination(10, TimeUnit.SECONDS)
     log.close()
   }
 
-  def serializeStateMachine = stateMachine.serialize()
+  def serializeStateMachine = stateMachine.takeSnapshot()
 
-  def assertEmptyLog() = {
+  private def assertEmptyLog() = {
     if (log.size > 0) throw new IllegalStateException("Log is not empty")
   }
 
-  def assertNoSnapshot() = {
+  private def assertNoSnapshot() = {
     if (snapshotManager.latestSnapshotIndex > 0) throw new IllegalStateException("A Snapshot was found")
   }
 
   def initialize() = {
-    logger.info("Initializing the Log...")
-
+    logger.info("Initializing RLog...")
     restoreLatestClusterConfiguration()
     replay()
-    startAppender()
-
-    logger.info("Done initializing the Log")
+    startLogWorker()
+    logger.info("Done initializing RLog")
   }
 
-  def replay() = {
-    val lastAppliedIndex = reloadSnapshot
-
-    commandApplier.start(lastAppliedIndex)
-
-    commandApplier.replay
+  private def replay(): Unit = {
+    lastApplied = reloadSnapshot()
+    val from = lastApplied + 1
+    val to = commitIndex
+    if (from <= to) replay(from, to)
+    else logger.info("No entry to replay. commitIndex is #{}", commitIndex)
   }
 
-  def reloadSnapshot: Long = {
-    val latestSnapshot = snapshotManager.latestSnapshot
+  private def reloadSnapshot(): Long = {
+    val latestSnapshot = snapshotManager.latestSnapshot()
     val lastAppliedIndex: Long = latestSnapshot map { snapshot ⇒
       logger.info("Found a {}", snapshot)
-      if (snapshot.index > commandApplier.lastApplied) {
+      if (snapshot.index > lastApplied) {
         logger.info("The Snapshot has more recent data than the StateMachine. Will reload it...")
         snapshotManager.reload(snapshot)
         snapshot.index
       } else {
         logger.info("The StateMachine has more recent data than the Snapshot")
         membership.transitionTo(snapshot.clusterConfiguration)
-        commandApplier.lastApplied
+        lastApplied
       }
     } getOrElse {
       logger.info("No Snapshot was found")
@@ -197,21 +187,25 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
     lastAppliedIndex
   }
 
-  def installSnapshot(snapshot: Snapshot) = snapshotManager.installSnapshot(snapshot)
+  def installSnapshot(snapshot: Snapshot) = {
+    val promise = Promise[Unit]()
+    messageQueue.offer(InstallSnapshotMessage(promise, snapshot))
+    promise.future
+  }
 
   def isInSnapshot(index: Index) = snapshotManager.isInSnapshot(index)
 
-  def latestSnapshot() = snapshotManager.latestSnapshot
+  def latestSnapshot() = snapshotManager.latestSnapshot()
 
-  def restoreLatestClusterConfiguration() = {
-    val latestClusterConfigurationEntry = findLatestClusterConfiguration
+  private def restoreLatestClusterConfiguration() = {
+    val latestClusterConfigurationEntry = findLatestClusterConfiguration()
     latestClusterConfigurationEntry foreach { entry ⇒
       logger.info("Found cluster configuration in the log: {}", entry.command)
       consensus.membership.changeConfiguration(entry.index, entry.command.asInstanceOf[ClusterConfigurationCommand])
     }
   }
 
-  private def findLatestClusterConfiguration: Option[LogEntry] = {
+  private def findLatestClusterConfiguration(): Option[LogEntry] = {
     traversingInReversal find { index ⇒
       val logEntry = entry(index)
       if (!logEntry.isDefined) return None
@@ -223,46 +217,33 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
     findLastLogIndex to 1 by -1
   }
 
-  def rollLog(index: Long) = exclusive {
+  def rollLog(index: Long) = {
     log.rollLog(index)
   }
 
   def lastIndex(): Index = _lastIndex.longValue()
 
-  def isEmpty: Boolean = lastIndex == 0
+  def isEmpty: Boolean = lastIndex().equals(0L)
 
-  def startAppender() = asyncExecutionContext.execute(asyncAppend _)
-
-  def stopAppender() = {
-    asyncPool.shutdownNow()
-    asyncPool.awaitTermination(10, TimeUnit.SECONDS)
-  }
+  private def startLogWorker() = logWorker.execute(runLogWorker _)
 
   private def append[T](append: Append[T]): Future[T] = {
     logger.trace(s"Append $append")
     val promise: Promise[T] = append.promise
-    appendsQueue.offer(append)
+    messageQueue.offer(AppendMessage(append))
     promise.future
   }
 
-  private def asyncAppend = {
+  private def runLogWorker() = {
+    logger.info(s"Starting Log from index #{}", lastApplied)
     try {
-      while (true) {
-        val append = next
-
-        logger.debug(s"Appending ${append.logEntry}")
-        val logEntry = append.logEntry
-
-        shared {
-          log.append(logEntry).map { _ ⇒
-            onLogEntryAppended(append)(logEntry)
-          }
-        }
-      }
+      while (true) nextMessage()
     } catch {
-      case e: InterruptedException ⇒ logger.info("Shutdown LogAppender...")
+      case e: InterruptedException ⇒ logger.info("Shutdown LogWorker...")
     }
   }
+
+  private def applyLogCompactionPolicy() = snapshotManager.applyLogCompactionPolicy()
 
   private def onLogEntryAppended(append: Append[_])(entry: LogEntry) = {
     entry.command match {
@@ -277,6 +258,129 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
       appendsQueue.take()
     } else {
       appendsQueue.poll()
+    }
+  }
+
+  private def replay(from: Long, to: Long): Unit = {
+    logger.debug("Start log replay from index #{} to #{}", from, to)
+    entry(to).foreach {
+      entry ⇒
+        applyUntil(entry)
+    }
+    logger.debug("Finished log replay")
+  }
+
+  private def isFromCurrentTerm(entryOption: Option[LogEntry]) = {
+    entryOption.exists(entry ⇒ entry.term.equals(consensus.term))
+  }
+
+  private def applyUntil(entry: LogEntry) = {
+    (lastApplied + 1) to entry.index foreach { index ⇒
+      entryToApply(index, entry).map { entry ⇒
+        updateCommitIndex(index)
+        logger.debug("Will apply committed entry {}", entry)
+        val result = execute(entry.index, entry.command)
+        updateLastAppliedIndex(index)
+        notifyResult(index, result)
+      }.orElse {
+        logger.error(s"Missing index #$index")
+        None
+      }
+    }
+  }
+
+  private def updateCommitIndex(index: Long) = {
+    commitIndex = index
+    logger.debug("New commitIndex is #{}", index)
+  }
+
+  private def updateLastAppliedIndex(index: Long) = {
+    lastApplied = index //TODO: What do we assume about the StateMachine persistence?
+    logger.debug("Last applied index is #{}", index)
+  }
+
+  private def entryToApply(index: Long, logEntry: LogEntry) = {
+    if (index == logEntry.index) Some(logEntry) else entry(index)
+  }
+
+  private def notifyResult(index: Long, result: Any) = {
+    val applyPromise = applyPromises.get(index).asInstanceOf[Promise[Any]]
+    if (applyPromise != null) {
+      applyPromise.success(result)
+      applyPromises.remove(index)
+    }
+  }
+
+  private def execute(index: Long, command: Command): Any = {
+    command match {
+      case jointConfiguration: JointConfiguration ⇒ consensus.onJointConfigurationCommitted(index, jointConfiguration)
+      case newConfiguration: NewConfiguration     ⇒ consensus.onNewConfigurationCommitted(index, newConfiguration)
+      case NoOp()                                 ⇒ true
+      case write: WriteCommand[_]                 ⇒ executeInStateMachine(index, write)
+    }
+  }
+
+  def executeInStateMachine(index: Long, write: WriteCommand[_]): Any = {
+    logger.debug("Executing write {}", write)
+    commandExecutor.applyWrite(index, write)
+  }
+
+  def applyRead[T](read: ReadCommand[T]) = {
+    val promise = Promise[T]()
+    messageQueue.offer(ReadApplyMessage(promise, read))
+    promise.future
+  }
+
+  private def nextMessage = {
+    if (messageQueue.isEmpty) {
+      messageQueue.take()
+    } else {
+      messageQueue.poll
+    }
+  }
+
+  trait Message {
+    def apply()
+  }
+
+  case class WriteCommitMessage(index: Long) extends Message {
+    def apply() = {
+      if (lastApplied < index) {
+        val logEntry = entry(index)
+        if (isFromCurrentTerm(logEntry)) {
+          applyUntil(logEntry.get)
+        }
+      }
+    }
+  }
+
+  case class ReadApplyMessage[T](promise: Promise[T], read: ReadCommand[T]) extends Message {
+    def apply() = promise.trySuccess(commandExecutor.applyRead(read))
+  }
+
+  case class InstallSnapshotMessage(promise: Promise[Unit], snapshot: Snapshot) extends Message {
+    def apply() = snapshotManager.installSnapshot(snapshot)
+  }
+
+  case class AppendMessage[T](append: Append[T]) extends Message {
+    def apply() = {
+      val logEntry = append.logEntry
+
+      logger.debug(s"Appending $logEntry")
+
+      if (!containsEntry(logEntry.index, logEntry.term)) {
+        if (hasIndex(logEntry.index)) {
+          //If an entry is overridden then all the subsequent entries must be removed
+          logger.debug("Will discard inconsistent entries starting from index #{} to follow Leader's log", logEntry.index)
+          log.discardEntriesFrom(logEntry.index)
+        }
+        log.append(logEntry).map { _ ⇒
+          onLogEntryAppended(append)(logEntry)
+        }
+        applyLogCompactionPolicy()
+      } else {
+        logger.debug("Discarding append of a duplicate entry {}", logEntry)
+      }
     }
   }
 

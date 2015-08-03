@@ -11,7 +11,7 @@ trait Log {
 
   def rollLog(upToIndex: Index): Unit
 
-  def getEntry(index: Index): LogEntry
+  def getEntry(index: Index): LogEntry //TODO: change it to Option[LogEntry]
 
   def getLastIndex: Long
 

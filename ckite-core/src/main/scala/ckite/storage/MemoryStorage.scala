@@ -1,6 +1,5 @@
 package ckite.storage
 
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
 import ckite.rlog.{ Log, Snapshot, Storage, Vote }
@@ -8,7 +7,7 @@ import ckite.rpc.LogEntry
 import ckite.util.Logging
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 
 case class MemoryStorage() extends Storage {
@@ -30,7 +29,7 @@ case class MemoryStorage() extends Storage {
 
 class MemoryLog extends Log with Logging {
 
-  val map = new ConcurrentHashMap[Long, LogEntry]()
+  val map = TrieMap[Long, LogEntry]()
 
   override def append(entry: LogEntry): Future[Unit] = {
     map.put(entry.index, entry)
@@ -44,9 +43,9 @@ class MemoryLog extends Log with Logging {
     }
   }
 
-  override def size(): Long = map.size()
+  override def size(): Long = map.size
 
-  override def getEntry(index: Long): LogEntry = map.get(index)
+  override def getEntry(index: Long): LogEntry = map.get(index).getOrElse(null)
 
   override def discardEntriesFrom(index: Long): Unit = {
     discardEntriesFromRecursive(index)
@@ -60,7 +59,7 @@ class MemoryLog extends Log with Logging {
   override def close(): Unit = {}
 
   override def getLastIndex(): Long = {
-    if (size() > 0) map.keySet().asScala.toSeq.sorted.last else 0
+    if (size() > 0) map.keys.toSeq.sorted.last else 0
   }
 
 }

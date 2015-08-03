@@ -1,9 +1,8 @@
 package ckite.statemachine
 
 import java.nio.ByteBuffer
-import ckite.rpc.Command
-import ckite.rpc.ReadCommand
-import ckite.rpc.WriteCommand
+
+import ckite.rpc.{ ReadCommand, WriteCommand }
 
 trait StateMachine {
 
@@ -11,15 +10,19 @@ trait StateMachine {
    * Called when consensus has been reached on a WriteCommand.
    * Along with the WriteCommand an index is provided to allow
    * persistent StateMachines to save atomically both the WriteCommand's
-   * updates and the index. CKite will ask the lastAppliedIndex
-   * when deciding which WriteCommands can be replayed during startups.
+   * updates and the index.
+   * CKite will ask the lastAppliedIndex when deciding which WriteCommands can be replayed during startup.
+   *
+   * Memory consistency effects: Since all the operations on the StateMachine are done by
+   * a single thread then every read, write or snapshot operation happens-before the subsequent
+   * read, write or snapshot operation.
    */
   def applyWrite: PartialFunction[(Long, WriteCommand[_]), Any]
 
   /**
-   * The last applied index in the StateMachine. It is called
+   * The last applied index in the StateMachine.
    */
-  def lastAppliedIndex: Long
+  def getLastAppliedIndex: Long
 
   /**
    * Called when readonly commands are requested.
@@ -29,11 +32,11 @@ trait StateMachine {
   /**
    * Restore the StateMachine state from a Snapshot
    */
-  def deserialize(byteBuffer: ByteBuffer)
+  def restoreSnapshot(byteBuffer: ByteBuffer)
 
   /**
    * Captures the StateMachine state as a Snapshot
    */
-  def serialize(): ByteBuffer
+  def takeSnapshot(): ByteBuffer
 
 }

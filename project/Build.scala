@@ -20,17 +20,16 @@ object CKite extends Build {
      .settings(formatSettings: _*)
      .settings(libraryDependencies ++= 
           compile(slf4j, config, kryo) ++
-          test(scalaTest, logback))   
+          test(scalaTest, logback))
 
 
   lazy val ckiteFinagle: Project = Project("ckite-finagle", file("ckite-finagle"))
     .dependsOn(ckiteCore)
     .settings(basicSettings: _*)
-    .settings(scroogeSettings: _*)
     .settings(sonatypeSettings: _*)
     .settings(formatSettings: _*)
     .settings(libraryDependencies ++=
-    compile(slf4j, scrooge, thrift, finagleCore, finagleThrift) ++
+    compile(slf4j, scrooge, finagleCore, finagleThrift) ++
       test(scalaTest, logback, finagleHttp, jacksonAfterBurner, jacksonScala) )
 
   lazy val ckiteMapDB: Project = Project("ckite-mapdb", file("ckite-mapdb"))

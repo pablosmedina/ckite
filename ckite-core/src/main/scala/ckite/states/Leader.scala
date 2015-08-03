@@ -4,19 +4,23 @@ import java.lang.Boolean
 import java.util.concurrent.TimeUnit
 
 import ckite._
+import ckite.exception.LostLeadershipException
 import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.ConcurrencySupport
 
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.concurrent.{ Await, Future, Promise }
+import scala.util.{ Try, Failure, Success }
 
 case class Leader(consensus: Consensus, membership: Membership, log: RLog, term: Term, leaderAnnouncer: LeaderAnnouncer) extends State(Some(membership.myId)) with ConcurrencySupport {
 
   private val ReplicationTimeout = consensus.configuration.appendEntriesTimeout
   private val AppendEntriesTimeout = consensus.configuration.appendEntriesTimeout millis
+  private val waitForLeaderTimeout = consensus.configuration.waitForLeaderTimeout millis
   private val scheduledHeartbeatsPool = scheduler("HeartbeatThread")
 
   override def begin() = {
@@ -27,8 +31,10 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
       resetLastIndex()
       resetNextAndMatchIndexes()
       startBroadcasting()
-      appendNoOp()
-      announceLeadership()
+      appendNoOp() andThen {
+        case Success(_)      ⇒ announceLeadership()
+        case Failure(reason) ⇒ logger.error("Failed to commit noop command", reason)
+      }
     }
   }
 
@@ -39,12 +45,12 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
     }, 0, consensus.configuration.heartbeatsInterval, TimeUnit.MILLISECONDS)
   }
 
-  private def broadcast(): Unit = {
+  private def broadcast(): Set[(RemoteMember, Future[AppendEntriesResponse])] = {
     logger.trace(s"Leader[$term] broadcasting AppendEntries")
-    membership.remoteMembers foreach { member ⇒ sendAppendEntries(member) }
+    membership.remoteMembers map { member ⇒ (member, sendAppendEntries(member)) }
   }
 
-  private def sendAppendEntries(member: RemoteMember): Future[Unit] = Future {
+  private def sendAppendEntries(member: RemoteMember): Future[AppendEntriesResponse] = {
     val request = createAppendEntriesFor(member)
     if (!request.entries.isEmpty) {
       logger.trace("Sending {} entries to {}", request.entries.size, member.id)
@@ -56,9 +62,10 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
       } else {
         receivedAppendEntriesResponse(member, request, response)
       }
-    }.recover {
-      case e: Exception ⇒
-        logger.trace("Error sending appendEntries {}", e.getMessage())
+      response
+    }.andThen {
+      case Failure(reason) ⇒
+        logger.trace("Error sending appendEntries {}", reason.getMessage())
         if (!request.entries.isEmpty) {
           member.markReplicationsNotInProgress(request.entries.map(_.index))
         }
@@ -163,8 +170,52 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
     }
   }
 
-  private def onReadCommand[T](command: ReadCommand[T]): Future[T] = Future {
-    log.execute(command)
+  private def onReadCommand[T](command: ReadCommand[T]): Future[T] = onStillBeingLeader.flatMap(_ ⇒ log.execute(command))
+
+  private def onStillBeingLeader = {
+    logger.trace(s"$this checking if still being Leader...")
+    if (membership.hasRemoteMembers) {
+      val promise = Promise[Unit]()
+      val term = consensus.term()
+
+      val membersAck = TrieMap[String, Unit](membership.myId -> Unit)
+      val memberFailures = TrieMap[String, Unit]()
+
+      broadcast().foreach {
+        case (member, futureResponse) ⇒
+          futureResponse.andThen {
+            case Success(response) ⇒ {
+              if (consensus.term != term) lostLeadership(promise, "New term received")
+              else {
+                membersAck.put(member.id(), Unit)
+                if (membership.reachQuorum(membersAck.keys.toSet)) {
+                  logger.debug(s"$this ${membership.myId} is still the current Leader")
+                  promise.trySuccess(())
+                }
+              }
+            }
+            case Failure(reason) ⇒ {
+              memberFailures.put(member.id(), Unit)
+              if (membership.reachSomeQuorum(memberFailures.keys.toSet)) {
+                lostLeadership(promise, "Failed to reach quorum of members")
+              }
+            }
+          }
+      }
+      promise.future
+    } else Future.successful(())
+  }
+
+  private def lostLeadership(promise: Promise[Unit], reason: String) = {
+    logger.debug(s"$this ${membership.myId} lost leadership. Reason: $reason")
+    promise.tryFailure(LostLeadershipException(reason))
+  }
+
+  override def isLeader() = {
+    Try {
+      Await.result(onStillBeingLeader, waitForLeaderTimeout)
+      true
+    }.getOrElse(false)
   }
 
   override def onAppendEntries(appendEntries: AppendEntries): Future[AppendEntriesResponse] = {

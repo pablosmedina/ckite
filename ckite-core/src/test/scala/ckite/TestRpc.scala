@@ -15,11 +15,21 @@ object TestRpc extends Rpc {
 
   def server(binding: String): Raft = {
     val server = servers.get(binding)
-    if (server == null || server.isStopped()) {
+    if (server == null || server.isStopped() || server.isBlocked) {
       throw new IOException("Connection refused")
     }
     server.cluster
   }
+
+  def blockTraffic(binding: String) = {
+    servers.get(binding).block()
+  }
+
+  def unblockTraffic(binding: String) = {
+    servers.get(binding).unblock()
+  }
+
+  def isBlocked(binding: String) = servers.get(binding).isBlocked
 
   override def createServer(service: RpcService): RpcServer = {
     val testServer: TestServer = new TestServer(service.asInstanceOf[Raft])
@@ -32,6 +42,7 @@ object TestRpc extends Rpc {
 
 class TestServer(val cluster: Raft) extends RpcServer {
   val stopped = new AtomicBoolean()
+  val blocked = new AtomicBoolean()
 
   override def start(): Unit = {
     stopped.set(false)
@@ -42,20 +53,39 @@ class TestServer(val cluster: Raft) extends RpcServer {
     stopped.set(true)
   }
 
+  def block() = {
+    blocked.set(true)
+  }
+
+  def unblock() = {
+    blocked.set(false)
+  }
+
   def isStopped() = stopped.get()
+
+  def isBlocked = blocked.get()
 
 }
 
 class TestClient(binding: String) extends RpcClient {
   override def send(request: RequestVote): Future[RequestVoteResponse] = ioTry {
+    if (TestRpc.isBlocked(request.memberId)) {
+      throw new IOException("Connection refused")
+    }
     TestRpc.server(binding).onRequestVoteReceived(request)
   }
 
   override def send(appendEntries: AppendEntries): Future[AppendEntriesResponse] = ioTry {
+    if (TestRpc.isBlocked(appendEntries.leaderId)) {
+      throw new IOException("Connection refused")
+    }
     TestRpc.server(binding).onAppendEntriesReceived(appendEntries)
   }
 
   override def send(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse] = ioTry {
+    if (TestRpc.isBlocked(installSnapshot.leaderId)) {
+      throw new IOException("Connection refused")
+    }
     TestRpc.server(binding).onInstallSnapshotReceived(installSnapshot)
   }
 
@@ -64,6 +94,9 @@ class TestClient(binding: String) extends RpcClient {
   }
 
   override def send(joinMember: JoinMember): Future[JoinMemberResponse] = ioTry {
+    if (TestRpc.isBlocked(joinMember.memberId)) {
+      throw new IOException("Connection refused")
+    }
     TestRpc.server(binding).onMemberJoinReceived(joinMember.memberId)
   }
 

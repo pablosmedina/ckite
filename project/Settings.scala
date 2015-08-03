@@ -12,7 +12,7 @@ object Settings {
   lazy val basicSettings = Seq(
     scalaVersion := ScalaVersion,
     organization := "io.ckite",
-    version := "0.2.0-LOCAL",
+    version := "0.2.1-LOCAL",
     fork in(Test, run) := true,
     javacOptions := Seq(
       "-source", "1.7", "-target", "1.7"
@@ -31,8 +31,6 @@ object Settings {
       "-language:reflectiveCalls",
       "-Xlog-reflective-calls"
     ))
-
-  lazy val scroogeSettings = com.twitter.scrooge.ScroogeSBT.newSettings
 
   lazy val sonatypeSettings = Seq(
     publishMavenStyle := true,

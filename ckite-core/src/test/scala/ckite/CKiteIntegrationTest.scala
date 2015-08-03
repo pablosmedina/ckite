@@ -3,6 +3,7 @@ package ckite
 import java.util.concurrent.TimeoutException
 
 import ckite.example.{ Get, KVStore, Put }
+import ckite.exception.LostLeadershipException
 import ckite.storage.MemoryStorage
 import ckite.util.Logging
 import org.scalatest._
@@ -14,6 +15,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   val Key1 = "key1"
   val Value1 = "value1"
+  val Value2 = "value2"
 
   val BOOTSTRAP = true
 
@@ -172,7 +174,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     await(someFollower.write(Put(Key1, Value1)))
 
     members foreach { member ⇒
-      await(member.read[String](Get(Key1))) should be(Value1)
+      await(member.read(Get(Key1))) should be(Value1)
     }
   }
 
@@ -264,7 +266,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       waitSomeTimeForAppendEntries
 
       //read from its local state machine to check if missing appendEntries have been replicated
-      val readValue = restartedMember3.readLocal(Get(Key1))
+      val readValue = await(restartedMember3.readLocal(Get(Key1)))
 
       readValue should be(Value1)
       restartedMember3.stop
@@ -296,7 +298,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     waitSomeTimeForAppendEntries
 
     //get value for Key1 from local
-    val localValue = member4.readLocal(Get(Key1))
+    val localValue = await(member4.readLocal(Get(Key1)))
 
     localValue should be(replicatedValue)
 
@@ -352,6 +354,28 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
 
   }
 
+  it should "avoid partioned leader stale reads" in withStartedThreeMemberCluster { members ⇒
+
+    val oldLeader = members leader
+
+    await(oldLeader.write(Put(Key1, Value1)))
+
+    TestRpc.blockTraffic(id(oldLeader))
+
+    waitSomeTimeForElection()
+
+    val newLeader = members leader
+
+    await(newLeader.write(Put(Key1, Value2)))
+
+    await(newLeader.read(Get(Key1))) should be(Value2)
+
+    intercept[LostLeadershipException] {
+      await(oldLeader.read(Get(Key1)))
+    }
+
+  }
+
   implicit def membersSequence(members: Seq[CKite]): CKiteSequence = {
     new CKiteSequence(members)
   }
@@ -365,7 +389,7 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
     def leader = {
       val leaders = (members diff followers)
       val theLeader = leaders.head
-      withClue("Not unique Leader") {
+      withClue(s"Leader $theLeader is not unique") {
         leaders diff Seq(theLeader) should be('empty)
       }
       theLeader
@@ -407,8 +431,11 @@ class CKiteIntegrationTest extends FlatSpec with Matchers with Logging {
       test(members)
     } finally {
       logger.info(s"Stopping all the members")
-      members foreach {
-        try { _ stop }
+      members foreach { member ⇒
+        try { member stop }
+        finally {
+          TestRpc.unblockTraffic(id(member))
+        }
       }
     }
   }
