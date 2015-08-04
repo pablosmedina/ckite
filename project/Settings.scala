@@ -87,4 +87,7 @@ object Settings {
   lazy val itExtraSettings = Seq(
     parallelExecution in IntegrationTest := false
   )
+
+  val noPublishing = Seq(publish :=(), publishLocal :=(), publishArtifact := false)
+
 }

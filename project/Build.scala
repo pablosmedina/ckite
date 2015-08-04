@@ -9,18 +9,19 @@ object CKite extends Build {
   import Settings._
 
   lazy val ckite: Project = Project("ckite", file("."))
-    .aggregate(ckiteCore,ckiteFinagle,ckiteMapDB)
-     .settings(basicSettings: _*)
-     .settings(sonatypeSettings: _*)
-     .settings(formatSettings: _*)
+    .aggregate(ckiteCore, ckiteFinagle, ckiteMapDB)
+    .settings(basicSettings: _*)
+    .settings(sonatypeSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(noPublishing: _*)
 
-    lazy val ckiteCore: Project = Project("ckite-core", file("ckite-core"))
-     .settings(basicSettings: _*)
-     .settings(sonatypeSettings: _*)
-     .settings(formatSettings: _*)
-     .settings(libraryDependencies ++= 
-          compile(slf4j, config, chill) ++
-          test(scalaTest, logback))
+  lazy val ckiteCore: Project = Project("ckite-core", file("ckite-core"))
+    .settings(basicSettings: _*)
+    .settings(sonatypeSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(libraryDependencies ++=
+    compile(slf4j, config, chill) ++
+      test(scalaTest, logback))
 
 
   lazy val ckiteFinagle: Project = Project("ckite-finagle", file("ckite-finagle"))
@@ -30,7 +31,7 @@ object CKite extends Build {
     .settings(formatSettings: _*)
     .settings(libraryDependencies ++=
     compile(slf4j, scrooge, finagleCore, finagleThrift) ++
-      test(scalaTest, logback, finagleHttp, jacksonAfterBurner, jacksonScala) )
+      test(scalaTest, logback, finagleHttp, jacksonAfterBurner, jacksonScala))
 
   lazy val ckiteMapDB: Project = Project("ckite-mapdb", file("ckite-mapdb"))
     .dependsOn(ckiteCore)
@@ -39,6 +40,6 @@ object CKite extends Build {
     .settings(formatSettings: _*)
     .settings(libraryDependencies ++=
     compile(mapdb) ++
-      test(scalaTest, logback) )
+      test(scalaTest, logback))
 
 }

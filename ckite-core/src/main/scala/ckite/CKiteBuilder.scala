@@ -97,7 +97,5 @@ class CKiteBuilder {
 }
 
 object CKiteBuilder {
-  def apply() = {
-    new CKiteBuilder()
-  }
+  def apply() = new CKiteBuilder()
 }
