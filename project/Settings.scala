@@ -13,6 +13,7 @@ object Settings {
     scalaVersion := ScalaVersion,
     organization := "io.ckite",
     version := "0.2.1-LOCAL",
+    resolvers ++= Seq("twitter-repo" at "http://maven.twttr.com"),
     fork in(Test, run) := true,
     javacOptions := Seq(
       "-source", "1.7", "-target", "1.7"
