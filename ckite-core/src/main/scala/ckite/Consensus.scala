@@ -6,6 +6,7 @@ import ckite.rlog.{ Storage, Vote }
 import ckite.rpc.LogEntry._
 import ckite.rpc._
 import ckite.states._
+import ckite.stats.ConsensusStats
 import ckite.util.Logging
 
 import scala.concurrent.duration._
@@ -150,5 +151,7 @@ case class Consensus(raft: Raft, storage: Storage, configuration: Configuration)
   def stop(): Unit = {
     become(Stopped)
   }
+
+  def stats(): ConsensusStats = ConsensusStats(term, currentState.toString, currentState.get().stats())
 
 }

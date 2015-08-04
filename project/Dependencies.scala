@@ -12,7 +12,7 @@ object Dependencies {
   val finagleHttp         =       "com.twitter"                     %%  "finagle-http"                 % finagleV
   val config              =       "com.typesafe"                    %   "config"                       % "1.0.2"
   val mapdb               =       "org.mapdb"                       %   "mapdb"                        % "0.9.13"
-  val kryo                =       "com.esotericsoftware.kryo"       %   "kryo"                         % "2.22"
+  val chill               =       "com.twitter"                     %%  "chill"                        % "0.6.0"
   val jacksonAfterBurner  =       "com.fasterxml.jackson.module"    %   "jackson-module-afterburner"   % jacksonV
   val jacksonScala        =       "com.fasterxml.jackson.module"    %%  "jackson-module-scala"         % jacksonV
   val scalaTest           =       "org.scalatest"                   %%  "scalatest"                    % "2.2.2"

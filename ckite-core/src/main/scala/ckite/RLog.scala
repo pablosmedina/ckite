@@ -7,6 +7,7 @@ import ckite.rlog._
 import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
 import ckite.statemachine.{ CommandExecutor, StateMachine }
+import ckite.stats.LogStats
 import ckite.util.CKiteConversions._
 import ckite.util.{ CustomThreadFactory, Logging }
 
@@ -338,6 +339,8 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
       messageQueue.poll
     }
   }
+
+  def stats(): LogStats = LogStats(size(), commitIndex, lastEntry)
 
   trait Message {
     def apply()

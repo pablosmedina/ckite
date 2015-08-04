@@ -25,4 +25,5 @@ case object Starter extends State {
   override def leaderAnnouncer: LeaderAnnouncer = throw new UnsupportedOperationException()
 
   override def onInstallSnapshot(installSnapshot: InstallSnapshot): Future[InstallSnapshotResponse] = rejectInstallSnapshot()
+
 }

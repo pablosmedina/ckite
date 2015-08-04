@@ -3,6 +3,7 @@ package ckite
 import java.util.concurrent.atomic.AtomicBoolean
 
 import ckite.rpc.{ ReadCommand, RpcServer, WriteCommand }
+import ckite.stats.{ Stats, ConsensusStats }
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -26,6 +27,8 @@ class CKiteClient(raft: Raft, rpcServer: RpcServer, private[ckite] val builder: 
   private[ckite] def members: Set[String] = raft.membership.members
 
   private[ckite] def id(): String = raft.membership.myId
+
+  private[ckite] def stats(): Stats = raft.stats()
 
   def start() = {
     rpcServer.start()

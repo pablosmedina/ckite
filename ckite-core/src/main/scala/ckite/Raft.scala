@@ -3,6 +3,7 @@ package ckite
 import ckite.rlog.Storage
 import ckite.rpc._
 import ckite.statemachine.StateMachine
+import ckite.stats.{ ConsensusStats, Stats }
 import ckite.util.{ ConcurrencySupport, Logging }
 
 import scala.concurrent.Future
@@ -93,6 +94,8 @@ class Raft(stateMachine: StateMachine, rpc: Rpc, storage: Storage, configuration
   def isLeader = {
     consensus.isLeader
   }
+
+  def stats(): Stats = Stats(consensus.stats(), log.stats())
 
 }
 

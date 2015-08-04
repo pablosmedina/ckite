@@ -8,7 +8,7 @@ import ckite.rpc._
 import ckite.stats.{ NonLeaderInfo, StateInfo }
 import ckite.util.Logging
 
-import scala.concurrent.{ Future, Promise }
+import scala.concurrent.Future
 
 abstract class State(vote: Option[String] = None) extends Logging {
 
@@ -18,8 +18,11 @@ abstract class State(vote: Option[String] = None) extends Logging {
   protected val REJECTED = false
 
   def leaderAnnouncer: LeaderAnnouncer
+
   def term: Term
+
   protected def membership: Membership
+
   protected def consensus: Consensus
 
   def begin() = {
@@ -82,4 +85,6 @@ abstract class State(vote: Option[String] = None) extends Logging {
   def isLeader = {
     leaderAnnouncer.awaitLeader.id().equals(membership.myId)
   }
+
+  def stats(): StateInfo = NonLeaderInfo(if (leaderAnnouncer.isLeaderAnnounced) Some(leaderAnnouncer.awaitLeader.id()) else None)
 }

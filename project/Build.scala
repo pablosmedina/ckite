@@ -19,7 +19,7 @@ object CKite extends Build {
      .settings(sonatypeSettings: _*)
      .settings(formatSettings: _*)
      .settings(libraryDependencies ++= 
-          compile(slf4j, config, kryo) ++
+          compile(slf4j, config, chill) ++
           test(scalaTest, logback))
 
 

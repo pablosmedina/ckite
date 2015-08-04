@@ -42,7 +42,7 @@ trait CKite {
    * Consistently adds a new member to the cluster.
    * *
    * @param memberId to be added
-   * @return
+   * @return future with true if the memberId could be added to the cluster and false if not
    */
   def addMember(memberId: String): Future[Boolean]
 
@@ -50,7 +50,7 @@ trait CKite {
    * Consistently removes a new member to the cluster.
    * *
    * @param memberId to be removed
-   * @return
+   * @return future with true if the memberId could be removed to the cluster and false if not
    */
   def removeMember(memberId: String): Future[Boolean]
 

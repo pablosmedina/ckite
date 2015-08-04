@@ -1,16 +1,18 @@
 package ckite.states
 
 import java.lang.Boolean
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ ConcurrentHashMap, TimeUnit }
 
 import ckite._
 import ckite.exception.LostLeadershipException
 import ckite.rpc.LogEntry.{ Index, Term }
 import ckite.rpc._
+import ckite.stats.{ LeaderInfo, FollowerInfo }
 import ckite.util.CKiteConversions.fromFunctionToRunnable
 import ckite.util.ConcurrencySupport
 
 import scala.collection.concurrent.TrieMap
+import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.concurrent.{ Await, Future, Promise }
@@ -22,6 +24,8 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
   private val AppendEntriesTimeout = consensus.configuration.appendEntriesTimeout millis
   private val waitForLeaderTimeout = consensus.configuration.waitForLeaderTimeout millis
   private val scheduledHeartbeatsPool = scheduler("HeartbeatThread")
+  private val followersStats = new ConcurrentHashMap[String, Long]()
+  private val startTime = now()
 
   override def begin() = {
     if (term < consensus.term) {
@@ -244,6 +248,7 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
   }
 
   private def receivedAppendEntriesResponse(member: RemoteMember, request: AppendEntries, response: AppendEntriesResponse) = {
+    followersStats.put(member.id(), now())
     if (!request.entries.isEmpty) {
       updateNextLogIndex(member, request, response)
     }
@@ -310,6 +315,22 @@ case class Leader(consensus: Consensus, membership: Membership, log: RLog, term:
 
     }
   }
+
+  override def stats() = {
+    val currentTime = now()
+    val followers = followersStats.asScala.map {
+      tuple ⇒
+        val member = membership.get(tuple._1).get
+        (tuple._1, FollowerInfo(lastAck(tuple._2, currentTime), member.matchIndex.intValue(), member.nextLogIndex.intValue()))
+    }
+    LeaderInfo(leaderUptime.toString, followers.toMap)
+  }
+
+  private def leaderUptime = (now() - startTime millis).toCoarsest
+
+  private def lastAck(ackTime: Long, now: Long) = if (ackTime > 0) (now - ackTime millis).toString else "Never"
+
+  private def now(): Long = System.currentTimeMillis()
 
   override def toString = s"Leader[$term]"
 
