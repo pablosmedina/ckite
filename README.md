@@ -27,11 +27,11 @@ Checkout the latest __Release 0.2.0__ following the instructions detailed below 
 
 ## Architecture
 
-* ckite-core - The core of the library. It implements the Raft consensus protocol. It can be configured with RPCs and Storages.
+* `ckite-core` - The core of the library. It implements the Raft consensus protocol. It can be configured with RPCs and Storages.
 
-* ckite-finagle - Twitter Finagle based RPC implementation. It uses a Thrift protocol to exchange Raft messages between members. 
+* `ckite-finagle` - Twitter Finagle based RPC implementation. It uses a Thrift protocol to exchange Raft messages between members. 
 
-* ckite-mapdb - MapDB based storage implementation. MapDB provides concurrent Maps, Sets and Queues backed by disk storage or off-heap-memory. It is a fast and easy to use embedded Java database engine.
+* `ckite-mapdb` - MapDB based storage implementation. MapDB provides concurrent Maps, Sets and Queues backed by disk storage or off-heap-memory. It is a fast and easy to use embedded Java database engine.
 
 Comming soon: ckite-chronicle, ckite-akka.
 
@@ -42,13 +42,13 @@ Comming soon: ckite-chronicle, ckite-akka.
 The latest release 0.2.0 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" % "ckite-core" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-core" % "0.2.0"
 ```
 ```scala
-libraryDependencies += "io.ckite" % "ckite-finagle" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-finagle" % "0.2.0"
 ```
 ```scala
-libraryDependencies += "io.ckite" % "ckite-mapdb" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-mapdb" % "0.2.0"
 ```
 
 ## Getting started (Java)
@@ -113,8 +113,7 @@ case class Get(key: String) extends ReadCommand[Option[String]]
 ```
 #### 2) Create a CKite instance using the builder (minimal)
 ```scala
-val ckite = CKiteBuilder().listenAddress("node1:9091")
-                          .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
+val ckite = CKiteBuilder().listenAddress("node1:9091").rpc(FinagleThriftRpc) //Finagle based transport
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
                           .build
@@ -122,7 +121,7 @@ val ckite = CKiteBuilder().listenAddress("node1:9091")
 
 #### 3) Create a CKite instance using the builder (extended)
 ```scala
-val ckite = CKiteBuilder().listenAddress("localhost:9091")
+val ckite = CKiteBuilder().listenAddress("localhost:9091").rpc(FinagleThriftRpc)
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
                           .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
                           .heartbeatsPeriod(250) //optional. period to send heartbeats interval when being Leader
@@ -184,7 +183,7 @@ You can bootstrap the first node using the builder, overriding ckite.bootstrap i
 
 #### bootstrapping the first node using the builder
 ```scala
-val ckite = CKiteBuilder().listenAddress("node1:9091")
+val ckite = CKiteBuilder().listenAddress("node1:9091").rpc(FinagleThriftRpc)
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
@@ -193,7 +192,7 @@ val ckite = CKiteBuilder().listenAddress("node1:9091")
 
 ## Implementation details
 
-  * Built in Scala.
+  * Built in Scala 2.11.7 and JDK 7.
   * [Twitter Finagle](http://twitter.github.io/finagle/).
   * [Thrift](http://thrift.apache.org/).
   * [Twitter Scrooge](http://twitter.github.io/scrooge/).
