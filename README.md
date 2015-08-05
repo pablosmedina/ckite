@@ -14,7 +14,7 @@ CKite covers all the major topics of Raft including leader election, log replica
 * ckite-finagle: Finagle based RPC module
 * ckite-mapdb: MapDB based Storage module
 
-Checkout the latest __Release 0.1.6__ following the instructions detailed below to start playing with it. 
+Checkout the latest __Release 0.2.0__ following the instructions detailed below to start playing with it. 
 
 ## Features
 
@@ -27,7 +27,7 @@ Checkout the latest __Release 0.1.6__ following the instructions detailed below 
 
 ## Architecture
 
-* ckite - The core of the library. It implements the Raft consensus protocol. It can be configured with RPCs and Storages.
+* ckite-core - The core of the library. It implements the Raft consensus protocol. It can be configured with RPCs and Storages.
 
 * ckite-finagle - Twitter Finagle based RPC implementation. It uses a Thrift protocol to exchange Raft messages between members. 
 
@@ -39,10 +39,16 @@ Comming soon: ckite-chronicle, ckite-akka.
 
 #### SBT settings
 
-The latest release 0.1.6 is in Maven central. Add the following sbt dependency to your project settings:
+The latest release 0.2.0 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" % "ckite" % "0.1.6"
+libraryDependencies += "io.ckite" % "ckite-core" % "0.2.0"
+```
+```scala
+libraryDependencies += "io.ckite" % "ckite-finagle" % "0.2.0"
+```
+```scala
+libraryDependencies += "io.ckite" % "ckite-mapdb" % "0.2.0"
 ```
 
 ## Getting started (Java)
@@ -54,8 +60,8 @@ Add the following maven dependency to your pom.xml:
 ```xml
 <dependency>
 	<groupId>io.ckite</groupId>
-	<artifactId>ckite</artifactId>
-	<version>0.1.6</version>
+	<artifactId>ckite-core</artifactId>
+	<version>0.2.0</version>
 </dependency>
 ```
 
@@ -66,39 +72,36 @@ Add the following maven dependency to your pom.xml:
 //KVStore is an in-memory distributed Map allowing Puts and Gets operations
 class KVStore extends StateMachine {
 
-  val map = new ConcurrentHashMap[String, String]()
+  private var map = Map[String, String]()
+  private var lastIndex: Long = 0
 
   //Called when a consensus has been reached for a WriteCommand
   //index associated to the write is provided to implement your own persistent semantics
   //see lastAppliedIndex
   def applyWrite = {
     case (index, Put(key: String, value: String)) => {
-      map.put(key, value);
+      map.put(key, value)
+      lastIndex = index
       value
     }
   }
-  
-  //CKite needs to know the last applied write on log replay to 
-  //provide exactly-once semantics
-  //If no persistence is needed then state machines can just return zero
-  def lastAppliedIndex: Long = 0
 
   //called when a read command has been received
   def applyRead = {
-    case Get(key) => {
-      map.get(key)
-    }
+    case Get(key) => map.get(key)
   }
 
+  //CKite needs to know the last applied write on log replay to 
+  //provide exactly-once semantics
+  //If no persistence is needed then state machines can just return zero
+  def getLastAppliedIndex: Long = lastIndex
+
   //called during Log replay on startup and upon installSnapshot requests
-  def deserialize(snapshotBytes: ByteBuffer) = {
-	//some deserialization mechanism
+  def restoreSnapshot(byteBuffer: ByteBuffer) = {
+    map = Serializer.deserialize[Map[String, String]](byteBuffer.array())
   }
- 
   //called when Log compaction is required
-  def serialize: ByteBuffer = {
-	//some serialization mechanism
-  }
+  def takeSnapshot(): ByteBuffer = ByteBuffer.wrap(Serializer.serialize(map))
 
 }
 
@@ -106,20 +109,20 @@ class KVStore extends StateMachine {
 case class Put(key: String, value: String) extends WriteCommand[String]
 
 //ReadCommands are not replicated but forwarded to the Leader
-case class Get(key: String) extends ReadCommand[String]
+case class Get(key: String) extends ReadCommand[Option[String]]
 ```
-#### 2) Create a Raft instance using the builder (minimal)
+#### 2) Create a CKite instance using the builder (minimal)
 ```scala
-val raft = RaftBuilder().listenAddress("node1:9091")
+val ckite = CKiteBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
                           .build
 ```
 
-#### 3) Create a Raft instance using the builder (extended)
+#### 3) Create a CKite instance using the builder (extended)
 ```scala
-val raft = RaftBuilder().listenAddress("localhost:9091")
+val ckite = CKiteBuilder().listenAddress("localhost:9091")
                           .members(Seq("localhost:9092","localhost:9093")) //optional seeds to join the cluster
                           .minElectionTimeout(1000).maxElectionTimeout(1500) //optional
                           .heartbeatsPeriod(250) //optional. period to send heartbeats interval when being Leader
@@ -129,48 +132,48 @@ val raft = RaftBuilder().listenAddress("localhost:9091")
                           .flushSize(10) //max batch size when flushing log to disk
                           .build
 ```
-#### 4) Start raft
+#### 4) Start ckite
 ```scala
-raft.start()
+ckite.start()
 ```
 
 #### 4) Send a write command
 ```scala
 //this Put command is forwarded to the Leader and applied under Raft rules
-val writeFuture:Future[String] = raft.write(Put("key1","value1")) 
+val writeFuture:Future[String] = ckite.write(Put("key1","value1")) 
 ```
 
 #### 5) Send a consistent read command
 ```scala
 //consistent read commands are forwarded to the Leader
-val readFuture:Future[String] = raft.read(Get("key1")) 
+val readFuture:Future[Option[String]] = ckite.read(Get("key1")) 
 ```
 #### 6) Add a new Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
-raft.addMember("someHost:9094")
+ckite.addMember("someHost:9094")
 ```
 
 #### 7) Remove a Member
 ```scala
 //as write commands, cluster membership changes are forwarded to the Leader
-raft.removeMember("someHost:9094")
+ckite.removeMember("someHost:9094")
 ```
 
 #### 8) Send a local read command
 ```scala
 //alternatively you can read from its local state machine allowing possible stale values
-val value = raft.readLocal(Get("key1")) 
+val value = ckite.readLocal(Get("key1")) 
 ```
 
 #### 9) Check leadership
 ```scala
 //if necessary waits for elections to end
-raft.isLeader() 
+ckite.isLeader() 
 ```
-#### 10) Stop raft
+#### 10) Stop ckite
 ```scala
-raft.stop()
+ckite.stop()
 ```
 
 ## How CKite bootstraps
@@ -181,7 +184,7 @@ You can bootstrap the first node using the builder, overriding ckite.bootstrap i
 
 #### bootstrapping the first node using the builder
 ```scala
-val raft = RaftBuilder().listenAddress("node1:9091")
+val ckite = CKiteBuilder().listenAddress("node1:9091")
                           .dataDir("/home/ckite/data") //dataDir for persistent state (log, terms, snapshots, etc...)
                           .stateMachine(new KVStore()) //KVStore is an implementation of the StateMachine trait
                           .bootstrap(true) //bootstraps a new cluster. only needed just the first time for the very first node
