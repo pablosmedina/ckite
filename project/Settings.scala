@@ -35,7 +35,7 @@ object Settings {
 
   lazy val sonatypeSettings = Seq(
     publishMavenStyle := true,
-    publishArtifact in Test := true,
+    publishArtifact in Test := false,
     pomIncludeRepository := { x => false},
     crossPaths := false,
     publishTo := {
