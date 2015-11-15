@@ -1,10 +1,8 @@
 package ckite.mapdb
 
-import java.io.{ DataOutput, DataInput, File }
-import java.nio.ByteBuffer
-
 import ckite.rlog._
-import org.mapdb.{ Serializer, DBMaker }
+import ckite.util.Serializer
+import org.mapdb.DBMaker
 
 class MapDBStorage(dataDir: String) extends Storage with FileSupport {
 
@@ -14,15 +12,15 @@ class MapDBStorage(dataDir: String) extends Storage with FileSupport {
 
   override val log: Log = new MapDBPersistentLog(logDir)
 
-  val stateDB = DBMaker.newFileDB(file(stateDir, "ckite-mapdb-state")).make()
-  private val voteTerm = stateDB.createAtomicInteger("term", 0)
-  private val voteMember = stateDB.createAtomicString("memberId", "")
+  private val stateDB = DBMaker.newFileDB(file(stateDir, "ckite-mapdb-state")).make()
+  private val voteTerm = stateDB.getAtomicInteger("term")
+  private val voteMember = stateDB.getAtomicString("memberId")
 
   private val snapshotsDB = DBMaker.newFileDB(file(snapshotsDir, "ckite-mapdb-snapshots")).mmapFileEnable().make()
-  private val snapshotsMap = snapshotsDB.getHashMap[String, ByteBuffer]("snapshotsMap")
+  private val snapshotsMap = snapshotsDB.getHashMap[String, Array[Byte]]("snapshotsMap")
 
   override def retrieveLatestSnapshot(): Option[Snapshot] = {
-    Some(deserializeSnapshot(snapshotsMap.get("snapshot")))
+    Option(snapshotsMap.get("snapshot")).map(deserializeSnapshot)
   }
 
   override def saveVote(vote: Vote): Unit = {
@@ -36,9 +34,9 @@ class MapDBStorage(dataDir: String) extends Storage with FileSupport {
     snapshotsDB.commit()
   }
 
-  private def serializeSnapshot(snapshot: Snapshot): ByteBuffer = ???
+  private def serializeSnapshot(snapshot: Snapshot): Array[Byte] = Serializer.serialize(snapshot)
 
-  private def deserializeSnapshot(buffer: ByteBuffer): Snapshot = ???
+  private def deserializeSnapshot(bytes: Array[Byte]): Snapshot = Serializer.deserialize(bytes)
 
   override def retrieveLatestVote(): Option[Vote] = {
     val term = voteTerm.get()
@@ -50,4 +48,8 @@ class MapDBStorage(dataDir: String) extends Storage with FileSupport {
     }
   }
 
+}
+
+object MapDBStorage {
+  def apply(dataDir: String) = new MapDBStorage(dataDir)
 }

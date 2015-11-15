@@ -14,8 +14,8 @@ case class MapDBPersistentLog(dataDir: String) extends Log with FileSupport with
   val logDB = DBMaker.newFileDB(file(dataDir, "ckite-mapdb-log")).mmapFileEnable().closeOnJvmShutdown().transactionDisable().cacheDisable().make()
 
   val entries = logDB.getTreeMap[Long, Array[Byte]]("logEntries")
-  val cachedSize = new AtomicLong(entries.size())
-  val lastIndex = new AtomicLong(if (entries.isEmpty) 0 else entries.lastKey())
+  val cachedSize = new AtomicLong(if (entries.isEmpty) 0 else entries.size())
+  val lastIndex = new AtomicLong(if (entries.isEmpty) -1 else entries.lastKey())
 
   def append(entry: LogEntry): Future[Unit] = Future.successful {
     entries.put(entry.index, Serializer.serialize(entry))
@@ -54,7 +54,9 @@ case class MapDBPersistentLog(dataDir: String) extends Log with FileSupport with
   private def firstIndex: Long = if (!entries.isEmpty) entries.firstKey else 1
 
   private def remove(index: Long) = {
-    entries.remove(index)
-    cachedSize.decrementAndGet()
+    if (index > 0) {
+      entries.remove(index)
+      cachedSize.decrementAndGet()
+    }
   }
 }
