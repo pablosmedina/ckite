@@ -16,7 +16,7 @@ object Settings {
     resolvers ++= Seq("twitter-repo" at "http://maven.twttr.com"),
     fork in(Test, run) := true,
     javacOptions := Seq(
-      "-source", "1.7", "-target", "1.7"
+      "-source", "1.8", "-target", "1.8"
     ),
     scalacOptions := Seq(
       "-encoding",
@@ -26,7 +26,7 @@ object Settings {
       "-unchecked",
       "-optimise",
       "-deprecation",
-      "-target:jvm-1.7",
+      "-target:jvm-1.8",
       "-language:postfixOps",
       "-language:implicitConversions",
       "-language:reflectiveCalls",
