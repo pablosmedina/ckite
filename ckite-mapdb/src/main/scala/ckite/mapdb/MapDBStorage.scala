@@ -2,9 +2,13 @@ package ckite.mapdb
 
 import ckite.rlog._
 import ckite.util.Serializer
+import com.typesafe.config.ConfigFactory
 import org.mapdb.DBMaker
 
-class MapDBStorage(dataDir: String) extends Storage with FileSupport {
+class MapDBStorage(dataDirOption: Option[String] = None) extends Storage with FileSupport {
+
+  private val config = ConfigFactory.load()
+  private val dataDir = dataDirOption.getOrElse(config.getString("ckite.datadir"))
 
   private val logDir = s"$dataDir/log"
   private val snapshotsDir = s"$dataDir/snapshots"
@@ -51,5 +55,6 @@ class MapDBStorage(dataDir: String) extends Storage with FileSupport {
 }
 
 object MapDBStorage {
-  def apply(dataDir: String) = new MapDBStorage(dataDir)
+  def apply(dataDir: String) = new MapDBStorage(Some(dataDir))
+  def apply() = new MapDBStorage()
 }
