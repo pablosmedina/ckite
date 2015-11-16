@@ -14,7 +14,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 class MapDBStorageTest extends FlatSpec with Matchers {
 
   "A MapDBStorage" should "store and retrieve snapshots" in {
-    val mapdbStorage = MapDBStorage("/tmp")
+    val mapdbStorage = MapDBStorage(dataDir)
     val snapshot = Snapshot(1, 1, SingleClusterConfiguration(Set("m1", "m2"), 1), ByteBuffer.wrap(Array[Byte](1)))
     mapdbStorage.saveSnapshot(snapshot)
 
@@ -24,7 +24,7 @@ class MapDBStorageTest extends FlatSpec with Matchers {
   }
 
   it should "save and restore latest vote" in {
-    val mapdbStorage = MapDBStorage("/tmp")
+    val mapdbStorage = MapDBStorage(dataDir)
 
     val vote = Vote(1, "m1")
 
@@ -34,7 +34,7 @@ class MapDBStorageTest extends FlatSpec with Matchers {
   }
 
   "A MapDBStorage log" should "store and retrieve entries" in {
-    val mapdbStorage = MapDBStorage("/tmp")
+    val mapdbStorage = MapDBStorage(dataDir)
 
     mapdbStorage.log.discardEntriesFrom(1)
 
@@ -50,4 +50,6 @@ class MapDBStorageTest extends FlatSpec with Matchers {
     }
 
   }
+
+  private def dataDir = s"/tmp/ckite/test-${System.currentTimeMillis()}"
 }
