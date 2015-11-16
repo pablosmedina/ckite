@@ -1,9 +1,11 @@
 package ckite.rpc
 
-trait Rpc {
-  def createServer(service: RpcService): RpcServer
+import com.typesafe.config.Config
 
-  def createClient(binding: String): RpcClient
+trait Rpc {
+  def createServer(service: RpcService, config: Config): RpcServer
+
+  def createClient(address: String): RpcClient
 
 }
 

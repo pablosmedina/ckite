@@ -20,7 +20,7 @@ case class FinagleThriftServer(rpcService: RpcService, config: Config) extends R
   var finagleServer: ListeningServer = _
 
   def start() = {
-    val localPort = config.getString("ckite.finagle.listen-address").split(":")(1)
+    val localPort = config.getString("ckite.listen-address").split(":")(1)
     finagleServer = Thrift.serve(s":$localPort", ckiteService)
   }
 

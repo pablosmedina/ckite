@@ -14,11 +14,6 @@ class CKiteBuilder {
   private var rpc: Option[Rpc] = None
   private var storage: Storage = MemoryStorage()
 
-  def id(memberId: String): CKiteBuilder = {
-    configuration.withId(memberId)
-    CKiteBuilder.this
-  }
-
   def minElectionTimeout(minElectionTimeout: Int): CKiteBuilder = {
     configuration.withMinElectionTimeout(minElectionTimeout)
     CKiteBuilder.this
@@ -91,7 +86,7 @@ class CKiteBuilder {
     val stateMachine = configuredStateMachine()
     val rpc = configuredRpc()
     val raft = Raft(stateMachine, rpc, storage, configuration)
-    CKiteClient(raft, rpc.createServer(raft), CKiteBuilder.this)
+    CKiteClient(raft, rpc.createServer(raft, configuration.config), CKiteBuilder.this)
   }
 
 }

@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 import ckite.rpc._
+import com.typesafe.config.Config
 
 import scala.concurrent.Future
 import scala.util.Try
@@ -31,7 +32,7 @@ object TestRpc extends Rpc {
 
   def isBlocked(binding: String) = servers.get(binding).isBlocked
 
-  override def createServer(service: RpcService): RpcServer = {
+  override def createServer(service: RpcService, config: Config): RpcServer = {
     val testServer: TestServer = new TestServer(service.asInstanceOf[Raft])
     servers.put(service.asInstanceOf[Raft].membership.myId, testServer)
     testServer
