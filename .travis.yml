@@ -3,4 +3,5 @@ sbt_args: -sbt-version 0.13.7
 scala:
    - 2.11.7
 jdk:
-   - oraclejdk7
+  - oraclejdk8
+sudo: false
