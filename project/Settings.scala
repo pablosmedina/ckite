@@ -12,7 +12,7 @@ object Settings {
   lazy val basicSettings = Seq(
     scalaVersion := ScalaVersion,
     organization := "io.ckite",
-    version := "0.2.1-SNAPSHOT",
+    version := "0.2.2-SNAPSHOT",
     resolvers ++= Seq("twitter-repo" at "http://maven.twttr.com"),
     fork in(Test, run) := true,
     javacOptions := Seq(
