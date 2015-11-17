@@ -39,7 +39,7 @@ Comming soon: ckite-chronicle, ckite-akka.
 
 #### SBT settings
 
-The latest release 0.2.0 is in Maven central. Add the following sbt dependency to your project settings:
+The latest release 0.2.1 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
 libraryDependencies += "io.ckite" %% "ckite-core" % "0.2.1"
@@ -192,7 +192,7 @@ val ckite = CKiteBuilder().listenAddress("node1:9091").rpc(FinagleThriftRpc)
 
 ## Implementation details
 
-  * Built in Scala 2.11.7 and JDK 7.
+  * Built in Scala 2.11.7 and JDK 8.
   * [Twitter Finagle](http://twitter.github.io/finagle/).
   * [Thrift](http://thrift.apache.org/).
   * [Twitter Scrooge](http://twitter.github.io/scrooge/).
