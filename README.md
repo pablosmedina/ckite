@@ -14,7 +14,7 @@ CKite covers all the major topics of Raft including leader election, log replica
 * ckite-finagle: Finagle based RPC module
 * ckite-mapdb: MapDB based Storage module
 
-Checkout the latest __Release 0.2.0__ following the instructions detailed below to start playing with it. 
+Checkout the latest __Release 0.2.1__ following the instructions detailed below to start playing with it. 
 
 ## Features
 
@@ -42,13 +42,13 @@ Comming soon: ckite-chronicle, ckite-akka.
 The latest release 0.2.0 is in Maven central. Add the following sbt dependency to your project settings:
 
 ```scala
-libraryDependencies += "io.ckite" %% "ckite-core" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-core" % "0.2.1"
 ```
 ```scala
-libraryDependencies += "io.ckite" %% "ckite-finagle" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-finagle" % "0.2.1"
 ```
 ```scala
-libraryDependencies += "io.ckite" %% "ckite-mapdb" % "0.2.0"
+libraryDependencies += "io.ckite" %% "ckite-mapdb" % "0.2.1"
 ```
 
 ## Getting started (Java)
@@ -61,7 +61,7 @@ Add the following maven dependency to your pom.xml:
 <dependency>
 	<groupId>io.ckite</groupId>
 	<artifactId>ckite-core</artifactId>
-	<version>0.2.0</version>
+	<version>0.2.1</version>
 </dependency>
 ```
 
