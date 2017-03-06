@@ -20,7 +20,7 @@ class CKiteClient(raft: Raft, rpcServer: RpcServer, private[ckite] val builder: 
 
   def removeMember(memberBinding: String) = raft.onMemberLeaveReceived(memberBinding)
 
-  private[ckite] def readLocal[T](readCommand: ReadCommand[T]): Future[T] = raft.onLocalReadReceived(readCommand)
+  def readLocal[T](readCommand: ReadCommand[T]): Future[T] = raft.onLocalReadReceived(readCommand)
 
   private[ckite] def isLeader: Boolean = raft.isLeader
 
