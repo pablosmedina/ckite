@@ -2,11 +2,11 @@ import sbt._
 
 object Dependencies {
 
-  val finagleV   = "6.34.0"
+  val finagleV   = "6.43.0"
   val jacksonV   = "2.4.4"
 
   val slf4j               =       "org.slf4j"                       %   "slf4j-api"                    % "1.7.7"
-  val scrooge             =       "com.twitter"                     %%  "scrooge-core"                 % "4.6.0"
+  val scrooge             =       "com.twitter"                     %%  "scrooge-core"                 % "4.15.0"
   val finagleCore         =       "com.twitter"                     %%  "finagle-core"                 % finagleV exclude("com.twitter", "util-logging_2.11") exclude("com.twitter", "util-app_2.11")
   val finagleThrift       =       "com.twitter"                     %%  "finagle-thrift"               % finagleV
   val finagleHttp         =       "com.twitter"                     %%  "finagle-http"                 % finagleV
