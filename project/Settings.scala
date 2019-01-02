@@ -7,10 +7,12 @@ import scalariform.formatter.preferences._
 
 object Settings {
 
-  val ScalaVersion = "2.11.7"
+  val ScalaVersion = "2.11.12"
+  val CrossScalaVersions = Seq("2.12.8","2.11.12")
 
   lazy val basicSettings = Seq(
     scalaVersion := ScalaVersion,
+    crossScalaVersions := CrossScalaVersions,
     organization := "io.ckite",
     version := "0.2.2-SNAPSHOT",
     resolvers ++= Seq("twitter-repo" at "http://maven.twttr.com"),
