@@ -12,10 +12,10 @@ object Dependencies {
   val finagleHttp         =       "com.twitter"                     %%  "finagle-http"                 % finagleV
   val config              =       "com.typesafe"                    %   "config"                       % "1.0.2"
   val mapdb               =       "org.mapdb"                       %   "mapdb"                        % "0.9.13"
-  val chill               =       "com.twitter"                     %%  "chill"                        % "0.6.0"
+  val chill               =       "com.twitter"                     %%  "chill"                        % "0.9.3"
   val jacksonAfterBurner  =       "com.fasterxml.jackson.module"    %   "jackson-module-afterburner"   % jacksonV
   val jacksonScala        =       "com.fasterxml.jackson.module"    %%  "jackson-module-scala"         % jacksonV
-  val scalaTest           =       "org.scalatest"                   %%  "scalatest"                    % "2.2.2"
+  val scalaTest           =       "org.scalatest"                   %%  "scalatest"                    % "3.0.5"
   val logback             =       "ch.qos.logback"                  %   "logback-classic"              % "1.1.2"
   val thrift              =       "org.apache.thrift"               %   "libthrift"                    % "0.9.2"
 
@@ -24,5 +24,5 @@ object Dependencies {
   def test(deps: ModuleID*): Seq[ModuleID]      = deps map (_ % "test")
   def runtime(deps: ModuleID*): Seq[ModuleID]   = deps map (_ % "runtime")
   def it(deps: ModuleID*): Seq[ModuleID]        = deps map (_ % "it")
-  
+
 }

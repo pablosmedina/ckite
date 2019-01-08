@@ -226,7 +226,9 @@ case class RLog(raft: Raft, stateMachine: StateMachine, storage: Storage, config
 
   def isEmpty: Boolean = lastIndex().equals(0L)
 
-  private def startLogWorker() = logWorker.execute(runLogWorker _)
+  private def startLogWorker() = logWorker.execute(new Runnable {
+    override def run(): Unit = runLogWorker()
+  })
 
   private def append[T](append: Append[T]): Future[T] = {
     logger.trace(s"Append $append")
